@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
+    <AssetStudioRoot Condition="'$(AssetStudioRoot)' == ''">/mnt/d/github/AssetStudio-Haruki</AssetStudioRoot>
+    <AssetStudioCliOutput>$(AssetStudioRoot)/AssetStudioCLI/bin/Release/net8.0</AssetStudioCliOutput>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="K4os.Compression.LZ4" Version="1.3.8" />
+    <PackageReference Include="SharpGLTF.Toolkit" Version="1.0.6" />
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="AssetStudio">
+      <HintPath>$(AssetStudioRoot)/AssetStudio/bin/Release/net8.0/AssetStudio.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="AssetStudioUtility">
+      <HintPath>$(AssetStudioRoot)/AssetStudioUtility/bin/Release/net8.0/AssetStudioUtility.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="AssetStudioFBXWrapper">
+      <HintPath>$(AssetStudioRoot)/AssetStudioFBXWrapper/bin/Release/net8.0/AssetStudioFBXWrapper.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="SixLabors.ImageSharp">
+      <HintPath>$(AssetStudioCliOutput)/SixLabors.ImageSharp.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Texture2DDecoderWrapper">
+      <HintPath>$(AssetStudioCliOutput)/Texture2DDecoderWrapper.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="CopyAssetStudioLinuxNative" AfterTargets="Build">
+    <ItemGroup>
+      <AssetStudioManaged Include="$(AssetStudioCliOutput)/*.dll" />
+      <AssetStudioNative Include="$(AssetStudioRoot)/AssetStudioCore/Libraries/linux-x64/*.so" />
+    </ItemGroup>
+    <Copy SourceFiles="@(AssetStudioManaged)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(AssetStudioNative)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
