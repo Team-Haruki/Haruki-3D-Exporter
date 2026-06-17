@@ -139,7 +139,7 @@ viewer modes without opening Unity bundles:
 node --test scripts/test-costume-masterdata-audit.mjs
 
 node scripts/audit-costume-masterdata.mjs \
-  --master /mnt/d/github/testfile/master
+  --master <master-data-dir>
 ```
 
 The audit treats broken hard references as errors and known masterdata quirks as
@@ -156,9 +156,9 @@ mirror:
 ```bash
 ./scripts/dotnet.sh run -- \
   --emit-costume-registries \
-  --master /mnt/d/github/testfile/master \
-  --asset-root /mnt/z/pjskdata/AssetBundles \
-  --out /tmp/haruki-3d-registries
+  --master <master-data-dir> \
+  --asset-root <asset-bundle-root> \
+  --out <output-dir>
 ```
 
 This writes:
@@ -189,9 +189,9 @@ Build one runtime-loadable package with:
   --emit-part-packages \
   --part-costume3d-id 1 \
   --part-type body \
-  --master /mnt/d/github/testfile/master \
-  --asset-root /mnt/z/pjskdata/AssetBundles \
-  --out /tmp/haruki-3d-registries
+  --master <master-data-dir> \
+  --asset-root <asset-bundle-root> \
+  --out <output-dir>
 ```
 
 This writes `parts/<partType>/<costume3dId>/<unit>/part-runtime.json` plus
