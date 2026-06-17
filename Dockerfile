@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:8.0.421-bookworm-slim AS build
+FROM mcr.microsoft.com/dotnet/sdk:8.0-bookworm-slim AS build
 
 ARG ASSETSTUDIO_REPOSITORY=https://github.com/Team-Haruki/AssetStudio.git
 ARG ASSETSTUDIO_BRANCH=sekai-modified
