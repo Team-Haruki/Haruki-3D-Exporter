@@ -18,6 +18,26 @@ if (!parseResult.IsSuccess || parseResult.Options is null)
 }
 
 var options = parseResult.Options;
+if (options.ExportFaceMotion)
+{
+    try
+    {
+        var faceMotionExporter = new MotionPackageExporter();
+        var outputPath = faceMotionExporter.ExportFaceMotion(
+            options.MotionPath!,
+            options.OutputDirectory,
+            options.FaceMotionSourcePath
+        );
+        Console.WriteLine($"Wrote face motion: {outputPath}");
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Face motion export failed: {ex.Message}");
+        return 2;
+    }
+}
+
 if (options.EmitCostumeRegistries)
 {
     try

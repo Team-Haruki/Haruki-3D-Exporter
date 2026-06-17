@@ -10,6 +10,7 @@ public static class ConversionOptionsParser
         "  Haruki-3D-Exporter --character3d-id <id> --master <master-directory> --asset-root <AssetBundles-root> --out <directory> [--motion <bundle-or-export-folder>] [--keep-intermediate]\n" +
         "  Haruki-3D-Exporter --emit-costume-registries --master <master-directory> --asset-root <AssetBundles-root> --out <directory>\n" +
         "  Haruki-3D-Exporter --emit-part-packages --part-costume3d-id <id> --part-type <body|head|hair|head_optional> --master <master-directory> --asset-root <AssetBundles-root> --out <directory> [--part-unit <unit>]\n\n" +
+        "  Haruki-3D-Exporter --export-face-motion --motion <bundle-or-decoded-folder-or-json> --out <face_motion.json-or-directory> [--source-path <bundle-path>]\n\n" +
         "Notes:\n" +
         "  --body accepts either a bundle file or a body directory like .../body/05/0001\n" +
         "  --head accepts either a bundle file or a head directory like .../face/05\n" +
@@ -18,6 +19,7 @@ public static class ConversionOptionsParser
         "  --asset-root points at the AssetBundles root containing live_pv/model/characterv2\n" +
         "  --emit-costume-registries writes character3d-index.json, parts/part-registry.json, parts/head-hair-compatibility.json, and parts/card-costume-unlocks.json\n" +
         "  --emit-part-packages writes one parts/<partType>/<costume3dId>/<unit>/part-runtime.json for runtime custom assembly\n" +
+        "  --export-face-motion writes face_motion.json from a costume_setting bundle or decoded AnimationClip JSON without Python helpers\n" +
         "  --motion accepts a costume_setting bundle or a folder containing unity-motion.json/face_motion.json/light_motion.json\n" +
         "  --head-root selects a specific root GameObject from the head bundle, for example face or mdl_chr_IDL_A_00\n" +
         "  lean output is the default; use --keep-intermediate to keep diagnostic manifests, inventories, and reports";
@@ -40,9 +42,11 @@ public static class ConversionOptionsParser
         var keepIntermediate = false;
         var emitCostumeRegistries = false;
         var emitPartPackages = false;
+        var exportFaceMotion = false;
         int? partCostume3dId = null;
         string? partType = null;
         string? partUnit = null;
+        string? sourcePath = null;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -118,6 +122,12 @@ public static class ConversionOptionsParser
                 continue;
             }
 
+            if (arg is "--export-face-motion")
+            {
+                exportFaceMotion = true;
+                continue;
+            }
+
             if (arg is "--part-costume3d-id")
             {
                 var value = ReadValue(args, ref i, arg);
@@ -141,6 +151,12 @@ public static class ConversionOptionsParser
                 continue;
             }
 
+            if (arg is "--source-path")
+            {
+                sourcePath = ReadValue(args, ref i, arg);
+                continue;
+            }
+
             if (arg is "--help" or "-?")
             {
                 return new ParseResult(false, null, "Help requested.");
@@ -149,7 +165,14 @@ public static class ConversionOptionsParser
             return new ParseResult(false, null, $"Unknown argument: {arg}");
         }
 
-        if (emitCostumeRegistries || emitPartPackages)
+        if (exportFaceMotion)
+        {
+            if (string.IsNullOrWhiteSpace(motion))
+            {
+                return new ParseResult(false, null, "Missing --motion for --export-face-motion.");
+            }
+        }
+        else if (emitCostumeRegistries || emitPartPackages)
         {
             if (string.IsNullOrWhiteSpace(masterDirectory))
             {
@@ -191,7 +214,11 @@ public static class ConversionOptionsParser
             return new ParseResult(false, null, "Missing --body.");
         }
 
-        if (!emitCostumeRegistries && !emitPartPackages && character3dId is null && string.IsNullOrWhiteSpace(head))
+        if (!exportFaceMotion &&
+            !emitCostumeRegistries &&
+            !emitPartPackages &&
+            character3dId is null &&
+            string.IsNullOrWhiteSpace(head))
         {
             return new ParseResult(false, null, "Missing --head.");
         }
@@ -215,9 +242,11 @@ public static class ConversionOptionsParser
                 assetRoot,
                 emitCostumeRegistries,
                 emitPartPackages,
+                exportFaceMotion,
                 partCostume3dId,
                 NormalizePartType(partType),
-                string.IsNullOrWhiteSpace(partUnit) ? null : partUnit
+                string.IsNullOrWhiteSpace(partUnit) ? null : partUnit,
+                string.IsNullOrWhiteSpace(sourcePath) ? null : sourcePath
             ),
             string.Empty
         );

@@ -12,7 +12,9 @@ public sealed record ConversionOptions(
     string? AssetRoot,
     bool EmitCostumeRegistries,
     bool EmitPartPackages,
+    bool ExportFaceMotion,
     int? PartCostume3dId,
     string? PartType,
-    string? PartUnit
+    string? PartUnit,
+    string? FaceMotionSourcePath
 );

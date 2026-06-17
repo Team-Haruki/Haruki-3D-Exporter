@@ -1,0 +1,17 @@
+.git/
+.github/
+bin/
+obj/
+Dockerfile
+.dockerignore
+*.user
+*.suo
+.DS_Store
+
+# Local data and generated outputs must be mounted/provided at runtime.
+AssetBundles/
+master/
+output/
+outputs/
+artifacts/
+tmp/

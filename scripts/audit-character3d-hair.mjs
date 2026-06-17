@@ -2,10 +2,14 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 const args = parseArgs(process.argv.slice(2));
-const masterDir = args.master ?? "/mnt/d/github/haruki-sekai-master/master";
-const assetRoot = args.assetRoot ?? "/mnt/z/pjskdata/AssetBundles";
+const masterDir = args.master;
+const assetRoot = args.assetRoot;
 const character3dId = args.character3dId ? Number(args.character3dId) : null;
 const onlyNonDefault = args.onlyNonDefault !== "false";
+
+if (!masterDir || !assetRoot) {
+  throw new Error("usage: audit-character3d-hair.mjs --master <master-data-dir> --asset-root <asset-bundle-root> [--character3d-id <id>]");
+}
 
 const character3ds = readJson(path.join(masterDir, "character3ds.json"));
 const costume3dModels = readJson(path.join(masterDir, "costume3dModels.json"));

@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using AssetStudio;
 using PjskBundle2Parts.Models;
 using Object = AssetStudio.Object;
@@ -52,6 +53,7 @@ public sealed class MotionPackageExporter
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() },
     };
 
     public MotionExportResult Export(
@@ -84,6 +86,43 @@ public sealed class MotionPackageExporter
         }
 
         return ExportFromBundle(normalized, outputDirectory, bodyModel);
+    }
+
+    public string ExportFaceMotion(
+        string motionPath,
+        string outputPath,
+        string? sourcePath = null
+    )
+    {
+        if (string.IsNullOrWhiteSpace(motionPath))
+        {
+            throw new ArgumentException("Motion input path is required.", nameof(motionPath));
+        }
+
+        var normalized = Path.GetFullPath(Environment.ExpandEnvironmentVariables(motionPath));
+        var clips = Directory.Exists(normalized)
+            ? ReadDecodedClipsFromFolder(normalized)
+            : File.Exists(normalized) && Path.GetExtension(normalized).Equals(".json", StringComparison.OrdinalIgnoreCase)
+                ? ReadDecodedClipsFromJsonFile(normalized)
+                : DecodeUnityClipsFromBundle(normalized);
+
+        var faceClips = clips
+            .Where(clip => clip.Name is "face" or "face_loop")
+            .Select(BuildFaceMotionClip)
+            .Where(clip => clip.Curves.Count > 0)
+            .ToList();
+
+        var faceMotion = new PjskFaceMotionSet(
+            string.IsNullOrWhiteSpace(sourcePath) ? normalized : sourcePath,
+            faceClips
+        );
+        var resolvedOutputPath = ResolveFaceMotionOutputPath(outputPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(resolvedOutputPath)!);
+        File.WriteAllText(
+            resolvedOutputPath,
+            JsonSerializer.Serialize(faceMotion, new JsonSerializerOptions { WriteIndented = true })
+        );
+        return resolvedOutputPath;
     }
 
     private static MotionExportResult ExportFromFolder(
@@ -158,43 +197,7 @@ public sealed class MotionPackageExporter
         IImported bodyModel
     )
     {
-        using var readableBundle = new SekaiBundleDecryptor().PrepareReadableBundle(bundlePath);
-        var manager = new AssetsManager
-        {
-            MeshLazyLoad = false,
-        };
-        manager.Options.CustomUnityVersion = new UnityVersion(SekaiUnityVersion);
-        manager.SetAssetFilter(ClassIDType.AnimationClip);
-        manager.LoadFilesAndFolders(readableBundle.Path);
-
-        var clips = manager.AssetsFileList
-            .SelectMany(file => file.Objects)
-            .OfType<AnimationClip>()
-            .Where(IsSupportedMotionClip)
-            .OrderBy(clip => clip.m_Name is "motion" ? 0
-                : clip.m_Name is "motion_loop" ? 1
-                : clip.m_Name is "face" ? 2
-                : clip.m_Name is "face_loop" ? 3
-                : 4)
-            .ToList();
-
-        if (clips.Count == 0)
-        {
-            throw new InvalidDataException($"No supported AnimationClip assets found in {bundlePath}");
-        }
-
-        var decodedClips = new List<DecodedUnityClip>();
-        foreach (var clip in clips)
-        {
-            try
-            {
-                decodedClips.Add(DecodeUnityClip(clip));
-            }
-            catch (InvalidDataException ex)
-            {
-                Console.Error.WriteLine($"[Motion] Skipping AnimationClip {clip.m_Name}: {ex.Message}");
-            }
-        }
+        var decodedClips = DecodeUnityClipsFromBundle(bundlePath);
         (var unityMotionOutput, var bodyMotionBindings, var faceMotion, var lightMotion) =
             ExportDecodedClips(decodedClips, bundlePath, outputDirectory, bodyModel);
 
@@ -254,6 +257,53 @@ public sealed class MotionPackageExporter
         return (unityMotionOutput, bodyMotionBindings, faceMotion, lightMotion);
     }
 
+    private static IReadOnlyList<DecodedUnityClip> DecodeUnityClipsFromBundle(string bundlePath)
+    {
+        if (!File.Exists(bundlePath))
+        {
+            throw new FileNotFoundException($"Motion input not found: {bundlePath}");
+        }
+
+        using var readableBundle = new SekaiBundleDecryptor().PrepareReadableBundle(bundlePath);
+        var manager = new AssetsManager
+        {
+            MeshLazyLoad = false,
+        };
+        manager.Options.CustomUnityVersion = new UnityVersion(SekaiUnityVersion);
+        manager.SetAssetFilter(ClassIDType.AnimationClip);
+        manager.LoadFilesAndFolders(readableBundle.Path);
+
+        var clips = manager.AssetsFileList
+            .SelectMany(file => file.Objects)
+            .OfType<AnimationClip>()
+            .Where(IsSupportedMotionClip)
+            .OrderBy(clip => clip.m_Name is "motion" ? 0
+                : clip.m_Name is "motion_loop" ? 1
+                : clip.m_Name is "face" ? 2
+                : clip.m_Name is "face_loop" ? 3
+                : 4)
+            .ToList();
+
+        if (clips.Count == 0)
+        {
+            throw new InvalidDataException($"No supported AnimationClip assets found in {bundlePath}");
+        }
+
+        var decodedClips = new List<DecodedUnityClip>();
+        foreach (var clip in clips)
+        {
+            try
+            {
+                decodedClips.Add(DecodeUnityClip(clip));
+            }
+            catch (InvalidDataException ex)
+            {
+                Console.Error.WriteLine($"[Motion] Skipping AnimationClip {clip.m_Name}: {ex.Message}");
+            }
+        }
+        return decodedClips;
+    }
+
     private static IReadOnlyList<DecodedUnityClip> ReadDecodedClipsFromFolder(string motionFolder)
     {
         var result = new List<DecodedUnityClip>();
@@ -293,6 +343,37 @@ public sealed class MotionPackageExporter
                 : 4)
             .ThenBy(clip => clip.Name, StringComparer.Ordinal)
             .ToList();
+    }
+
+    private static IReadOnlyList<DecodedUnityClip> ReadDecodedClipsFromJsonFile(string file)
+    {
+        try
+        {
+            var clip = JsonSerializer.Deserialize<DecodedUnityClip>(
+                File.ReadAllText(file),
+                JsonOptions
+            );
+            return clip?.Curves is { Count: > 0 }
+                ? new[] { clip }
+                : Array.Empty<DecodedUnityClip>();
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidDataException($"Decoded AnimationClip JSON is invalid: {file}", ex);
+        }
+    }
+
+    private static string ResolveFaceMotionOutputPath(string outputPath)
+    {
+        var normalized = Path.GetFullPath(Environment.ExpandEnvironmentVariables(outputPath));
+        if (Directory.Exists(normalized) ||
+            string.IsNullOrEmpty(Path.GetExtension(normalized)) ||
+            normalized.EndsWith(Path.DirectorySeparatorChar) ||
+            normalized.EndsWith(Path.AltDirectorySeparatorChar))
+        {
+            return Path.Combine(normalized, "face_motion.json");
+        }
+        return normalized;
     }
 
     private static bool IsSupportedMotionClip(AnimationClip clip)

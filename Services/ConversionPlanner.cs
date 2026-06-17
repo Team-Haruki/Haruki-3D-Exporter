@@ -332,7 +332,7 @@ public sealed class ConversionPlanner
             },
             UnresolvedBeforeTrueParity: new[]
             {
-                "browser equivalent of sssekai SekaiBoneBasisDriver for true face SDF",
+                "browser equivalent of the runtime face SDF bone-basis driver",
                 "springbone.json to VRM springBone mapping",
                 "exact Unity shader controller animation tracks",
             },

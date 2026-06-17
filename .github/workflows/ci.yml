@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ASSETSTUDIO_REPOSITORY: https://github.com/Team-Haruki/AssetStudio.git
+  ASSETSTUDIO_BRANCH: sekai-modified
+  ASSETSTUDIO_ROOT: ${{ runner.temp }}/AssetStudio
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.421
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Prepare AssetStudio
+        run: scripts/prepare-assetstudio.sh
+
+      - name: Build exporter
+        run: dotnet build -p:AssetStudioRoot="${ASSETSTUDIO_ROOT}"
+
+      - name: Run masterdata audit tests
+        run: node --test scripts/test-costume-masterdata-audit.mjs
+
+      - name: Run face motion export tests
+        run: node --test scripts/test-face-motion-export.mjs

@@ -53,6 +53,20 @@ An exported motion folder may contain:
 - `face_motion.json`
 - `light_motion.json`
 
+To generate only `face_motion.json` from a motion bundle or decoded
+AnimationClip JSON output:
+
+```bash
+./scripts/dotnet.sh run -- \
+  --export-face-motion \
+  --motion <costume_setting.bundle-or-decoded-folder-or-json> \
+  --out <face_motion.json-or-output-directory>
+```
+
+This path is implemented in C# through the same AssetStudio/AnimationClip
+decoder used by the main exporter. It does not require a Python-side animation
+helper on the local machine or remote server.
+
 ## Lean Output
 
 By default the converter writes the runtime package and prunes intermediate/debug files:
@@ -130,6 +144,42 @@ Important SpringBone facts:
 ./scripts/dotnet.sh build
 ```
 
+## Docker
+
+Build the Linux exporter image:
+
+```bash
+docker build -t haruki-3d-exporter .
+```
+
+The Docker build clones `Team-Haruki/AssetStudio` and builds the required
+AssetStudio `net8.0` dependencies inside the image. Override the source when
+needed:
+
+```bash
+docker build \
+  --build-arg ASSETSTUDIO_REPOSITORY=https://github.com/Team-Haruki/AssetStudio.git \
+  --build-arg ASSETSTUDIO_BRANCH=sekai-modified \
+  -t haruki-3d-exporter .
+```
+
+Run the image by mounting masterdata, AssetBundles, and an output directory:
+
+```bash
+docker run --rm \
+  -v <master-data-dir>:/data/master:ro \
+  -v <asset-bundle-root>:/data/assets:ro \
+  -v <output-dir>:/data/out \
+  haruki-3d-exporter \
+  --character3d-id 5 \
+  --master /data/master \
+  --asset-root /data/assets \
+  --out /data/out
+```
+
+GitHub Actions builds and publishes the image to GHCR on `main` and version
+tags. Pull requests only build the image.
+
 ## Masterdata Audit
 
 The costume masterdata audit checks the relationships needed by preset/custom
@@ -147,6 +197,10 @@ warnings. Pattern rows that point to missing costume ids are kept for diagnostic
 but those ids should not be exposed as selectable viewer parts.
 
 If textures look wrong after converter changes, regenerate the output folder and re-import the whole folder in the viewer. Browser blob URLs can otherwise keep stale files alive.
+
+## License
+
+Haruki-3D-Exporter is released under the MIT License. See `LICENSE`.
 
 ## Costume Registries
 
@@ -187,7 +241,7 @@ Build one runtime-loadable package with:
 ```bash
 ./scripts/dotnet.sh run -- \
   --emit-part-packages \
-  --part-costume3d-id 1 \
+  --part-costume3d-id 2 \
   --part-type body \
   --master <master-data-dir> \
   --asset-root <asset-bundle-root> \

@@ -22,7 +22,10 @@ let notes;
 let samples;
 
 export function auditCostumeMasterdata(options = {}) {
-  masterDir = options.masterDir ?? "/mnt/d/github/testfile/master";
+  masterDir = options.masterDir;
+  if (!masterDir) {
+    throw new Error("Missing master data directory. Pass --master <master-data-dir>.");
+  }
   sampleLimit = Number(options.sampleLimit ?? 12);
 
   costume3ds = readMaster("costume3ds.json");
