@@ -1,4 +1,5 @@
 using PjskBundle2Parts.Models;
+using System.Text.Json;
 
 namespace PjskBundle2Parts.Services;
 
@@ -11,6 +12,7 @@ public static class ConversionOptionsParser
         "  Haruki-3D-Exporter --emit-costume-registries --master <master-directory> --asset-root <AssetBundles-root> --out <directory>\n" +
         "  Haruki-3D-Exporter --emit-part-packages --part-costume3d-id <id> --part-type <body|head|hair|head_optional> --master <master-directory> --asset-root <AssetBundles-root> --out <directory> [--part-unit <unit>]\n\n" +
         "  Haruki-3D-Exporter --export-face-motion --motion <bundle-or-decoded-folder-or-json> --out <face_motion.json-or-directory> [--source-path <bundle-path>]\n\n" +
+        "  Add --config <json> to load defaults from haruki-3d-exporter.config.json.\n\n" +
         "Notes:\n" +
         "  --body accepts either a bundle file or a body directory like .../body/05/0001\n" +
         "  --head accepts either a bundle file or a head directory like .../face/05\n" +
@@ -19,6 +21,7 @@ public static class ConversionOptionsParser
         "  --asset-root points at the AssetBundles root containing live_pv/model/characterv2\n" +
         "  --emit-costume-registries writes character3d-index.json, parts/part-registry.json, parts/head-hair-compatibility.json, and parts/card-costume-unlocks.json\n" +
         "  --emit-part-packages writes one parts/<partType>/<costume3dId>/<unit>/part-runtime.json for runtime custom assembly\n" +
+        "  --manifest records part package input file stamps for incremental --emit-part-packages runs\n" +
         "  --export-face-motion writes face_motion.json from a costume_setting bundle or decoded AnimationClip JSON without Python helpers\n" +
         "  --motion accepts a costume_setting bundle or a folder containing unity-motion.json/face_motion.json/light_motion.json\n" +
         "  --head-root selects a specific root GameObject from the head bundle, for example face or mdl_chr_IDL_A_00\n" +
@@ -26,11 +29,6 @@ public static class ConversionOptionsParser
 
     public static ParseResult Parse(string[] args)
     {
-        if (args.Length == 0)
-        {
-            return new ParseResult(false, null, "Missing arguments.");
-        }
-
         string? body = null;
         string? head = null;
         string? output = null;
@@ -47,10 +45,65 @@ public static class ConversionOptionsParser
         string? partType = null;
         string? partUnit = null;
         string? sourcePath = null;
+        string? manifestPath = null;
+        string? configPath = null;
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (args[i] is "--config")
+            {
+                configPath = ReadValue(args, ref i, args[i]);
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(configPath) && File.Exists("haruki-3d-exporter.config.json"))
+        {
+            configPath = "haruki-3d-exporter.config.json";
+        }
+
+        if (!string.IsNullOrWhiteSpace(configPath))
+        {
+            try
+            {
+                var config = LoadConfig(configPath);
+                body = config.Body;
+                head = config.Head;
+                output = config.Output;
+                motion = config.Motion;
+                headRoot = config.HeadRoot;
+                masterDirectory = config.Master;
+                assetRoot = config.AssetRoot;
+                character3dId = config.Character3dId;
+                keepIntermediate = config.KeepIntermediate ?? false;
+                emitCostumeRegistries = config.EmitCostumeRegistries ?? false;
+                emitPartPackages = config.EmitPartPackages ?? false;
+                exportFaceMotion = config.ExportFaceMotion ?? false;
+                partCostume3dId = config.PartCostume3dId;
+                partType = config.PartType;
+                partUnit = config.PartUnit;
+                sourcePath = config.SourcePath;
+                manifestPath = config.Manifest;
+            }
+            catch (Exception ex)
+            {
+                return new ParseResult(false, null, $"Failed to read --config {configPath}: {ex.Message}");
+            }
+        }
+
+        if (args.Length == 0 && string.IsNullOrWhiteSpace(configPath))
+        {
+            return new ParseResult(false, null, "Missing arguments.");
+        }
 
         for (var i = 0; i < args.Length; i++)
         {
             var arg = args[i];
+            if (arg is "--config")
+            {
+                _ = ReadValue(args, ref i, arg);
+                continue;
+            }
+
             if (arg is "--body" or "-b")
             {
                 body = ReadValue(args, ref i, arg);
@@ -157,6 +210,12 @@ public static class ConversionOptionsParser
                 continue;
             }
 
+            if (arg is "--manifest")
+            {
+                manifestPath = ReadValue(args, ref i, arg);
+                continue;
+            }
+
             if (arg is "--help" or "-?")
             {
                 return new ParseResult(false, null, "Help requested.");
@@ -238,7 +297,8 @@ public static class ConversionOptionsParser
                 partCostume3dId,
                 NormalizePartType(partType),
                 string.IsNullOrWhiteSpace(partUnit) ? null : partUnit,
-                string.IsNullOrWhiteSpace(sourcePath) ? null : sourcePath
+                string.IsNullOrWhiteSpace(sourcePath) ? null : sourcePath,
+                string.IsNullOrWhiteSpace(manifestPath) ? null : manifestPath
             ),
             string.Empty
         );
@@ -259,6 +319,18 @@ public static class ConversionOptionsParser
             "head_optional" or "accessory" => "head_optional",
             var value => value,
         };
+    }
+
+    private static ExporterConfig LoadConfig(string configPath)
+    {
+        var json = File.ReadAllText(configPath);
+        return JsonSerializer.Deserialize<ExporterConfig>(
+            json,
+            new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            }
+        ) ?? throw new InvalidOperationException("config JSON is empty.");
     }
 
     private static string ReadValue(string[] args, ref int index, string optionName)

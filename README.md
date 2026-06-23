@@ -2,7 +2,7 @@
 
 Offline converter for Project SEKAI character bundles.
 
-The converter reads Unity AssetBundles with AssetStudio and writes a browser-friendly runtime package for `pjsk-webgl-viewer`.
+The converter reads Unity AssetBundles with AssetStudio and writes a browser-friendly runtime package for Haruki 3D Engine.
 
 ## Quick Start
 
@@ -17,6 +17,18 @@ Use the repository wrapper, not system `dotnet`:
 ```
 
 The wrapper uses the SDK pinned by `global.json` and redirects build intermediates away from the checkout.
+
+Most command defaults can also be stored in a local config file:
+
+```bash
+cp haruki-3d-exporter.config.example.json haruki-3d-exporter.config.json
+
+./scripts/dotnet.sh run -- \
+  --config haruki-3d-exporter.config.json \
+  --character3d-id 5
+```
+
+`haruki-3d-exporter.config.json` is ignored by git. The tracked `.example.json` is the public template and should only contain placeholder paths. CLI flags override values loaded from config.
 
 Direct bundle mode is also available:
 
@@ -144,6 +156,12 @@ Important SpringBone facts:
 ./scripts/dotnet.sh build
 ```
 
+When building outside Docker against a local AssetStudio checkout, pass its path through MSBuild:
+
+```bash
+./scripts/dotnet.sh build -p:AssetStudioRoot=<AssetStudio-Haruki-directory>
+```
+
 ## Docker
 
 Build the Linux exporter image:
@@ -167,10 +185,12 @@ Run the image by mounting masterdata, AssetBundles, and an output directory:
 
 ```bash
 docker run --rm \
+  -v <config-file>:/app/haruki-3d-exporter.config.json:ro \
   -v <master-data-dir>:/data/master:ro \
   -v <asset-bundle-root>:/data/assets:ro \
   -v <output-dir>:/data/out \
   haruki-3d-exporter \
+  --config /app/haruki-3d-exporter.config.json \
   --character3d-id 5 \
   --master /data/master \
   --asset-root /data/assets \

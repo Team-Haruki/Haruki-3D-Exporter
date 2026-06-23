@@ -87,7 +87,8 @@ if (options.EmitPartPackages)
             var results = partPackageExporter.ExportAll(
                 options.MasterDirectory!,
                 options.AssetRoot!,
-                options.OutputDirectory
+                options.OutputDirectory,
+                options.ManifestPath
             );
             Console.WriteLine($"Wrote {results.Count} part runtime package(s).");
         }

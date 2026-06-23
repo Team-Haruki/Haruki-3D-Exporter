@@ -22,9 +22,11 @@ public sealed class PartPackageExporter
     public IReadOnlyList<PartPackageExportResult> ExportAll(
         string masterDirectory,
         string assetRoot,
-        string outputDirectory
+        string outputDirectory,
+        string? manifestPath = null
     )
     {
+        var manifest = PartPackageExportManifest.Load(manifestPath);
         var partEntries = LoadPartEntries(masterDirectory, assetRoot)
             .Where(entry => entry.BundlePath is not null && entry.Status != "missing")
             .Where(HasRequiredBundleFiles)
@@ -32,8 +34,20 @@ public sealed class PartPackageExporter
         var results = new List<PartPackageExportResult>();
         foreach (var entry in partEntries)
         {
-            results.Add(Export(entry, assetRoot, outputDirectory));
+            var packageDirectory = Path.Combine(outputDirectory, entry.PackagePath.Replace('/', Path.DirectorySeparatorChar));
+            var runtimePath = Path.Combine(packageDirectory, "part-runtime.json");
+            var stamp = PartPackageInputStamp.From(entry);
+            if (manifest.CanSkip(entry.PackagePath, runtimePath, stamp))
+            {
+                results.Add(new PartPackageExportResult(entry, runtimePath, Array.Empty<string>()));
+                continue;
+            }
+
+            var result = Export(entry, assetRoot, outputDirectory);
+            manifest.Update(entry.PackagePath, stamp);
+            results.Add(result);
         }
+        manifest.Save();
 
         return results;
     }
@@ -729,3 +743,99 @@ public sealed record PartPackageExportResult(
     string RuntimePath,
     IReadOnlyList<string> Warnings
 );
+
+public sealed class PartPackageExportManifest
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
+    private readonly string? manifestPath;
+    private readonly Dictionary<string, PartPackageInputStamp> packages;
+
+    private PartPackageExportManifest(string? manifestPath, Dictionary<string, PartPackageInputStamp> packages)
+    {
+        this.manifestPath = manifestPath;
+        this.packages = packages;
+    }
+
+    public static PartPackageExportManifest Load(string? manifestPath)
+    {
+        if (string.IsNullOrWhiteSpace(manifestPath) || !File.Exists(manifestPath))
+        {
+            return new PartPackageExportManifest(manifestPath, new Dictionary<string, PartPackageInputStamp>(StringComparer.Ordinal));
+        }
+
+        var packages = JsonSerializer.Deserialize<Dictionary<string, PartPackageInputStamp>>(
+            File.ReadAllText(manifestPath),
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+        ) ?? new Dictionary<string, PartPackageInputStamp>(StringComparer.Ordinal);
+        return new PartPackageExportManifest(manifestPath, new Dictionary<string, PartPackageInputStamp>(packages, StringComparer.Ordinal));
+    }
+
+    public bool CanSkip(string packagePath, string runtimePath, PartPackageInputStamp stamp)
+    {
+        return !string.IsNullOrWhiteSpace(manifestPath) &&
+            File.Exists(runtimePath) &&
+            packages.TryGetValue(packagePath, out var existing) &&
+            existing == stamp;
+    }
+
+    public void Update(string packagePath, PartPackageInputStamp stamp)
+    {
+        if (string.IsNullOrWhiteSpace(manifestPath))
+        {
+            return;
+        }
+
+        packages[packagePath] = stamp;
+    }
+
+    public void Save()
+    {
+        if (string.IsNullOrWhiteSpace(manifestPath))
+        {
+            return;
+        }
+
+        var parent = Path.GetDirectoryName(manifestPath);
+        if (!string.IsNullOrWhiteSpace(parent))
+        {
+            Directory.CreateDirectory(parent);
+        }
+        File.WriteAllText(manifestPath, JsonSerializer.Serialize(packages, JsonOptions));
+    }
+}
+
+public sealed record PartPackageInputStamp(
+    string BundlePath,
+    long BundleLength,
+    long BundleLastWriteUtcTicks,
+    string? ColorVariationBundlePath,
+    long? ColorVariationLength,
+    long? ColorVariationLastWriteUtcTicks
+)
+{
+    public static PartPackageInputStamp From(PartRegistryEntry entry)
+    {
+        if (entry.BundlePath is null)
+        {
+            throw new InvalidOperationException($"Part entry {entry.PackagePath} has no bundle path.");
+        }
+
+        var bundle = new FileInfo(entry.BundlePath);
+        FileInfo? colorVariation = entry.ColorVariationBundlePath is null
+            ? null
+            : new FileInfo(entry.ColorVariationBundlePath);
+        return new PartPackageInputStamp(
+            BundlePath: entry.BundlePath,
+            BundleLength: bundle.Length,
+            BundleLastWriteUtcTicks: bundle.LastWriteTimeUtc.Ticks,
+            ColorVariationBundlePath: entry.ColorVariationBundlePath,
+            ColorVariationLength: colorVariation?.Length,
+            ColorVariationLastWriteUtcTicks: colorVariation?.LastWriteTimeUtc.Ticks
+        );
+    }
+}

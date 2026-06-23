@@ -1,0 +1,19 @@
+{
+  "master": "/data/master",
+  "assetRoot": "/data/assets",
+  "output": "/data/out",
+  "assetStudioRoot": "/opt/AssetStudio-Haruki",
+  "character3dId": 5,
+  "body": null,
+  "head": null,
+  "motion": null,
+  "headRoot": null,
+  "keepIntermediate": false,
+  "emitCostumeRegistries": false,
+  "emitPartPackages": false,
+  "exportFaceMotion": false,
+  "partCostume3dId": null,
+  "partType": null,
+  "partUnit": null,
+  "sourcePath": null
+}

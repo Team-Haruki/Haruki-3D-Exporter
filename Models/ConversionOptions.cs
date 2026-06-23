@@ -16,5 +16,6 @@ public sealed record ConversionOptions(
     int? PartCostume3dId,
     string? PartType,
     string? PartUnit,
-    string? FaceMotionSourcePath
+    string? FaceMotionSourcePath,
+    string? ManifestPath
 );

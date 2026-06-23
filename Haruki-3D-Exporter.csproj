@@ -5,9 +5,10 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**;Tests/**</DefaultItemExcludes>
     <AssetStudioRoot Condition="'$(AssetStudioRoot)' == ''">D:\github\AssetStudio-Haruki</AssetStudioRoot>
     <AssetStudioCliOutput>$(AssetStudioRoot)/AssetStudioCLI/bin/Release/net8.0</AssetStudioCliOutput>
+    <EnableDefaultCompileItems Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'">false</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +18,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="Services/ConversionOptionsParser.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
+    <Compile Include="Models/ConversionOptions.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
+    <Compile Include="Models/ExporterConfig.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
+    <Compile Include="Models/ParseResult.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
+    <Compile Include="Tests/ConfigParserSmoke.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' != 'true'">
     <Reference Include="AssetStudio">
       <HintPath>$(AssetStudioRoot)/AssetStudio/bin/Release/net8.0/AssetStudio.dll</HintPath>
       <Private>true</Private>
@@ -39,7 +48,7 @@
     </Reference>
   </ItemGroup>
 
-  <Target Name="CopyAssetStudioLinuxNative" AfterTargets="Build">
+  <Target Name="CopyAssetStudioLinuxNative" AfterTargets="Build" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' != 'true'">
     <ItemGroup>
       <AssetStudioManaged Include="$(AssetStudioCliOutput)/*.dll" />
       <AssetStudioNative Include="$(AssetStudioRoot)/AssetStudioCore/Libraries/linux-x64/*.so" />
