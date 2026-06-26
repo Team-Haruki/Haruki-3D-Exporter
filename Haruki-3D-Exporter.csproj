@@ -48,13 +48,22 @@
     </Reference>
   </ItemGroup>
 
-  <Target Name="CopyAssetStudioLinuxNative" AfterTargets="Build" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' != 'true'">
+  <Target Name="CopyAssetStudioRuntimeDependenciesToBuild" AfterTargets="Build" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' != 'true'">
     <ItemGroup>
       <AssetStudioManaged Include="$(AssetStudioCliOutput)/*.dll" />
       <AssetStudioNative Include="$(AssetStudioRoot)/AssetStudioCore/Libraries/linux-x64/*.so" />
     </ItemGroup>
     <Copy SourceFiles="@(AssetStudioManaged)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(AssetStudioNative)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyAssetStudioRuntimeDependenciesToPublish" AfterTargets="Publish" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' != 'true'">
+    <ItemGroup>
+      <AssetStudioManaged Include="$(AssetStudioCliOutput)/*.dll" />
+      <AssetStudioNative Include="$(AssetStudioRoot)/AssetStudioCore/Libraries/linux-x64/*.so" />
+    </ItemGroup>
+    <Copy SourceFiles="@(AssetStudioManaged)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(AssetStudioNative)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>
