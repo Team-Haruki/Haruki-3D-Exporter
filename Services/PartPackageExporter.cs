@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using AssetStudio;
 using PjskBundle2Parts.Models;
 
@@ -10,7 +12,7 @@ public sealed class PartPackageExporter
 {
     private static readonly JsonSerializerOptions WriteJsonOptions = new()
     {
-        WriteIndented = true,
+        WriteIndented = false,
     };
 
     private readonly BundleInputResolver resolver = new();
@@ -32,7 +34,9 @@ public sealed class PartPackageExporter
         string masterDirectory,
         string assetRoot,
         string outputDirectory,
-        string? manifestPath = null
+        string? manifestPath = null,
+        int shardCount = 1,
+        int shardIndex = 0
     )
     {
         var characterHeightMetersById = CharacterHeightResolver.LoadMetersByCharacterId(masterDirectory);
@@ -42,50 +46,65 @@ public sealed class PartPackageExporter
             .Where(HasRequiredBundleFiles)
             .ToList();
         var results = new List<PartPackageExportResult>();
-        foreach (var entry in SelectRepresentativePartEntries(partEntries))
+        AssetStudioLoadedBundle? cachedBundle = null;
+        try
         {
-            var packageDirectory = Path.Combine(outputDirectory, entry.PackagePath.Replace('/', Path.DirectorySeparatorChar));
-            var runtimePath = Path.Combine(packageDirectory, "part-runtime.json");
-            var stamp = PartPackageInputStamp.From(entry);
-            if (manifest.CanSkip(entry.PackagePath, runtimePath, stamp) &&
-                RuntimePackageHasCharacterHeight(runtimePath))
+            foreach (var entry in SelectRepresentativePartEntries(partEntries)
+                .Where(entry => IsInShard(ShardKey(entry), shardCount, shardIndex)))
             {
-                results.Add(new PartPackageExportResult(entry, runtimePath, Array.Empty<string>()));
-                continue;
-            }
-
-            PartPackageExportResult result;
-            try
-            {
-                result = Export(entry, assetRoot, outputDirectory, characterHeightMetersById);
-                manifest.Update(entry.PackagePath, stamp);
-            }
-            catch (Exception ex)
-            {
-                Directory.CreateDirectory(packageDirectory);
-                var errorPath = Path.Combine(packageDirectory, "part-export-error.json");
-                WriteJson(errorPath, new
+                var packageDirectory = Path.Combine(outputDirectory, entry.PackagePath.Replace('/', Path.DirectorySeparatorChar));
+                var runtimePath = Path.Combine(packageDirectory, "part-runtime.json");
+                var stamp = PartPackageInputStamp.From(entry);
+                if (manifest.CanSkip(entry.PackagePath, runtimePath, stamp) &&
+                    RuntimePackageHasCharacterHeight(runtimePath))
                 {
-                    packagePath = entry.PackagePath,
-                    sourcePackagePath = entry.SourcePackagePath,
-                    costume3dId = entry.Costume3dId,
-                    partType = entry.PartType,
-                    unit = entry.Unit,
-                    colorId = entry.ColorId,
-                    bundlePath = entry.BundlePath,
-                    colorVariationBundlePath = entry.ColorVariationBundlePath,
-                    error = ex.Message,
-                    exceptionType = ex.GetType().FullName,
-                });
-                Console.Error.WriteLine($"Part package export skipped: {entry.PackagePath}: {ex.Message}");
-                result = new PartPackageExportResult(
-                    entry,
-                    errorPath,
-                    new[] { $"export failed: {ex.Message}" },
-                    Succeeded: false
-                );
+                    results.Add(new PartPackageExportResult(entry, runtimePath, Array.Empty<string>()));
+                    continue;
+                }
+
+                PartPackageExportResult result;
+                try
+                {
+                    var input = ResolveInput(entry);
+                    if (cachedBundle is null || !IsSameLoadedInput(cachedBundle.Input, input))
+                    {
+                        cachedBundle?.Dispose();
+                        cachedBundle = AssetStudioLoadedBundle.Load(input);
+                    }
+                    result = Export(entry, assetRoot, outputDirectory, characterHeightMetersById, cachedBundle);
+                    manifest.Update(entry.PackagePath, stamp);
+                }
+                catch (Exception ex)
+                {
+                    Directory.CreateDirectory(packageDirectory);
+                    var errorPath = Path.Combine(packageDirectory, "part-export-error.json");
+                    WriteJson(errorPath, new
+                    {
+                        packagePath = entry.PackagePath,
+                        sourcePackagePath = entry.SourcePackagePath,
+                        costume3dId = entry.Costume3dId,
+                        partType = entry.PartType,
+                        unit = entry.Unit,
+                        colorId = entry.ColorId,
+                        bundlePath = entry.BundlePath,
+                        colorVariationBundlePath = entry.ColorVariationBundlePath,
+                        error = ex.Message,
+                        exceptionType = ex.GetType().FullName,
+                    });
+                    Console.Error.WriteLine($"Part package export skipped: {entry.PackagePath}: {ex.Message}");
+                    result = new PartPackageExportResult(
+                        entry,
+                        errorPath,
+                        new[] { $"export failed: {ex.Message}" },
+                        Succeeded: false
+                    );
+                }
+                results.Add(result);
             }
-            results.Add(result);
+        }
+        finally
+        {
+            cachedBundle?.Dispose();
         }
         manifest.Save();
 
@@ -101,8 +120,26 @@ public sealed class PartPackageExporter
                 .ThenBy(entry => entry.Unit ?? string.Empty, StringComparer.Ordinal)
                 .First())
             .OrderBy(entry => entry.PartType, StringComparer.Ordinal)
+            .ThenBy(entry => entry.BaseSourceKey ?? entry.SourceKey ?? entry.PackagePath, StringComparer.Ordinal)
             .ThenBy(entry => entry.PackagePath, StringComparer.Ordinal)
             .ToList();
+    }
+
+    private static string ShardKey(PartRegistryEntry entry)
+    {
+        return entry.BaseSourceKey ?? entry.SourceKey ?? entry.PackagePath;
+    }
+
+    private static bool IsInShard(string shardKey, int shardCount, int shardIndex)
+    {
+        if (shardCount <= 1)
+        {
+            return true;
+        }
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(shardKey));
+        var value = BitConverter.ToUInt64(hash, 0);
+        return (int)(value % (ulong)shardCount) == shardIndex;
     }
 
     public PartPackageExportResult ExportOne(
@@ -139,22 +176,27 @@ public sealed class PartPackageExporter
         IReadOnlyDictionary<string, float>? characterHeightMetersById = null
     )
     {
-        if (entry.BundlePath is null)
-        {
-            throw new InvalidOperationException($"Part entry {entry.Costume3dId}/{entry.PartType} has no bundle path.");
-        }
+        using var loadedBundle = AssetStudioLoadedBundle.Load(ResolveInput(entry));
+        return Export(entry, assetRoot, outputDirectory, characterHeightMetersById, loadedBundle);
+    }
 
+    private PartPackageExportResult Export(
+        PartRegistryEntry entry,
+        string assetRoot,
+        string outputDirectory,
+        IReadOnlyDictionary<string, float>? characterHeightMetersById,
+        AssetStudioLoadedBundle loadedBundle
+    )
+    {
         var packageDirectory = Path.Combine(outputDirectory, entry.PackagePath.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(packageDirectory);
         var normalizedType = ResolveRuntimePartType(entry);
-        var input = normalizedType == "body"
-            ? resolver.ResolveBody(entry.BundlePath)
-            : resolver.ResolveHead(entry.BundlePath);
-        input = input with { CharacterId = entry.CharacterId.ToString("00") };
+        var input = loadedBundle.Input;
 
-        var inventory = parser.Parse(input);
+        var inventory = parser.Parse(input, loadedBundle.Objects, loadedBundle.AssetsFileCount);
         var imported = modelFactory.CreateImportedModel(
             input,
+            loadedBundle.Objects,
             normalizedType is "head" or "hair"
                 ? SelectHeadRootName(inventory)
                 : normalizedType == "head_optional" ? SelectAccessoryRootName(inventory) : null
@@ -168,7 +210,7 @@ public sealed class PartPackageExporter
             imported,
             overrideTextures
         );
-        var springBone = springBoneExporter.Export(input);
+        var springBone = springBoneExporter.Export(input, loadedBundle.Objects);
         var runtimeSpringBone = BuildPartSpringBone(normalizedType, springBone);
         var nativeMeshes = ExportNativeMeshes(normalizedType, imported, runtimeSpringBone);
         var materialSlots = BuildMaterialSlots(normalizedType, inventory, textures);
@@ -212,6 +254,27 @@ public sealed class PartPackageExporter
         var runtimePath = Path.Combine(packageDirectory, "part-runtime.json");
         WriteJson(runtimePath, package);
         return new PartPackageExportResult(entry, runtimePath, package.Warnings);
+    }
+
+    private ResolvedBundleInput ResolveInput(PartRegistryEntry entry)
+    {
+        if (entry.BundlePath is null)
+        {
+            throw new InvalidOperationException($"Part entry {entry.Costume3dId}/{entry.PartType} has no bundle path.");
+        }
+
+        var normalizedType = ResolveRuntimePartType(entry);
+        var input = normalizedType == "body"
+            ? resolver.ResolveBody(entry.BundlePath)
+            : resolver.ResolveHead(entry.BundlePath);
+        return input with { CharacterId = entry.CharacterId.ToString("00") };
+    }
+
+    private static bool IsSameLoadedInput(ResolvedBundleInput current, ResolvedBundleInput next)
+    {
+        return string.Equals(current.ResolvedBundlePath, next.ResolvedBundlePath, StringComparison.Ordinal) &&
+            current.PartKind == next.PartKind &&
+            string.Equals(current.CharacterId, next.CharacterId, StringComparison.Ordinal);
     }
 
     private static PartRuntimeSpringBone BuildPartSpringBone(string partType, SpringBoneExport springBone)
@@ -983,7 +1046,7 @@ public sealed class PartPackageExportManifest
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        WriteIndented = true,
+        WriteIndented = false,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
@@ -1041,6 +1104,29 @@ public sealed class PartPackageExportManifest
             Directory.CreateDirectory(parent);
         }
         File.WriteAllText(manifestPath, JsonSerializer.Serialize(packages, JsonOptions));
+    }
+
+    public static void Merge(string manifestPath, IEnumerable<string> shardManifestPaths)
+    {
+        var merged = new Dictionary<string, PartPackageInputStamp>(StringComparer.Ordinal);
+        foreach (var shardManifestPath in shardManifestPaths.Where(File.Exists))
+        {
+            var packages = JsonSerializer.Deserialize<Dictionary<string, PartPackageInputStamp>>(
+                File.ReadAllText(shardManifestPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+            ) ?? new Dictionary<string, PartPackageInputStamp>(StringComparer.Ordinal);
+            foreach (var pair in packages)
+            {
+                merged[pair.Key] = pair.Value;
+            }
+        }
+
+        var parent = Path.GetDirectoryName(manifestPath);
+        if (!string.IsNullOrWhiteSpace(parent))
+        {
+            Directory.CreateDirectory(parent);
+        }
+        File.WriteAllText(manifestPath, JsonSerializer.Serialize(merged, JsonOptions));
     }
 }
 

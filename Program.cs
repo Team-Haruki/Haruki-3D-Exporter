@@ -1,11 +1,11 @@
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using System.Diagnostics;
+using System.Globalization;
 using AssetStudio;
 using PjskBundle2Parts.Models;
 using PjskBundle2Parts.Services;
-
-Logger.Default = new AssetStudioConsoleLogger();
 
 var parseResult = ConversionOptionsParser.Parse(args);
 
@@ -18,6 +18,7 @@ if (!parseResult.IsSuccess || parseResult.Options is null)
 }
 
 var options = parseResult.Options;
+Logger.Default = new AssetStudioConsoleLogger(options.AssetStudioLogLevel);
 if (options.ExportFaceMotion)
 {
     try
@@ -113,11 +114,18 @@ if (options.EmitPartPackages)
         }
         else
         {
+            if (ResolvePartPackageProcessConcurrency(options) > 1)
+            {
+                return RunPartPackageWorkers(options);
+            }
+
             var results = partPackageExporter.ExportAll(
                 options.MasterDirectory!,
                 options.AssetRoot!,
                 options.OutputDirectory,
-                options.ManifestPath
+                options.ManifestPath,
+                options.PartPackageShardCount,
+                options.PartPackageShardIndex
             );
             var succeeded = results.Count(result => result.Succeeded);
             var failed = results.Count - succeeded;
@@ -982,6 +990,93 @@ static IReadOnlyList<HeadMorphChannel> ReadHeadMorphBindings(IImported importedH
 static IReadOnlyDictionary<string, float> LoadCharacterHeightMetersById(string masterDirectory)
 {
     return CharacterHeightResolver.LoadMetersByCharacterId(masterDirectory);
+}
+
+static int RunPartPackageWorkers(ConversionOptions options)
+{
+    var workers = ResolvePartPackageProcessConcurrency(options);
+    var manifestPath = options.ManifestPath
+        ?? Path.Combine(options.OutputDirectory, "haruki-3d-export-manifest.json");
+    var shardManifestPaths = Enumerable.Range(0, workers)
+        .Select(index => $"{manifestPath}.shard-{index}")
+        .ToList();
+    var processes = new List<Process>();
+
+    if (File.Exists(manifestPath))
+    {
+        foreach (var shardManifestPath in shardManifestPaths.Where(path => !File.Exists(path)))
+        {
+            File.Copy(manifestPath, shardManifestPath);
+        }
+    }
+
+    for (var index = 0; index < workers; index++)
+    {
+        var startInfo = CreateCurrentProcessStartInfo(new[]
+        {
+            "--emit-part-packages",
+            "--master", options.MasterDirectory!,
+            "--asset-root", options.AssetRoot!,
+            "--out", options.OutputDirectory,
+            "--manifest", shardManifestPaths[index],
+            "--part-package-shard-count", workers.ToString(CultureInfo.InvariantCulture),
+            "--part-package-shard-index", index.ToString(CultureInfo.InvariantCulture),
+            "--assetstudio-log-level", options.AssetStudioLogLevel,
+        });
+        var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException($"Failed to start part package worker {index}.");
+        processes.Add(process);
+        Console.WriteLine($"Started part package worker {index + 1}/{workers}: pid {process.Id}");
+    }
+
+    var failed = false;
+    foreach (var process in processes)
+    {
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+        {
+            Console.Error.WriteLine($"Part package worker pid {process.Id} exited with code {process.ExitCode}.");
+            failed = true;
+        }
+    }
+
+    if (failed)
+    {
+        return 2;
+    }
+
+    PartPackageExportManifest.Merge(manifestPath, shardManifestPaths);
+    Console.WriteLine($"Merged {workers} part package manifest shard(s): {manifestPath}");
+    return 0;
+}
+
+static int ResolvePartPackageProcessConcurrency(ConversionOptions options)
+{
+    return options.PartPackageProcessConcurrency == 0
+        ? Environment.ProcessorCount
+        : options.PartPackageProcessConcurrency;
+}
+
+static ProcessStartInfo CreateCurrentProcessStartInfo(IEnumerable<string> arguments)
+{
+    var processPath = Environment.ProcessPath
+        ?? throw new InvalidOperationException("Could not resolve current process path.");
+    var assemblyPath = Assembly.GetEntryAssembly()?.Location;
+    var startInfo = new ProcessStartInfo(processPath);
+
+    if (Path.GetFileName(processPath).Equals("dotnet", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(assemblyPath))
+    {
+        startInfo.ArgumentList.Add(assemblyPath);
+    }
+
+    foreach (var argument in arguments)
+    {
+        startInfo.ArgumentList.Add(argument);
+    }
+    startInfo.WorkingDirectory = Environment.CurrentDirectory;
+    startInfo.UseShellExecute = false;
+    return startInfo;
 }
 
 static string? SelectAccessoryRootName(BundleInventory? inventory)

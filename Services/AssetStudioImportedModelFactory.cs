@@ -2,6 +2,7 @@ using AssetStudio;
 using PjskBundle2Parts.Models;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
+using Object = AssetStudio.Object;
 
 namespace PjskBundle2Parts.Services;
 
@@ -30,6 +31,29 @@ public sealed class AssetStudioImportedModelFactory
             .OfType<GameObject>()
             .Where(gameObject => gameObject.m_Transform != null && gameObject.m_Transform.m_Father.IsNull)
             .ToList();
+        return CreateImportedModel(input, rootGameObjects, preferredRootOverride);
+    }
+
+    public IImported CreateImportedModel(
+        ResolvedBundleInput input,
+        IReadOnlyList<Object> objects,
+        string? preferredRootOverride = null
+    )
+    {
+        var rootGameObjects = objects
+            .OfType<GameObject>()
+            .Where(gameObject => gameObject.m_Transform != null && gameObject.m_Transform.m_Father.IsNull)
+            .ToList();
+
+        return CreateImportedModel(input, rootGameObjects, preferredRootOverride);
+    }
+
+    private static IImported CreateImportedModel(
+        ResolvedBundleInput input,
+        IReadOnlyList<GameObject> rootGameObjects,
+        string? preferredRootOverride
+    )
+    {
 
         if (rootGameObjects.Count == 0)
         {

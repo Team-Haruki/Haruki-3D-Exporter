@@ -19,6 +19,7 @@ File.WriteAllText(configPath, JsonSerializer.Serialize(new
     partUnit = "light_sound",
     roleCharacter3dIds = new[] { 5, 7 },
     manifest = "/data/manifest-from-config.json",
+    assetStudioLogLevel = "info",
     keepIntermediate = true
 }));
 
@@ -50,6 +51,71 @@ Expect(options.PartUnit == "light_sound", "part unit comes from config");
 Expect(options.RoleCharacter3dIds.SequenceEqual(new[] { 5, 7, 9 }), "role character3d ids merge config and CLI");
 Expect(options.ManifestPath == "/data/manifest-from-cli.json", "CLI manifest overrides config");
 Expect(options.KeepIntermediate, "keep intermediate comes from config");
+Expect(options.PartPackageProcessConcurrency == 1, "part package process concurrency defaults to single process");
+Expect(options.PartPackageShardCount == 1, "part package shard count defaults to one");
+Expect(options.PartPackageShardIndex == 0, "part package shard index defaults to zero");
+Expect(options.AssetStudioLogLevel == "info", "assetstudio log level comes from config");
+
+var workerParsed = ConversionOptionsParser.Parse(new[]
+{
+    "--emit-part-packages",
+    "--master", "/data/master",
+    "--asset-root", "/data/assets",
+    "--out", "/data/out",
+    "--part-package-process-concurrency", "8",
+    "--assetstudio-log-level", "debug"
+});
+Expect(workerParsed.IsSuccess && workerParsed.Options is not null, "worker parse succeeds");
+Expect(workerParsed.Options!.PartPackageProcessConcurrency == 8, "CLI part package process concurrency parses");
+Expect(workerParsed.Options!.AssetStudioLogLevel == "debug", "CLI assetstudio log level parses");
+
+var autoWorkerParsed = ConversionOptionsParser.Parse(new[]
+{
+    "--emit-part-packages",
+    "--master", "/data/master",
+    "--asset-root", "/data/assets",
+    "--out", "/data/out",
+    "--part-package-process-concurrency", "0"
+});
+Expect(autoWorkerParsed.IsSuccess && autoWorkerParsed.Options is not null, "auto process concurrency parse succeeds for full part package export");
+Expect(autoWorkerParsed.Options!.PartPackageProcessConcurrency == 0, "CLI process concurrency 0 is preserved as auto");
+
+var invalidAutoShardParsed = ConversionOptionsParser.Parse(new[]
+{
+    "--emit-part-packages",
+    "--master", "/data/master",
+    "--asset-root", "/data/assets",
+    "--out", "/data/out",
+    "--part-package-process-concurrency", "0",
+    "--part-package-shard-count", "2",
+    "--part-package-shard-index", "0"
+});
+Expect(!invalidAutoShardParsed.IsSuccess, "auto process concurrency cannot combine with manual shard options");
+
+var shardParsed = ConversionOptionsParser.Parse(new[]
+{
+    "--emit-part-packages",
+    "--master", "/data/master",
+    "--asset-root", "/data/assets",
+    "--out", "/data/out",
+    "--part-package-shard-count", "8",
+    "--part-package-shard-index", "3"
+});
+Expect(shardParsed.IsSuccess && shardParsed.Options is not null, "shard parse succeeds");
+Expect(shardParsed.Options!.PartPackageShardCount == 8, "CLI part package shard count parses");
+Expect(shardParsed.Options!.PartPackageShardIndex == 3, "CLI part package shard index parses");
+
+var invalidSingleAutoParsed = ConversionOptionsParser.Parse(new[]
+{
+    "--emit-part-packages",
+    "--part-costume3d-id", "2",
+    "--part-type", "body",
+    "--master", "/data/master",
+    "--asset-root", "/data/assets",
+    "--out", "/data/out",
+    "--part-package-process-concurrency", "0"
+});
+Expect(!invalidSingleAutoParsed.IsSuccess, "auto process concurrency cannot combine with single part package export");
 
 PartMaterialMetadataSmoke.Run();
 
@@ -98,6 +164,8 @@ Expect(partPackageExporterSource.Contains("MaterialIdentityLookup"), "part packa
 Expect(!partPackageExporterSource.Contains("BuildMaterialMap"), "part package exporter no longer indexes materials by display name");
 Expect(partPackageExporterSource.Contains("part-export-error.json"), "part package exporter writes per-package errors during full export");
 Expect(partPackageExporterSource.Contains("Part package export skipped"), "part package exporter continues after per-package export failures");
+Expect(partPackageExporterSource.Contains("IsInShard"), "part package exporter can filter deterministic shards");
+Expect(partPackageExporterSource.Contains("public static void Merge"), "part package exporter can merge worker manifests");
 
 static void Expect(bool condition, string message)
 {

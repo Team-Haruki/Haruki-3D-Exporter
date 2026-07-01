@@ -24,6 +24,10 @@ public static class ConversionOptionsParser
         "  --emit-part-packages writes one parts/<partType>/<costume3dId>/<unit>/part-runtime.json for runtime custom assembly\n" +
         "  --emit-role-runtimes writes roles/<characterId>/<unit>/role-runtime.json with motion metadata for selected character3ds rows\n" +
         "  --manifest records part package input file stamps for incremental --emit-part-packages runs\n" +
+        "  --part-package-process-concurrency runs full --emit-part-packages across N child exporter processes; 0 = auto CPU count\n" +
+        "  --part-package-workers and --part-package-core-count are aliases for --part-package-process-concurrency\n" +
+        "  --part-package-shard-count and --part-package-shard-index run one deterministic package shard\n" +
+        "  --assetstudio-log-level controls AssetStudio logs: warning, info, or debug\n" +
         "  --export-face-motion writes face_motion.json from a costume_setting bundle or decoded AnimationClip JSON without Python helpers\n" +
         "  --motion accepts a costume_setting bundle or a folder containing unity-motion.json/face_motion.json/light_motion.json\n" +
         "  --head-root selects a specific root GameObject from the head bundle, for example face or mdl_chr_IDL_A_00\n" +
@@ -51,6 +55,10 @@ public static class ConversionOptionsParser
         string? sourcePath = null;
         string? manifestPath = null;
         string? configPath = null;
+        var partPackageProcessConcurrency = 1;
+        var partPackageShardCount = 1;
+        var partPackageShardIndex = 0;
+        var assetStudioLogLevel = "warning";
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -89,6 +97,16 @@ public static class ConversionOptionsParser
                 roleCharacter3dIds = config.RoleCharacter3dIds?.Distinct().ToList() ?? new List<int>();
                 sourcePath = config.SourcePath;
                 manifestPath = config.Manifest;
+                partPackageProcessConcurrency =
+                    config.PartPackageProcessConcurrency ??
+                    config.PartPackageWorkers ??
+                    config.PartPackageCoreCount ??
+                    1;
+                partPackageShardCount = config.PartPackageShardCount ?? 1;
+                partPackageShardIndex = config.PartPackageShardIndex ?? 0;
+                assetStudioLogLevel = string.IsNullOrWhiteSpace(config.AssetStudioLogLevel)
+                    ? "warning"
+                    : config.AssetStudioLogLevel!;
             }
             catch (Exception ex)
             {
@@ -239,6 +257,30 @@ public static class ConversionOptionsParser
                 continue;
             }
 
+            if (arg is "--part-package-process-concurrency" or "--part-package-workers" or "--part-package-core-count")
+            {
+                partPackageProcessConcurrency = ReadIntValue(args, ref i, arg);
+                continue;
+            }
+
+            if (arg is "--assetstudio-log-level")
+            {
+                assetStudioLogLevel = ReadValue(args, ref i, arg);
+                continue;
+            }
+
+            if (arg is "--part-package-shard-count")
+            {
+                partPackageShardCount = ReadIntValue(args, ref i, arg);
+                continue;
+            }
+
+            if (arg is "--part-package-shard-index")
+            {
+                partPackageShardIndex = ReadIntValue(args, ref i, arg);
+                continue;
+            }
+
             if (arg is "--help" or "-?")
             {
                 return new ParseResult(false, null, "Help requested.");
@@ -308,6 +350,37 @@ public static class ConversionOptionsParser
             return new ParseResult(false, null, "Missing --out.");
         }
 
+        if (partPackageProcessConcurrency < 0)
+        {
+            return new ParseResult(false, null, "--part-package-process-concurrency must be 0 or greater.");
+        }
+
+        if (partPackageShardCount < 1)
+        {
+            return new ParseResult(false, null, "--part-package-shard-count must be at least 1.");
+        }
+
+        if (partPackageShardIndex < 0 || partPackageShardIndex >= partPackageShardCount)
+        {
+            return new ParseResult(false, null, "--part-package-shard-index must be between 0 and shard-count - 1.");
+        }
+
+        if (!IsValidAssetStudioLogLevel(assetStudioLogLevel))
+        {
+            return new ParseResult(false, null, "--assetstudio-log-level must be warning, info, or debug.");
+        }
+
+        if (partPackageProcessConcurrency != 1 && partPackageShardCount > 1)
+        {
+            return new ParseResult(false, null, "--part-package-process-concurrency cannot be combined with manual shard options.");
+        }
+
+        if (emitPartPackages && partCostume3dId is not null &&
+            (partPackageProcessConcurrency != 1 || partPackageShardCount > 1 || partPackageShardIndex != 0))
+        {
+            return new ParseResult(false, null, "Part package process concurrency and shards are only supported for full --emit-part-packages.");
+        }
+
         return new ParseResult(
             true,
             new ConversionOptions(
@@ -332,7 +405,11 @@ public static class ConversionOptionsParser
                     .Distinct()
                     .ToList(),
                 string.IsNullOrWhiteSpace(sourcePath) ? null : sourcePath,
-                string.IsNullOrWhiteSpace(manifestPath) ? null : manifestPath
+                string.IsNullOrWhiteSpace(manifestPath) ? null : manifestPath,
+                partPackageProcessConcurrency,
+                partPackageShardCount,
+                partPackageShardIndex,
+                assetStudioLogLevel.Trim().ToLowerInvariant()
             ),
             string.Empty
         );
@@ -364,6 +441,11 @@ public static class ConversionOptionsParser
         return emitPartPackages ? "--emit-part-packages" : "--emit-costume-registries";
     }
 
+    private static bool IsValidAssetStudioLogLevel(string value)
+    {
+        return value.Trim().ToLowerInvariant() is "warning" or "info" or "debug";
+    }
+
     private static ExporterConfig LoadConfig(string configPath)
     {
         var json = File.ReadAllText(configPath);
@@ -384,5 +466,15 @@ public static class ConversionOptionsParser
         }
         index += 1;
         return args[index];
+    }
+
+    private static int ReadIntValue(string[] args, ref int index, string optionName)
+    {
+        var value = ReadValue(args, ref index, optionName);
+        if (!int.TryParse(value, out var parsed))
+        {
+            throw new ArgumentException($"Option {optionName} must be an integer.");
+        }
+        return parsed;
     }
 }

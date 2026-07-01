@@ -1,5 +1,6 @@
 using AssetStudio;
 using PjskBundle2Parts.Models;
+using Object = AssetStudio.Object;
 
 namespace PjskBundle2Parts.Services;
 
@@ -27,6 +28,11 @@ public sealed class AssetStudioBundleParser
         var objects = manager.AssetsFileList
             .SelectMany(file => file.Objects)
             .ToList();
+        return Parse(input, objects, manager.AssetsFileList.Count);
+    }
+
+    public BundleInventory Parse(ResolvedBundleInput input, IReadOnlyList<Object> objects, int assetsFileCount)
+    {
         var objectTypeCounts = objects
             .GroupBy(obj => obj.type.ToString())
             .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
@@ -78,7 +84,7 @@ public sealed class AssetStudioBundleParser
         return new BundleInventory(
             BundlePath: input.ResolvedBundlePath,
             PartKind: input.PartKind.ToString(),
-            AssetsFileCount: manager.AssetsFileList.Count,
+            AssetsFileCount: assetsFileCount,
             ObjectCount: objects.Count,
             ObjectTypeCounts: objectTypeCounts,
             Roots: roots,

@@ -45,6 +45,11 @@ public sealed class SpringBoneExporter
         var objects = manager.AssetsFileList
             .SelectMany(file => file.Objects)
             .ToList();
+        return Export(input, objects);
+    }
+
+    public SpringBoneExport Export(ResolvedBundleInput input, IReadOnlyList<Object> objects)
+    {
         var objectRefsByPathId = BuildObjectRefIndex(objects);
         var rendererRawByPathId = objects
             .OfType<Renderer>()

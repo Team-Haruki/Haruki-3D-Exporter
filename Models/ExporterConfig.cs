@@ -20,5 +20,11 @@ public sealed record ExporterConfig(
     int[]? RoleCharacter3dIds,
     string? SourcePath,
     string? Manifest,
+    int? PartPackageProcessConcurrency,
+    int? PartPackageWorkers,
+    int? PartPackageCoreCount,
+    int? PartPackageShardCount,
+    int? PartPackageShardIndex,
+    string? AssetStudioLogLevel,
     string? AssetStudioRoot
 );

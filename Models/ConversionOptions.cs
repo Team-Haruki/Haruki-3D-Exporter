@@ -19,5 +19,9 @@ public sealed record ConversionOptions(
     string? PartUnit,
     IReadOnlyList<int> RoleCharacter3dIds,
     string? FaceMotionSourcePath,
-    string? ManifestPath
+    string? ManifestPath,
+    int PartPackageProcessConcurrency,
+    int PartPackageShardCount,
+    int PartPackageShardIndex,
+    string AssetStudioLogLevel
 );
