@@ -198,10 +198,10 @@ public sealed class PartPackageExporter
         var normalizedType = ResolveRuntimePartType(entry);
         var input = loadedBundle.Input;
 
-        var inventory = parser.Parse(input, loadedBundle.Objects, loadedBundle.AssetsFileCount);
+        var inventory = parser.Parse(input, loadedBundle.PrimaryObjects, loadedBundle.Objects, loadedBundle.AssetsFileCount);
         var imported = modelFactory.CreateImportedModel(
             input,
-            loadedBundle.Objects,
+            loadedBundle.PrimaryObjects,
             normalizedType is "head" or "hair"
                 ? SelectHeadRootName(inventory)
                 : normalizedType == "head_optional" ? SelectAccessoryRootName(inventory) : null
@@ -215,10 +215,11 @@ public sealed class PartPackageExporter
             imported,
             overrideTextures
         );
-        var springBone = springBoneExporter.Export(input, loadedBundle.Objects);
+        var springBone = springBoneExporter.Export(input, loadedBundle.PrimaryObjects);
         var runtimeSpringBone = BuildPartSpringBone(normalizedType, springBone);
         var nativeMeshes = ExportNativeMeshes(normalizedType, imported, runtimeSpringBone);
-        var materialSlots = BuildMaterialSlots(normalizedType, inventory, textures);
+        var builtMaterialSlots = BuildMaterialSlots(normalizedType, inventory, textures, imported, nativeMeshes);
+        var materialSlots = builtMaterialSlots.Slots;
         var textureRoles = BuildTextureRoles(materialSlots);
         var package = new PartRuntimePackage(
             Version: "0414-part-2",
@@ -251,6 +252,7 @@ public sealed class PartPackageExporter
                 : Array.Empty<HeadMorphChannel>(),
             Warnings: entry.Warnings
                 .Concat(nativeMeshes.Warnings)
+                .Concat(builtMaterialSlots.Warnings)
                 .Concat(runtimeSpringBone.Warnings)
                 .Distinct(StringComparer.Ordinal)
                 .ToList()
@@ -480,30 +482,58 @@ public sealed class PartPackageExporter
         );
     }
 
-    private static IReadOnlyList<PjskSekaiRuntimeMaterialSlot> BuildMaterialSlots(
+    private sealed record BuiltMaterialSlots(
+        IReadOnlyList<PjskSekaiRuntimeMaterialSlot> Slots,
+        IReadOnlyList<string> Warnings
+    );
+
+    private static BuiltMaterialSlots BuildMaterialSlots(
         string partType,
         BundleInventory inventory,
-        IReadOnlyDictionary<string, string> textures
+        IReadOnlyDictionary<string, string> textures,
+        IImported imported,
+        PjskUnityRuntimeNativeMeshSet nativeMeshes
     )
     {
         var materialLookup = MaterialIdentityLookup.FromInventory(inventory.Materials);
-        return inventory.SkinnedMeshes
-            .Concat(inventory.StaticMeshes)
-            .SelectMany(mesh => mesh.MaterialSlots.Select(slot =>
+        var warnings = new List<string>();
+        var slots = new List<PjskSekaiRuntimeMaterialSlot>();
+        foreach (var mesh in inventory.SkinnedMeshes.Concat(inventory.StaticMeshes))
+        {
+            foreach (var slot in mesh.MaterialSlots)
             {
-                var material = materialLookup.Require(slot);
+                MaterialInventory material;
+                RuntimeMaterialIdentity identity;
+                if (slot.MaterialPathId == 0)
+                {
+                    var resolvedMaterialName = ResolveNativeSubmeshMaterialName(nativeMeshes, mesh, slot)
+                        ?? ResolveImportedSubmeshMaterialName(imported, mesh, slot);
+                    if (string.IsNullOrWhiteSpace(resolvedMaterialName))
+                    {
+                        warnings.Add($"Skipped empty material slot {mesh.MeshName}[{slot.SlotIndex}]: no native/imported material was present.");
+                        continue;
+                    }
+                    material = BuildSyntheticMaterialInventory(partType, imported, slot, resolvedMaterialName);
+                    identity = RuntimeMaterialIdentityResolver.Resolve(partType, slot.SlotIndex, slot.MaterialFileId, slot.MaterialPathId, material.Name);
+                }
+                else
+                {
+                    material = materialLookup.Require(slot);
+                    identity = new RuntimeMaterialIdentity(slot.MaterialKey, slot.MaterialFileId, slot.MaterialPathId);
+                }
+
                 var materialName = slot.MaterialName ?? material.Name;
                 var materialKind = partType == "body"
                     ? ClassifyBodyMaterialKind(materialName)
                     : partType == "head_optional" ? "accessory" : ClassifyHeadMaterialKind(materialName, FindTextureSlot(material, "_FaceShadowTex") is not null);
-                return new PjskSekaiRuntimeMaterialSlot(
+                slots.Add(new PjskSekaiRuntimeMaterialSlot(
                     Part: partType,
                     MeshName: mesh.MeshName,
                     SlotIndex: slot.SlotIndex,
-                    MaterialKey: slot.MaterialKey,
-                    MaterialFileId: slot.MaterialFileId,
-                    MaterialPathId: slot.MaterialPathId,
-                    MaterialName: slot.MaterialName,
+                    MaterialKey: identity.MaterialKey,
+                    MaterialFileId: identity.MaterialFileId,
+                    MaterialPathId: identity.MaterialPathId,
+                    MaterialName: materialName,
                     MaterialKind: materialKind,
                     MainTex: RewriteTexturePath(FindTextureSlot(material, "_MainTex"), textures),
                     ShadowTex: RewriteTexturePath(FindTextureSlot(material, "_ShadowTex"), textures),
@@ -512,10 +542,155 @@ public sealed class PartPackageExporter
                     RenderOrder: ResolveRenderOrder(materialKind),
                     ShaderPipeline: partType == "body" ? "sekai_csh_toon" : "character_tint_with_weak_sdf",
                     Lighting: SekaiMaterialMetadata.BuildLightingSettings(material)
-                );
-            }))
+                ));
+            }
+        }
+        var distinctSlots = slots
             .DistinctBy(slot => $"{slot.MeshName}::{slot.SlotIndex}::{slot.MaterialKey}", StringComparer.Ordinal)
             .ToList();
+        AddNativeMaterialSlotAliases(distinctSlots, nativeMeshes, warnings);
+        return new BuiltMaterialSlots(
+            Slots: distinctSlots
+                .DistinctBy(slot => $"{slot.MeshName}::{slot.SlotIndex}::{slot.MaterialKey}", StringComparer.Ordinal)
+                .ToList(),
+            Warnings: warnings
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(warning => warning, StringComparer.Ordinal)
+                .ToList()
+        );
+    }
+
+    private static void AddNativeMaterialSlotAliases(
+        List<PjskSekaiRuntimeMaterialSlot> slots,
+        PjskUnityRuntimeNativeMeshSet nativeMeshes,
+        List<string> warnings
+    )
+    {
+        foreach (var nativeMesh in nativeMeshes.Meshes)
+        {
+            foreach (var nativeSubmesh in nativeMesh.Submeshes)
+            {
+                var exact = slots.Any(slot =>
+                    string.Equals(slot.MeshName, nativeMesh.MeshName, StringComparison.OrdinalIgnoreCase) &&
+                    slot.SlotIndex == nativeSubmesh.SlotIndex &&
+                    string.Equals(slot.MaterialKey, nativeSubmesh.MaterialKey, StringComparison.Ordinal));
+                if (exact)
+                {
+                    continue;
+                }
+
+                var source = slots.FirstOrDefault(slot =>
+                    slot.SlotIndex == nativeSubmesh.SlotIndex &&
+                    string.Equals(slot.MaterialKey, nativeSubmesh.MaterialKey, StringComparison.Ordinal));
+                if (source is null)
+                {
+                    warnings.Add($"Native submesh material slot missing for {nativeMesh.MeshName}[{nativeSubmesh.SlotIndex}] ({nativeSubmesh.MaterialKey}).");
+                    continue;
+                }
+
+                slots.Add(source with { MeshName = nativeMesh.MeshName });
+            }
+        }
+    }
+
+    private static MaterialInventory BuildSyntheticMaterialInventory(
+        string partType,
+        IImported imported,
+        RenderMaterialSlotInventory slot,
+        string materialName
+    )
+    {
+        var importedMaterial = imported.MaterialList.FirstOrDefault(material =>
+            string.Equals(material.Name, materialName, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException(
+                $"Renderer material slot {slot.SlotIndex} has an empty material reference; imported material '{materialName}' was not found."
+            );
+        var identity = RuntimeMaterialIdentityResolver.Resolve(
+            partType,
+            slot.SlotIndex,
+            slot.MaterialFileId,
+            slot.MaterialPathId,
+            importedMaterial.Name
+        );
+        return new MaterialInventory(
+            MaterialFileId: identity.MaterialFileId,
+            MaterialPathId: identity.MaterialPathId,
+            MaterialKey: identity.MaterialKey,
+            Name: importedMaterial.Name,
+            ShaderName: null,
+            TextureSlots: BuildSyntheticTextureSlots(importedMaterial),
+            ColorProperties: new[]
+            {
+                new ColorPropertyInventory(
+                    "_Color",
+                    importedMaterial.Diffuse.R,
+                    importedMaterial.Diffuse.G,
+                    importedMaterial.Diffuse.B,
+                    Math.Clamp(1.0f - importedMaterial.Transparency, 0.0f, 1.0f)
+                ),
+            },
+            FloatProperties: new[]
+            {
+                new FloatPropertyInventory("_Transparency", importedMaterial.Transparency),
+            }
+        );
+    }
+
+    private static string? ResolveNativeSubmeshMaterialName(
+        PjskUnityRuntimeNativeMeshSet nativeMeshes,
+        RenderMeshInventory mesh,
+        RenderMaterialSlotInventory slot
+    )
+    {
+        var nativeMesh = nativeMeshes.Meshes.FirstOrDefault(candidate =>
+            string.Equals(candidate.MeshName, mesh.MeshName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(Path.GetFileName(candidate.MeshPath), mesh.MeshName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(LastPathSegment(candidate.RendererTransformPath), mesh.MeshName, StringComparison.OrdinalIgnoreCase));
+        var nativeSubmesh = nativeMesh?.Submeshes.FirstOrDefault(submesh => submesh.SlotIndex == slot.SlotIndex);
+        return string.IsNullOrWhiteSpace(nativeSubmesh?.MaterialName) ? null : nativeSubmesh.MaterialName;
+    }
+
+    private static string? ResolveImportedSubmeshMaterialName(
+        IImported imported,
+        RenderMeshInventory mesh,
+        RenderMaterialSlotInventory slot
+    )
+    {
+        var importedMesh = imported.MeshList.FirstOrDefault(candidate =>
+            string.Equals(Path.GetFileName(candidate.Path), mesh.MeshName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(candidate.Path, mesh.MeshName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(Path.GetFileNameWithoutExtension(candidate.Path), Path.GetFileNameWithoutExtension(mesh.MeshName), StringComparison.OrdinalIgnoreCase));
+        if (importedMesh is null || slot.SlotIndex < 0 || slot.SlotIndex >= importedMesh.SubmeshList.Count)
+        {
+            return slot.MaterialName;
+        }
+
+        var materialName = importedMesh.SubmeshList[slot.SlotIndex].Material;
+        return string.IsNullOrWhiteSpace(materialName) ? slot.MaterialName : materialName;
+    }
+
+    private static IReadOnlyList<TextureSlotInventory> BuildSyntheticTextureSlots(ImportedMaterial material)
+    {
+        var textureNames = material.Textures
+            .Select(texture => texture.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return new[]
+        {
+            new TextureSlotInventory("_MainTex", SelectTexture(textureNames, "_C", "main", "diffuse") ?? textureNames.FirstOrDefault()),
+            new TextureSlotInventory("_ShadowTex", SelectTexture(textureNames, "_S", "shadow")),
+            new TextureSlotInventory("_ValueTex", SelectTexture(textureNames, "_V", "value")),
+            new TextureSlotInventory("_FaceShadowTex", SelectTexture(textureNames, "faceshadow", "face_shadow")),
+        }
+        .Where(slot => !string.IsNullOrWhiteSpace(slot.TextureName))
+        .ToList();
+    }
+
+    private static string? SelectTexture(IReadOnlyList<string> textureNames, params string[] markers)
+    {
+        return textureNames.FirstOrDefault(name =>
+            markers.Any(marker => name.Contains(marker, StringComparison.OrdinalIgnoreCase)));
     }
 
     private static IReadOnlyList<PjskSekaiRuntimeTextureRole> BuildTextureRoles(IReadOnlyList<PjskSekaiRuntimeMaterialSlot> slots)
@@ -801,6 +976,17 @@ public sealed class PartPackageExporter
         var normalized = path.Replace('\\', '/').Trim('/');
         var slash = normalized.IndexOf('/');
         return slash < 0 ? normalized : normalized[..slash];
+    }
+
+    private static string? LastPathSegment(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+        var normalized = path.Replace('\\', '/').Trim('/');
+        var slash = normalized.LastIndexOf('/');
+        return slash < 0 ? normalized : normalized[(slash + 1)..];
     }
 
     private static string? TryRelativePath(string root, string path)

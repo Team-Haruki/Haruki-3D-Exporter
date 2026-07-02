@@ -8,30 +8,35 @@ public sealed class AssetStudioLoadedBundle : IDisposable
 {
     private const string SekaiUnityVersion = "2022.3.21f1";
 
-    private readonly DecryptedBundleHandle readableBundle;
+    private readonly DecryptedBundleWorkspace readableBundles;
     private readonly AssetsManager manager;
 
     public ResolvedBundleInput Input { get; }
     public IReadOnlyList<Object> Objects { get; }
+    public IReadOnlyList<Object> PrimaryObjects { get; }
     public int AssetsFileCount => manager.AssetsFileList.Count;
 
     private AssetStudioLoadedBundle(
         ResolvedBundleInput input,
-        DecryptedBundleHandle readableBundle,
+        DecryptedBundleWorkspace readableBundles,
         AssetsManager manager
     )
     {
         Input = input;
-        this.readableBundle = readableBundle;
+        this.readableBundles = readableBundles;
         this.manager = manager;
         Objects = manager.AssetsFileList
             .SelectMany(file => file.Objects)
             .ToList();
+        PrimaryObjects = AssetStudioObjectFilter.SelectPrimaryObjects(Objects, readableBundles.PrimaryFileName);
     }
 
     public static AssetStudioLoadedBundle Load(ResolvedBundleInput input)
     {
-        var readableBundle = new SekaiBundleDecryptor().PrepareReadableBundle(input.ResolvedBundlePath);
+        var readableBundles = new SekaiBundleDecryptor().PrepareReadableWorkspace(
+            input.ResolvedBundlePath,
+            ResolveLoadBundlePaths(input)
+        );
         var manager = new AssetsManager
         {
             MeshLazyLoad = false,
@@ -48,12 +53,28 @@ public sealed class AssetStudioLoadedBundle : IDisposable
             ClassIDType.MeshRenderer,
             ClassIDType.SkinnedMeshRenderer
         );
-        manager.LoadFilesAndFolders(readableBundle.Path);
-        return new AssetStudioLoadedBundle(input, readableBundle, manager);
+        manager.LoadFilesAndFolders(readableBundles.DirectoryPath);
+        return new AssetStudioLoadedBundle(input, readableBundles, manager);
+    }
+
+    private static IReadOnlyList<string> ResolveLoadBundlePaths(ResolvedBundleInput input)
+    {
+        var paths = new List<string> { input.ResolvedBundlePath };
+        if (input.PartKind == BundlePartKind.Body &&
+            Path.GetDirectoryName(input.ResolvedBundlePath) is { } directory &&
+            Directory.Exists(directory))
+        {
+            paths.AddRange(Directory
+                .GetFiles(directory, "*.bundle", SearchOption.TopDirectoryOnly)
+                .Where(path => !Path.GetFileName(path).StartsWith(".", StringComparison.Ordinal)));
+        }
+        return paths
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
     }
 
     public void Dispose()
     {
-        readableBundle.Dispose();
+        readableBundles.Dispose();
     }
 }

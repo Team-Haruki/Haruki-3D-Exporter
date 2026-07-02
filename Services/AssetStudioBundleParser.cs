@@ -11,7 +11,7 @@ public sealed class AssetStudioBundleParser
 
     public BundleInventory Parse(ResolvedBundleInput input)
     {
-        using var readableBundle = decryptor.PrepareReadableBundle(input.ResolvedBundlePath);
+        using var readableBundle = decryptor.PrepareReadableWorkspace(input.ResolvedBundlePath, new[] { input.ResolvedBundlePath });
         var manager = new AssetsManager
         {
             MeshLazyLoad = false,
@@ -23,21 +23,32 @@ public sealed class AssetStudioBundleParser
             ClassIDType.Mesh,
             ClassIDType.Texture2D
         );
-        manager.LoadFilesAndFolders(readableBundle.Path);
+        manager.LoadFilesAndFolders(readableBundle.DirectoryPath);
 
         var objects = manager.AssetsFileList
             .SelectMany(file => file.Objects)
             .ToList();
-        return Parse(input, objects, manager.AssetsFileList.Count);
+        var primaryObjects = AssetStudioObjectFilter.SelectPrimaryObjects(objects, readableBundle.PrimaryFileName);
+        return Parse(input, primaryObjects, objects, manager.AssetsFileList.Count);
     }
 
     public BundleInventory Parse(ResolvedBundleInput input, IReadOnlyList<Object> objects, int assetsFileCount)
     {
-        var objectTypeCounts = objects
+        return Parse(input, objects, objects, assetsFileCount);
+    }
+
+    public BundleInventory Parse(
+        ResolvedBundleInput input,
+        IReadOnlyList<Object> primaryObjects,
+        IReadOnlyList<Object> allObjects,
+        int assetsFileCount
+    )
+    {
+        var objectTypeCounts = allObjects
             .GroupBy(obj => obj.type.ToString())
             .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
-        var gameObjects = objects
+        var gameObjects = primaryObjects
             .OfType<GameObject>()
             .Where(gameObject => gameObject.m_Transform != null)
             .ToList();
@@ -68,15 +79,13 @@ public sealed class AssetStudioBundleParser
             .Cast<RenderMeshInventory>()
             .OrderBy(mesh => mesh.NodePath, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var materialFileIdsByPathId = BuildMaterialFileIdIndex(skinnedMeshes, staticMeshes);
-        var materialInventory = objects
-            .OfType<Material>()
-            .Select(material => BuildMaterialInventory(
-                material,
-                materialFileIdsByPathId.TryGetValue(material.m_PathID, out var materialFileId)
-                    ? materialFileId
-                    : 0
-            ))
+        var materialInventory = skinnedMeshes
+            .Concat(staticMeshes)
+            .SelectMany(mesh => mesh.MaterialSlots)
+            .Select(slot => slot.ResolvedMaterial)
+            .Where(material => material is not null)
+            .Select(material => material!)
+            .DistinctBy(material => material.MaterialKey, StringComparer.Ordinal)
             .OrderBy(material => material.MaterialFileId)
             .ThenBy(material => material.MaterialPathId)
             .ToList();
@@ -85,7 +94,7 @@ public sealed class AssetStudioBundleParser
             BundlePath: input.ResolvedBundlePath,
             PartKind: input.PartKind.ToString(),
             AssetsFileCount: assetsFileCount,
-            ObjectCount: objects.Count,
+            ObjectCount: allObjects.Count,
             ObjectTypeCounts: objectTypeCounts,
             Roots: roots,
             BoneNames: boneNames,
@@ -97,7 +106,11 @@ public sealed class AssetStudioBundleParser
         );
     }
 
-    private static MaterialInventory BuildMaterialInventory(Material material, long materialFileId)
+    private static MaterialInventory BuildMaterialInventory(
+        Material material,
+        long materialFileId,
+        string materialKey
+    )
     {
         var shaderName = material.m_Shader.TryGet(out Shader shader) ? shader.m_Name : null;
         var slots = material.m_SavedProperties?.m_TexEnvs?
@@ -131,43 +144,13 @@ public sealed class AssetStudioBundleParser
         return new MaterialInventory(
             MaterialFileId: materialFileId,
             MaterialPathId: material.m_PathID,
-            MaterialKey: MaterialIdentityLookup.BuildMaterialKey(materialFileId, material.m_PathID),
+            MaterialKey: materialKey,
             Name: material.m_Name,
             ShaderName: shaderName,
             TextureSlots: slots,
             ColorProperties: colorProperties,
             FloatProperties: floatProperties
         );
-    }
-
-    private static IReadOnlyDictionary<long, long> BuildMaterialFileIdIndex(
-        IReadOnlyList<RenderMeshInventory> skinnedMeshes,
-        IReadOnlyList<RenderMeshInventory> staticMeshes
-    )
-    {
-        return skinnedMeshes
-            .Concat(staticMeshes)
-            .SelectMany(mesh => mesh.MaterialSlots)
-            .Where(slot => slot.MaterialPathId != 0)
-            .GroupBy(slot => slot.MaterialPathId)
-            .ToDictionary(
-                group => group.Key,
-                group =>
-                {
-                    var fileIds = group
-                        .Select(slot => slot.MaterialFileId)
-                        .Distinct()
-                        .OrderBy(fileId => fileId)
-                        .ToList();
-                    if (fileIds.Count > 1)
-                    {
-                        throw new InvalidOperationException(
-                            $"Material pathId {group.Key} is referenced through multiple fileIds: {string.Join(", ", fileIds)}."
-                        );
-                    }
-                    return fileIds[0];
-                }
-            );
     }
 
     private static RenderMeshInventory BuildSkinnedMeshInventory(GameObject gameObject)
@@ -232,13 +215,18 @@ public sealed class AssetStudioBundleParser
         return materials
             .Select((ptr, index) =>
             {
-                var name = ptr.TryGet(out Material material) ? material.m_Name : null;
+                var hasMaterial = ptr.TryGet(out Material material);
+                var name = hasMaterial ? material.m_Name : null;
+                var materialKey = MaterialIdentityLookup.BuildMaterialKey(ptr.m_FileID, ptr.m_PathID);
                 return new RenderMaterialSlotInventory(
                     SlotIndex: index,
                     MaterialFileId: ptr.m_FileID,
                     MaterialPathId: ptr.m_PathID,
-                    MaterialKey: MaterialIdentityLookup.BuildMaterialKey(ptr.m_FileID, ptr.m_PathID),
-                    MaterialName: name
+                    MaterialKey: materialKey,
+                    MaterialName: name,
+                    ResolvedMaterial: hasMaterial && ptr.m_PathID != 0
+                        ? BuildMaterialInventory(material, ptr.m_FileID, materialKey)
+                        : null
                 );
             })
             .ToList();

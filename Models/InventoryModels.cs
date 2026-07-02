@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace PjskBundle2Parts.Models;
 
 public sealed record TextureSlotInventory(
@@ -34,7 +36,8 @@ public sealed record RenderMaterialSlotInventory(
     long MaterialFileId,
     long MaterialPathId,
     string MaterialKey,
-    string? MaterialName
+    string? MaterialName,
+    [property: JsonIgnore] MaterialInventory? ResolvedMaterial = null
 );
 
 public sealed record RenderMeshInventory(

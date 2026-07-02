@@ -26,7 +26,7 @@ public sealed class SpringBoneExporter
 
     public SpringBoneExport Export(ResolvedBundleInput input)
     {
-        using var readableBundle = new SekaiBundleDecryptor().PrepareReadableBundle(input.ResolvedBundlePath);
+        using var readableBundle = new SekaiBundleDecryptor().PrepareReadableWorkspace(input.ResolvedBundlePath, new[] { input.ResolvedBundlePath });
         var manager = new AssetsManager
         {
             MeshLazyLoad = false,
@@ -40,12 +40,13 @@ public sealed class SpringBoneExporter
             ClassIDType.MeshRenderer,
             ClassIDType.SkinnedMeshRenderer
         );
-        manager.LoadFilesAndFolders(readableBundle.Path);
+        manager.LoadFilesAndFolders(readableBundle.DirectoryPath);
 
         var objects = manager.AssetsFileList
             .SelectMany(file => file.Objects)
             .ToList();
-        return Export(input, objects);
+        var primaryObjects = AssetStudioObjectFilter.SelectPrimaryObjects(objects, readableBundle.PrimaryFileName);
+        return Export(input, primaryObjects);
     }
 
     public SpringBoneExport Export(ResolvedBundleInput input, IReadOnlyList<Object> objects)

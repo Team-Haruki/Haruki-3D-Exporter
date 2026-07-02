@@ -22,6 +22,62 @@ public sealed class SekaiBundleDecryptor
         return new DecryptedBundleHandle(bundlePath, deleteOnDispose: false);
     }
 
+    public DecryptedBundleWorkspace PrepareReadableWorkspace(string primaryBundlePath, IEnumerable<string> bundlePaths)
+    {
+        var normalizedPrimary = Path.GetFullPath(primaryBundlePath);
+        var sourcePaths = bundlePaths
+            .Select(Path.GetFullPath)
+            .Where(File.Exists)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(path => string.Equals(path, normalizedPrimary, StringComparison.Ordinal) ? 0 : 1)
+            .ThenBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (!sourcePaths.Contains(normalizedPrimary, StringComparer.Ordinal))
+        {
+            sourcePaths.Insert(0, normalizedPrimary);
+        }
+
+        var workspacePath = Path.Combine(Path.GetTempPath(), $"pjskbundle2parts.workspace.{Guid.NewGuid():N}");
+        Directory.CreateDirectory(workspacePath);
+
+        try
+        {
+            foreach (var sourcePath in sourcePaths)
+            {
+                var targetPath = Path.Combine(workspacePath, Path.GetFileName(sourcePath));
+                PrepareReadableBundleFile(sourcePath, targetPath);
+            }
+        }
+        catch
+        {
+            TryDeleteDirectory(workspacePath);
+            throw;
+        }
+
+        return new DecryptedBundleWorkspace(
+            workspacePath,
+            Path.Combine(workspacePath, Path.GetFileName(normalizedPrimary))
+        );
+    }
+
+    private void PrepareReadableBundleFile(string sourcePath, string targetPath)
+    {
+        using var source = File.Open(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        Span<byte> header = stackalloc byte[4];
+        var read = source.Read(header);
+        source.Position = 0;
+
+        if (read == 4 && header.SequenceEqual(SekaiMagic))
+        {
+            using var target = File.Create(targetPath);
+            DecryptTo(source, target);
+            return;
+        }
+
+        File.Copy(sourcePath, targetPath, overwrite: true);
+    }
+
     private static void DecryptTo(Stream source, Stream target)
     {
         Span<byte> magic = stackalloc byte[4];
@@ -60,6 +116,49 @@ public sealed class SekaiBundleDecryptor
         var fileName = Path.GetFileName(originalPath);
         var tempName = $".pjskbundle2parts.{Guid.NewGuid():N}.{fileName}";
         return Path.Combine(directory, tempName);
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch
+        {
+            // Keep best-effort cleanup silent for converter probing.
+        }
+    }
+}
+
+public sealed class DecryptedBundleWorkspace : IDisposable
+{
+    public string DirectoryPath { get; }
+    public string PrimaryPath { get; }
+    public string PrimaryFileName => Path.GetFileName(PrimaryPath);
+
+    public DecryptedBundleWorkspace(string directoryPath, string primaryPath)
+    {
+        DirectoryPath = directoryPath;
+        PrimaryPath = primaryPath;
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            if (Directory.Exists(DirectoryPath))
+            {
+                Directory.Delete(DirectoryPath, recursive: true);
+            }
+        }
+        catch
+        {
+            // Keep best-effort cleanup silent for converter probing.
+        }
     }
 }
 

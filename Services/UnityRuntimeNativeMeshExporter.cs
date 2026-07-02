@@ -758,22 +758,23 @@ public sealed class UnityRuntimeNativeMeshExporter
                 : throw new InvalidOperationException(
                     $"Renderer {renderer.PathId} submesh {submesh.slotIndex} has no material path id."
                 );
-            if (materialPathId == 0)
-            {
-                throw new InvalidOperationException(
-                    $"Renderer {renderer.PathId} submesh {submesh.slotIndex} has an empty material path id."
-                );
-            }
             var materialFileId = submesh.slotIndex < renderer.MaterialFileIds.Count
                 ? renderer.MaterialFileIds[submesh.slotIndex]
                 : throw new InvalidOperationException(
                     $"Renderer {renderer.PathId} submesh {submesh.slotIndex} has no material file id."
                 );
+            var materialIdentity = RuntimeMaterialIdentityResolver.Resolve(
+                partKind,
+                submesh.slotIndex,
+                materialFileId,
+                materialPathId,
+                submesh.value.Material
+            );
             submeshes.Add(new PjskUnityRuntimeNativeSubmesh(
                 SlotIndex: submesh.slotIndex,
-                MaterialKey: MaterialIdentityLookup.BuildMaterialKey(materialFileId, materialPathId),
-                MaterialFileId: materialFileId,
-                MaterialPathId: materialPathId,
+                MaterialKey: materialIdentity.MaterialKey,
+                MaterialFileId: materialIdentity.MaterialFileId,
+                MaterialPathId: materialIdentity.MaterialPathId,
                 MaterialName: submesh.value.Material,
                 Start: indexCursor,
                 Count: indices.Count,

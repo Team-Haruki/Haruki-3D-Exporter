@@ -12,7 +12,7 @@ public sealed class AssetStudioImportedModelFactory
 
     public IImported CreateImportedModel(ResolvedBundleInput input, string? preferredRootOverride = null)
     {
-        using var readableBundle = new SekaiBundleDecryptor().PrepareReadableBundle(input.ResolvedBundlePath);
+        using var readableBundle = new SekaiBundleDecryptor().PrepareReadableWorkspace(input.ResolvedBundlePath, new[] { input.ResolvedBundlePath });
         var manager = new AssetsManager
         {
             MeshLazyLoad = false,
@@ -24,10 +24,13 @@ public sealed class AssetStudioImportedModelFactory
             ClassIDType.Mesh,
             ClassIDType.Texture2D
         );
-        manager.LoadFilesAndFolders(readableBundle.Path);
+        manager.LoadFilesAndFolders(readableBundle.DirectoryPath);
 
-        var rootGameObjects = manager.AssetsFileList
+        var objects = manager.AssetsFileList
             .SelectMany(file => file.Objects)
+            .ToList();
+        var primaryObjects = AssetStudioObjectFilter.SelectPrimaryObjects(objects, readableBundle.PrimaryFileName);
+        var rootGameObjects = primaryObjects
             .OfType<GameObject>()
             .Where(gameObject => gameObject.m_Transform != null && gameObject.m_Transform.m_Father.IsNull)
             .ToList();
