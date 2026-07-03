@@ -243,14 +243,19 @@ public sealed class CostumeRegistryExporter
             {
                 var warnings = new List<string>();
                 var registryPartType = ResolveRegistryPartType(costume.PartType, model);
-                var bundlePath = ResolveBundlePath(costume, model, characterById, assetRoot, warnings);
-                var colorPath = ResolveColorVariationBundlePath(costume, model, characterById, assetRoot, warnings);
+                var headOptional = registryPartType == "head_optional"
+                    ? ResolveHeadOptionalDescriptor(costume, model)
+                    : null;
+                var bundlePath = ResolveBundlePath(costume, model, headOptional, characterById, assetRoot, warnings);
+                var colorPath = ResolveColorVariationBundlePath(costume, model, headOptional, characterById, assetRoot, warnings);
                 var sourceIdentity = BuildSourceIdentity(registryPartType, bundlePath, colorPath, assetRoot);
                 var packagePath = sourceIdentity?.PackagePath ?? BuildPackagePath(registryPartType, costume.Id, model.Unit);
-                var status = bundlePath is null
+                var status = headOptional?.IsEmptySlot == true
+                    ? "empty"
+                    : bundlePath is null
                     ? "missing"
                     : "planned";
-                entries.Add(BuildPartEntry(costume, model, bundlePath, colorPath, sourceIdentity, ResolveAttachNode(model), packagePath, status, warnings));
+                entries.Add(BuildPartEntry(costume, model, bundlePath, colorPath, sourceIdentity, headOptional?.AttachNode ?? ResolveAttachNode(model), packagePath, status, warnings));
             }
         }
 
@@ -587,24 +592,25 @@ public sealed class CostumeRegistryExporter
     private static string? ResolveBundlePath(
         Costume3dMaster costume,
         Costume3dModelMaster model,
+        HeadOptionalDescriptor? headOptional,
         IReadOnlyDictionary<int, GameCharacterMaster> characterById,
         string assetRoot,
         List<string> warnings
     )
     {
-        if (string.IsNullOrWhiteSpace(model.AssetbundleName))
-        {
-            warnings.Add("missing model assetbundleName");
-            return null;
-        }
-
         return costume.PartType switch
         {
-            "body" => ResolveBodyBundlePath(model.AssetbundleName!, costume.CharacterId, characterById, assetRoot, warnings),
-            "hair" => ResolveFaceBundlePath(model.AssetbundleName!, assetRoot),
+            "body" => RequireModelAssetbundleName(model, warnings) is { } assetbundleName
+                ? ResolveBodyBundlePath(assetbundleName, costume.CharacterId, characterById, assetRoot, warnings)
+                : null,
+            "hair" => RequireModelAssetbundleName(model, warnings) is { } assetbundleName
+                ? ResolveFaceBundlePath(assetbundleName, assetRoot)
+                : null,
             "head" => IsAccessoryHeadCostume(model.HeadCostume3dAssetbundleType)
-                ? ResolveHeadOptionalBundlePath(model, assetRoot, warnings)
-                : ResolveFaceBundlePath(model.AssetbundleName!, assetRoot),
+                ? ResolveHeadOptionalBundlePath(headOptional ?? ResolveHeadOptionalDescriptor(costume, model), assetRoot, warnings)
+                : RequireModelAssetbundleName(model, warnings) is { } assetbundleName
+                    ? ResolveFaceBundlePath(assetbundleName, assetRoot)
+                    : null,
             _ => null,
         };
     }
@@ -612,6 +618,7 @@ public sealed class CostumeRegistryExporter
     private static string? ResolveColorVariationBundlePath(
         Costume3dMaster costume,
         Costume3dModelMaster model,
+        HeadOptionalDescriptor? headOptional,
         IReadOnlyDictionary<int, GameCharacterMaster> characterById,
         string assetRoot,
         List<string> warnings
@@ -622,18 +629,12 @@ public sealed class CostumeRegistryExporter
             return null;
         }
 
-        if (string.IsNullOrWhiteSpace(model.AssetbundleName))
-        {
-            warnings.Add("colorAssetbundleName exists but model assetbundleName is missing");
-            return null;
-        }
-
         var path = costume.PartType switch
         {
             "body" => ResolveBodyColorVariationPath(model, costume.CharacterId, characterById, assetRoot),
             "hair" => ResolveFaceColorVariationPath(model, assetRoot),
             "head" => IsAccessoryHeadCostume(model.HeadCostume3dAssetbundleType)
-                ? ResolveHeadOptionalColorVariationPath(model, assetRoot, warnings)
+                ? ResolveHeadOptionalColorVariationPath(headOptional ?? ResolveHeadOptionalDescriptor(costume, model), model.ColorAssetbundleName, assetRoot, warnings)
                 : ResolveFaceColorVariationPath(model, assetRoot),
             _ => null,
         };
@@ -672,13 +673,16 @@ public sealed class CostumeRegistryExporter
     }
 
     private static string? ResolveHeadOptionalBundlePath(
-        Costume3dModelMaster model,
+        HeadOptionalDescriptor descriptor,
         string assetRoot,
         List<string> warnings
     )
     {
-        var (accessoryId, attachNode) = ResolveAccessoryIdAndAttachNode(model);
-        if (string.IsNullOrWhiteSpace(accessoryId) || string.IsNullOrWhiteSpace(attachNode))
+        if (descriptor.IsEmptySlot)
+        {
+            return null;
+        }
+        if (string.IsNullOrWhiteSpace(descriptor.AccessoryId) || string.IsNullOrWhiteSpace(descriptor.AttachNode))
         {
             warnings.Add("head_only row has no accessory id or attach node");
             return null;
@@ -686,11 +690,11 @@ public sealed class CostumeRegistryExporter
 
         var path = ResolveExistingBundlePath(
             ResolveAssetBaseDirectoryCandidates(assetRoot, "head_optional"),
-            Path.Combine(accessoryId, $"{attachNode}.bundle")
+            Path.Combine(descriptor.AccessoryId, $"{descriptor.AttachNode}.bundle")
         );
         if (path is null)
         {
-            warnings.Add($"head_optional bundle not found: {accessoryId}/{attachNode}.bundle");
+            warnings.Add($"head_optional bundle not found: {descriptor.AccessoryId}/{descriptor.AttachNode}.bundle");
         }
         return path;
     }
@@ -702,6 +706,10 @@ public sealed class CostumeRegistryExporter
         string assetRoot
     )
     {
+        if (string.IsNullOrWhiteSpace(model.AssetbundleName))
+        {
+            return null;
+        }
         if (!characterById.TryGetValue(characterId, out var character))
         {
             return null;
@@ -721,6 +729,11 @@ public sealed class CostumeRegistryExporter
 
     private static string? ResolveFaceColorVariationPath(Costume3dModelMaster model, string assetRoot)
     {
+        if (string.IsNullOrWhiteSpace(model.AssetbundleName))
+        {
+            return null;
+        }
+
         var normalizedName = model.AssetbundleName!.Replace('\\', '/').Trim('/');
         return ResolveExistingBundlePath(
             ResolveColorVariationBaseDirectoryCandidates(assetRoot, "face"),
@@ -729,41 +742,51 @@ public sealed class CostumeRegistryExporter
     }
 
     private static string? ResolveHeadOptionalColorVariationPath(
-        Costume3dModelMaster model,
+        HeadOptionalDescriptor descriptor,
+        string? colorAssetbundleName,
         string assetRoot,
         List<string> warnings
     )
     {
-        var (accessoryId, attachNode) = ResolveAccessoryIdAndAttachNode(model);
-        if (string.IsNullOrWhiteSpace(accessoryId) || string.IsNullOrWhiteSpace(attachNode))
+        if (descriptor.IsEmptySlot)
+        {
+            return null;
+        }
+        if (string.IsNullOrWhiteSpace(descriptor.AccessoryId) || string.IsNullOrWhiteSpace(descriptor.AttachNode))
         {
             return null;
         }
 
         var path = ResolveExistingBundlePath(
             ResolveColorVariationBaseDirectoryCandidates(assetRoot, "head_optional"),
-            Path.Combine(accessoryId, attachNode, $"{model.ColorAssetbundleName}.bundle")
+            Path.Combine(descriptor.AccessoryId, descriptor.AttachNode, $"{colorAssetbundleName}.bundle")
         );
         if (path is null)
         {
-            warnings.Add($"head_optional color variation bundle not found: {accessoryId}/{attachNode}/{model.ColorAssetbundleName}.bundle");
+            warnings.Add($"head_optional color variation bundle not found: {descriptor.AccessoryId}/{descriptor.AttachNode}/{colorAssetbundleName}.bundle");
         }
         return path;
     }
 
-    private static (string? AccessoryId, string? AttachNode) ResolveAccessoryIdAndAttachNode(Costume3dModelMaster model)
+    private static HeadOptionalDescriptor ResolveHeadOptionalDescriptor(Costume3dMaster? costume, Costume3dModelMaster model)
     {
-        var normalizedName = model.AssetbundleName?.Replace('\\', '/').Trim('/') ?? string.Empty;
+        var normalizedName = FirstNonEmpty(
+            model.AssetbundleName,
+            costume?.AssetbundleName,
+            model.ThumbnailAssetbundleName
+        )?.Replace('\\', '/').Trim('/') ?? string.Empty;
         var parts = normalizedName.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0)
         {
-            return (null, null);
+            return new HeadOptionalDescriptor(null, null, null, false);
         }
 
         var attachNode = !string.IsNullOrWhiteSpace(model.Part)
             ? model.Part
             : parts.Length > 1 ? parts[1] : null;
-        return (parts[0], attachNode);
+        var isEmptySlot = string.IsNullOrWhiteSpace(attachNode) &&
+            Path.GetFileName(normalizedName).StartsWith("head_default_", StringComparison.OrdinalIgnoreCase);
+        return new HeadOptionalDescriptor(normalizedName, parts[0], attachNode, isEmptySlot);
     }
 
     private static string? ResolveAttachNode(Costume3dModelMaster? model)
@@ -772,8 +795,7 @@ public sealed class CostumeRegistryExporter
         {
             return null;
         }
-
-        return ResolveAccessoryIdAndAttachNode(model).AttachNode;
+        return ResolveHeadOptionalDescriptor(null, model).AttachNode;
     }
 
     private static Dictionary<string, Costume3dModelPatternMaster> NormalizePatterns(
@@ -918,6 +940,30 @@ public sealed class CostumeRegistryExporter
             string.Equals(type, "head_back", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static string? RequireModelAssetbundleName(Costume3dModelMaster model, List<string> warnings)
+    {
+        if (!string.IsNullOrWhiteSpace(model.AssetbundleName))
+        {
+            return model.AssetbundleName!;
+        }
+
+        warnings.Add("missing model assetbundleName");
+        return null;
+    }
+
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
     private static string ToSystemPath(string assetbundleName)
     {
         return assetbundleName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
@@ -944,10 +990,11 @@ public sealed class CostumeRegistryExporter
     private static void PrintSummary(CostumeRegistryExport export, string outputDirectory)
     {
         var missingParts = export.PartRegistry.Entries.Count(entry => entry.Status == "missing");
+        var emptyParts = export.PartRegistry.Entries.Count(entry => entry.Status == "empty");
         var patternWarnings = export.HeadHairCompatibility.Rules.Count(entry => entry.Warnings.Count > 0);
         Console.WriteLine($"Wrote costume registries to {outputDirectory}");
         Console.WriteLine($"  character3d presets: {export.Character3dIndex.Entries.Count}");
-        Console.WriteLine($"  part entries: {export.PartRegistry.Entries.Count} ({missingParts} missing metadata)");
+        Console.WriteLine($"  part entries: {export.PartRegistry.Entries.Count} ({missingParts} missing metadata, {emptyParts} empty slots)");
         Console.WriteLine($"  part source packages: {export.PartSourceMap.Entries.Count}");
         Console.WriteLine($"  head/hair rules: {export.HeadHairCompatibility.Rules.Count} ({patternWarnings} with warnings)");
         Console.WriteLine($"  card unlock entries: {export.CardCostumeUnlocks.Entries.Count}");
@@ -958,4 +1005,11 @@ internal sealed record PartSourceIdentity(
     string BaseSourceKey,
     string SourceKey,
     string PackagePath
+);
+
+internal sealed record HeadOptionalDescriptor(
+    string? AssetbundleName,
+    string? AccessoryId,
+    string? AttachNode,
+    bool IsEmptySlot
 );

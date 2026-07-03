@@ -227,9 +227,37 @@ WriteJsonFile(Path.Combine(registryMasterDir, "costume3ds.json"), new[]
         costume3dRarity = "rarity_4",
         assetbundleName = "unused",
         howToObtain = "test"
+    },
+    new
+    {
+        id = 11009,
+        costume3dGroupId = 11000,
+        partType = "head",
+        characterId = 21,
+        colorId = 1,
+        colorName = "test",
+        name = "fallback accessory",
+        costume3dType = "normal",
+        costume3dRarity = "rarity_4",
+        assetbundleName = "0020/a04",
+        howToObtain = "test"
+    },
+    new
+    {
+        id = 1,
+        costume3dGroupId = 1,
+        partType = "head",
+        characterId = 1,
+        colorId = 1,
+        colorName = "default",
+        name = "empty accessory slot",
+        costume3dType = "normal",
+        costume3dRarity = "rarity_1",
+        assetbundleName = "head_default_01",
+        howToObtain = "default"
     }
 });
-WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModels.json"), new[]
+WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModels.json"), new object[]
 {
     new
     {
@@ -240,6 +268,26 @@ WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModels.json"), new[]
         colorAssetbundleName = "01",
         part = "a03",
         thumbnailAssetbundleName = "unused"
+    },
+    new
+    {
+        costume3dId = 11009,
+        unit = "light_sound",
+        assetbundleName = (string?)null,
+        headCostume3dAssetbundleType = "head_only",
+        colorAssetbundleName = "02",
+        part = "a04",
+        thumbnailAssetbundleName = "unused"
+    },
+    new
+    {
+        costume3dId = 1,
+        unit = "light_sound",
+        assetbundleName = (string?)null,
+        headCostume3dAssetbundleType = "head_only",
+        colorAssetbundleName = (string?)null,
+        part = (string?)null,
+        thumbnailAssetbundleName = "head_default_01"
     }
 });
 WriteJsonFile(Path.Combine(registryMasterDir, "gameCharacters.json"), Array.Empty<object>());
@@ -268,16 +316,51 @@ var legacyAccessoryColor = Path.Combine(
     "a03",
     "01.bundle"
 );
+var fallbackAccessory = Path.Combine(
+    registryAssetRoot,
+    "live_pv",
+    "model",
+    "characterv2",
+    "head_optional",
+    "0020",
+    "a04.bundle"
+);
+var fallbackAccessoryColor = Path.Combine(
+    registryAssetRoot,
+    "live_pv",
+    "model",
+    "characterv2",
+    "color_variation",
+    "head_optional",
+    "0020",
+    "a04",
+    "02.bundle"
+);
 Directory.CreateDirectory(Path.GetDirectoryName(legacyAccessory)!);
 Directory.CreateDirectory(Path.GetDirectoryName(legacyAccessoryColor)!);
+Directory.CreateDirectory(Path.GetDirectoryName(fallbackAccessory)!);
+Directory.CreateDirectory(Path.GetDirectoryName(fallbackAccessoryColor)!);
 File.WriteAllBytes(legacyAccessory, new byte[] { 1 });
 File.WriteAllBytes(legacyAccessoryColor, new byte[] { 2 });
+File.WriteAllBytes(fallbackAccessory, new byte[] { 3 });
+File.WriteAllBytes(fallbackAccessoryColor, new byte[] { 4 });
 var registryExport = new CostumeRegistryExporter().ExportInMemory(registryMasterDir, registryAssetRoot);
 var legacyAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001);
 Expect(legacyAccessoryEntry.PartType == "head_optional", "head_only registry rows are exported as head_optional");
 Expect(legacyAccessoryEntry.BundlePath == legacyAccessory, "head_optional registry resolves legacy character base bundle");
 Expect(legacyAccessoryEntry.ColorVariationBundlePath == legacyAccessoryColor, "head_optional registry resolves legacy character color variation bundle");
 Expect(legacyAccessoryEntry.PackagePath.StartsWith("parts/_sources/head_optional/"), "head_optional registry writes shared source package path");
+var fallbackAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11009);
+Expect(fallbackAccessoryEntry.Status == "planned", "head_optional fallback accessory is planned");
+Expect(fallbackAccessoryEntry.BundlePath == fallbackAccessory, "head_optional registry resolves costume assetbundleName fallback");
+Expect(fallbackAccessoryEntry.ColorVariationBundlePath == fallbackAccessoryColor, "head_optional registry resolves fallback color variation");
+Expect(fallbackAccessoryEntry.AttachNode == "a04", "head_optional fallback accessory keeps attach node");
+var emptyAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 1);
+Expect(emptyAccessoryEntry.PartType == "head_optional", "empty head_default slot is exported as head_optional");
+Expect(emptyAccessoryEntry.Status == "empty", "empty head_default slot is a valid empty part");
+Expect(emptyAccessoryEntry.BundlePath is null, "empty head_default slot does not point at a bundle");
+Expect(emptyAccessoryEntry.SourceKey is null, "empty head_default slot does not create a source package");
+Expect(emptyAccessoryEntry.Warnings.Count == 0, "empty head_default slot is not a warning");
 
 PartMaterialMetadataSmoke.Run();
 
