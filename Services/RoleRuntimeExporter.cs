@@ -5,6 +5,16 @@ namespace PjskBundle2Parts.Services;
 
 public sealed class RoleRuntimeExporter
 {
+    private static readonly string[] MikuUnitRoles =
+    [
+        "piapro",
+        "idol",
+        "light_sound",
+        "street",
+        "theme_park",
+        "school_refusal",
+    ];
+
     private static readonly JsonSerializerOptions ReadJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -34,14 +44,79 @@ public sealed class RoleRuntimeExporter
         string runtimeJsonOutput = RuntimeJsonWriter.Gzip
     )
     {
-        var ids = character3dIds.Count == 0
-            ? LoadAllCharacter3dIds(masterDirectory)
-            : character3dIds;
-        return ids
-            .Distinct()
-            .OrderBy(id => id)
+        return ResolveExportCharacter3dIds(masterDirectory, character3dIds)
             .Select(id => ExportOne(masterDirectory, assetRoot, outputDirectory, id, motionPath, runtimeJsonOutput))
             .ToList();
+    }
+
+    public static IReadOnlyList<int> ResolveExportCharacter3dIds(
+        string masterDirectory,
+        IReadOnlyList<int> character3dIds
+    )
+    {
+        return character3dIds.Count == 0
+            ? LoadRepresentativeRoleCharacter3dIds(masterDirectory)
+            : character3dIds
+                .Distinct()
+                .OrderBy(id => id)
+                .ToList();
+    }
+
+    private static IReadOnlyList<int> LoadRepresentativeRoleCharacter3dIds(string masterDirectory)
+    {
+        var roleKeys = LoadCanonicalRoleKeys(masterDirectory);
+        var character3dsByRole = LoadAllCharacter3ds(masterDirectory)
+            .GroupBy(entry => BuildRoleKey(entry.CharacterId, entry.Unit), StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderBy(entry => entry.Id).First(),
+                StringComparer.Ordinal
+            );
+
+        return roleKeys
+            .Select(key => character3dsByRole.TryGetValue(key, out var entry) ? entry.Id : (int?)null)
+            .OfType<int>()
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> LoadCanonicalRoleKeys(string masterDirectory)
+    {
+        var path = Path.Combine(Path.GetFullPath(masterDirectory), "gameCharacters.json");
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException($"Master file was not found: {path}");
+        }
+
+        using var stream = File.OpenRead(path);
+        var entries = JsonSerializer.Deserialize<IReadOnlyList<GameCharacterMaster>>(stream, ReadJsonOptions)
+            ?? throw new InvalidOperationException($"Failed to parse master file: {path}");
+        var keys = new List<string>();
+        foreach (var entry in entries.OrderBy(entry => entry.Id))
+        {
+            if (entry.Id == 21)
+            {
+                keys.AddRange(MikuUnitRoles.Select(unit => BuildRoleKey(entry.Id, unit)));
+                continue;
+            }
+
+            if (entry.Id >= 22 && entry.Id <= 26)
+            {
+                keys.Add(BuildRoleKey(entry.Id, "piapro"));
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(entry.Unit))
+            {
+                keys.Add(BuildRoleKey(entry.Id, entry.Unit));
+            }
+        }
+
+        return keys.Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    private static string BuildRoleKey(int characterId, string? unit)
+    {
+        return $"{characterId}|{unit ?? string.Empty}";
     }
 
     public RoleRuntimeExportResult ExportOne(
@@ -197,6 +272,11 @@ public sealed class RoleRuntimeExporter
 
     private static IReadOnlyList<int> LoadAllCharacter3dIds(string masterDirectory)
     {
+        return LoadAllCharacter3ds(masterDirectory).Select(entry => entry.Id).ToList();
+    }
+
+    private static IReadOnlyList<Character3dMaster> LoadAllCharacter3ds(string masterDirectory)
+    {
         var path = Path.Combine(Path.GetFullPath(masterDirectory), "character3ds.json");
         if (!File.Exists(path))
         {
@@ -206,6 +286,6 @@ public sealed class RoleRuntimeExporter
         using var stream = File.OpenRead(path);
         var entries = JsonSerializer.Deserialize<IReadOnlyList<Character3dMaster>>(stream, ReadJsonOptions)
             ?? throw new InvalidOperationException($"Failed to parse master file: {path}");
-        return entries.Select(entry => entry.Id).ToList();
+        return entries;
     }
 }

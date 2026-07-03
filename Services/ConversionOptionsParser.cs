@@ -22,9 +22,9 @@ public static class ConversionOptionsParser
         "  --asset-root points at the AssetBundles root containing live_pv/model/characterv2\n" +
         "  --emit-costume-registries writes character3d-index.json, parts/part-registry.json, parts/head-hair-compatibility.json, and parts/card-costume-unlocks.json\n" +
         "  --emit-part-packages writes one parts/<partType>/<costume3dId>/<unit>/part-runtime.json for runtime custom assembly\n" +
-        "  --emit-role-runtimes writes roles/<characterId>/<unit>/role-runtime.json with motion metadata; without --role-character3d-id it exports every character3ds row\n" +
+        "  --emit-role-runtimes writes roles/<characterId>/<unit>/role-runtime.json with motion metadata; without --role-character3d-id it exports one representative row per character+unit role\n" +
         "  --manifest records part package input file stamps for incremental --emit-part-packages runs\n" +
-        "  --part-package-process-concurrency runs full --emit-part-packages across N child exporter processes; 0 = auto CPU count\n" +
+        "  --part-package-process-concurrency runs role or full part exports across N workers; 0 = auto CPU count\n" +
         "  --part-package-workers and --part-package-core-count are aliases for --part-package-process-concurrency\n" +
         "  --part-package-shard-count and --part-package-shard-index run one deterministic package shard\n" +
         "  --assetstudio-log-level controls AssetStudio logs: warning, info, or debug\n" +

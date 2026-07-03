@@ -26,7 +26,10 @@ public sealed class SpringBoneExporter
 
     public SpringBoneExport Export(ResolvedBundleInput input)
     {
-        using var readableBundle = new SekaiBundleDecryptor().PrepareReadableWorkspace(input.ResolvedBundlePath, new[] { input.ResolvedBundlePath });
+        using var readableBundle = new SekaiBundleDecryptor().PrepareReadableWorkspace(
+            input.ResolvedBundlePath,
+            BundleDependencyResolver.ResolveLoadBundlePaths(input)
+        );
         var manager = new AssetsManager
         {
             MeshLazyLoad = false,

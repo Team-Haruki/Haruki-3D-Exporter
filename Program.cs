@@ -43,6 +43,11 @@ if (options.EmitRoleRuntimes)
 {
     try
     {
+        if (ResolvePartPackageProcessConcurrency(options) > 1)
+        {
+            return RunRoleRuntimeWorkers(options);
+        }
+
         var roleRuntimeExporter = new RoleRuntimeExporter();
         var results = roleRuntimeExporter.ExportMany(
             options.MasterDirectory!,
@@ -1057,6 +1062,65 @@ static int RunPartPackageWorkers(ConversionOptions options)
     Console.WriteLine($"Merged {workers} part package manifest shard(s): {manifestPath}");
     RunTextureCompactionIfEnabled(options);
     return 0;
+}
+
+static int RunRoleRuntimeWorkers(ConversionOptions options)
+{
+    var ids = RoleRuntimeExporter.ResolveExportCharacter3dIds(
+        options.MasterDirectory!,
+        options.RoleCharacter3dIds
+    );
+    var workers = Math.Min(ResolvePartPackageProcessConcurrency(options), ids.Count);
+    var shards = Enumerable.Range(0, workers)
+        .Select(_ => new List<int>())
+        .ToList();
+    for (var index = 0; index < ids.Count; index++)
+    {
+        shards[index % workers].Add(ids[index]);
+    }
+
+    var processes = new List<Process>();
+    for (var index = 0; index < workers; index++)
+    {
+        var arguments = new List<string>
+        {
+            "--emit-role-runtimes",
+            "--master", options.MasterDirectory!,
+            "--asset-root", options.AssetRoot!,
+            "--out", options.OutputDirectory,
+            "--part-package-process-concurrency", "1",
+            "--assetstudio-log-level", options.AssetStudioLogLevel,
+            "--runtime-json-output", options.RuntimeJsonOutput,
+        };
+        if (!string.IsNullOrWhiteSpace(options.MotionPath))
+        {
+            arguments.Add("--motion");
+            arguments.Add(options.MotionPath!);
+        }
+        foreach (var id in shards[index])
+        {
+            arguments.Add("--role-character3d-id");
+            arguments.Add(id.ToString(CultureInfo.InvariantCulture));
+        }
+
+        var process = Process.Start(CreateCurrentProcessStartInfo(arguments))
+            ?? throw new InvalidOperationException($"Failed to start role runtime worker {index}.");
+        processes.Add(process);
+        Console.WriteLine($"Started role runtime worker {index + 1}/{workers}: pid {process.Id}, {shards[index].Count} role(s)");
+    }
+
+    var failed = false;
+    foreach (var process in processes)
+    {
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+        {
+            Console.Error.WriteLine($"Role runtime worker pid {process.Id} exited with code {process.ExitCode}.");
+            failed = true;
+        }
+    }
+
+    return failed ? 2 : 0;
 }
 
 static void RunTextureCompactionIfEnabled(ConversionOptions options)

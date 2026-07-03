@@ -9,7 +9,9 @@ public sealed record GameCharacterMaster(
     [property: JsonPropertyName("height")] float Height,
     [property: JsonPropertyName("figure")] string Figure,
     [property: JsonPropertyName("breastSize")] string BreastSize,
-    [property: JsonPropertyName("modelName")] string ModelName
+    [property: JsonPropertyName("modelName")] string ModelName,
+    [property: JsonPropertyName("unit")] string? Unit,
+    [property: JsonPropertyName("supportUnitType")] string? SupportUnitType
 );
 
 public sealed record Character3dMaster(

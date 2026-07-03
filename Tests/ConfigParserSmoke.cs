@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.IO.Compression;
 using PjskBundle2Parts.Tests;
+using PjskBundle2Parts.Models;
 using PjskBundle2Parts.Services;
 
 var tempDir = Path.Combine(Path.GetTempPath(), $"haruki-exporter-config-test-{Guid.NewGuid():N}");
@@ -65,6 +66,52 @@ Expect(options.RuntimeJsonOutput == "both", "runtime JSON output comes from conf
 Expect(options.CompactTextures, "texture compaction comes from config");
 Expect(options.PngOptimizeMode == "off", "PNG optimization mode comes from config");
 Expect(options.TextureCompactWorkers == 2, "texture compaction worker count comes from config");
+
+var dependencyRoot = Path.Combine(tempDir, "dependencies", "face", "11");
+Directory.CreateDirectory(dependencyRoot);
+foreach (var fileName in new[] { "0403.bundle", "0403a.bundle", "0403b.bundle", "0403c.bundle", "0403n.bundle", "0509.bundle" })
+{
+    File.WriteAllText(Path.Combine(dependencyRoot, fileName), fileName);
+}
+var headInput = new ResolvedBundleInput(
+    BundlePartKind.Head,
+    Path.Combine(dependencyRoot, "0403c.bundle"),
+    Path.Combine(dependencyRoot, "0403c.bundle"),
+    "11",
+    "0403c"
+);
+var headDependencies = BundleDependencyResolver.ResolveLoadBundlePaths(headInput)
+    .Select(Path.GetFileName)
+    .ToArray();
+Expect(
+    headDependencies.SequenceEqual(new[] { "0403c.bundle", "0403.bundle", "0403a.bundle", "0403b.bundle", "0403n.bundle" }),
+    "head dependency resolver loads primary bundle and same numeric family only"
+);
+var fullHeadDependencies = BundleDependencyResolver.ResolveLoadBundlePaths(headInput, BundleLoadDependencyMode.FullDirectory)
+    .Select(Path.GetFileName)
+    .ToArray();
+Expect(fullHeadDependencies.Contains("0509.bundle"), "full-directory dependency resolver includes unrelated sibling bundles");
+
+var headAllRoot = Path.Combine(tempDir, "dependencies", "face", "12");
+Directory.CreateDirectory(headAllRoot);
+foreach (var fileName in new[] { "0001.bundle", "0001_head_all.bundle", "0001_mc.bundle", "0101.bundle" })
+{
+    File.WriteAllText(Path.Combine(headAllRoot, fileName), fileName);
+}
+var headAllInput = new ResolvedBundleInput(
+    BundlePartKind.Head,
+    Path.Combine(headAllRoot, "0001_head_all.bundle"),
+    Path.Combine(headAllRoot, "0001_head_all.bundle"),
+    "12",
+    "0001_head_all"
+);
+var headAllDependencies = BundleDependencyResolver.ResolveLoadBundlePaths(headAllInput)
+    .Select(Path.GetFileName)
+    .ToArray();
+Expect(
+    headAllDependencies.SequenceEqual(new[] { "0001_head_all.bundle", "0001.bundle", "0001_mc.bundle" }),
+    "head dependency resolver loads underscore siblings for head_all bundles"
+);
 
 var workerParsed = ConversionOptionsParser.Parse(new[]
 {
@@ -365,8 +412,12 @@ Expect(emptyAccessoryEntry.Warnings.Count == 0, "empty head_default slot is not 
 PartMaterialMetadataSmoke.Run();
 
 var repoRoot = FindRepoRoot();
+var programSource = File.ReadAllText(Path.Combine(repoRoot, "Program.cs"));
 var partPackageExporterSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "PartPackageExporter.cs"));
 var roleRuntimeExporterSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "RoleRuntimeExporter.cs"));
+var assetStudioLoadedBundleSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "AssetStudioLoadedBundle.cs"));
+var bundleDependencyResolverSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "BundleDependencyResolver.cs"));
+var materialIdentityLookupSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "MaterialIdentityLookup.cs"));
 Expect(partPackageExporterSource.Contains("name.Contains(\"eyelash\")"), "part package exporter classifies eyelash separately");
 Expect(partPackageExporterSource.Contains("return \"eyelash\""), "part package exporter returns eyelash material kind");
 Expect(partPackageExporterSource.Contains("name.Contains(\"eyebrow\")"), "part package exporter classifies eyebrow separately");
@@ -403,7 +454,12 @@ Expect(costumeRegistryExporterSource.Contains("\"model\", \"character\""), "regi
 Expect(partPackageExporterSource.Contains("SelectRepresentativePartEntries"), "part package exporter exports each shared source package once");
 Expect(partPackageExporterSource.Contains("GroupBy(entry => entry.PackagePath"), "part package exporter groups export work by package path");
 Expect(roleRuntimeExporterSource.Contains("ResolveDefaultCostumeSettingMotionPath"), "role runtime exporter auto-resolves costume_setting motion bundles");
-Expect(roleRuntimeExporterSource.Contains("LoadAllCharacter3dIds"), "role runtime exporter can export every character3d role by default");
+Expect(roleRuntimeExporterSource.Contains("LoadRepresentativeRoleCharacter3dIds"), "role runtime exporter exports one representative row per character+unit by default");
+Expect(roleRuntimeExporterSource.Contains("LoadCanonicalRoleKeys"), "role runtime exporter filters role output to canonical character+unit roles");
+Expect(roleRuntimeExporterSource.Contains("MikuUnitRoles"), "role runtime exporter keeps Miku unit variants");
+Expect(roleRuntimeExporterSource.Contains("entry.Id >= 22 && entry.Id <= 26"), "role runtime exporter keeps non-Miku virtual singers on piapro only");
+Expect(programSource.Contains("RunRoleRuntimeWorkers"), "program can export representative roles through worker processes");
+Expect(programSource.Contains("Started role runtime worker"), "role runtime worker mode reports process shards");
 Expect(roleRuntimeExporterSource.Contains("character\", \"motion\", \"costume_setting\""), "role runtime exporter scans character motion costume_setting directory");
 Expect(roleRuntimeExporterSource.Contains("\"light_sound\" => 27"), "role runtime exporter maps Leo/need Miku motion to 27_00");
 Expect(roleRuntimeExporterSource.Contains("\"idol\" => 28"), "role runtime exporter maps idol Miku motion to 28_00");
@@ -421,8 +477,14 @@ Expect(partPackageExporterSource.Contains("MaterialIdentityLookup"), "part packa
 Expect(!partPackageExporterSource.Contains("BuildMaterialMap"), "part package exporter no longer indexes materials by display name");
 Expect(partPackageExporterSource.Contains("part-export-error.json"), "part package exporter writes per-package errors during full export");
 Expect(partPackageExporterSource.Contains("Part package export skipped"), "part package exporter continues after per-package export failures");
+Expect(partPackageExporterSource.Contains("DeletePartExportError"), "part package exporter removes stale per-package errors after success");
 Expect(partPackageExporterSource.Contains("IsInShard"), "part package exporter can filter deterministic shards");
 Expect(partPackageExporterSource.Contains("public static void Merge"), "part package exporter can merge worker manifests");
+Expect(assetStudioLoadedBundleSource.Contains("BundleDependencyResolver.ResolveLoadBundlePaths"), "loaded bundle uses shared dependency resolver");
+Expect(bundleDependencyResolverSource.Contains("BundleLoadDependencyMode.FullDirectory"), "bundle dependency resolver supports full-directory fallback");
+Expect(partPackageExporterSource.Contains("MissingMaterialReferenceException"), "part package exporter retries missing material references");
+Expect(partPackageExporterSource.Contains("Recovered missing material reference"), "part package exporter records material dependency fallback warnings");
+Expect(materialIdentityLookupSource.Contains("MissingMaterialReferenceException"), "material lookup raises a typed missing reference error");
 
 static void Expect(bool condition, string message)
 {

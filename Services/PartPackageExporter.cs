@@ -60,6 +60,7 @@ public sealed class PartPackageExporter
                 if (manifest.CanSkip(entry.PackagePath, runtimeOutputPath, stamp) &&
                     RuntimePackageHasCharacterHeight(runtimePath, runtimeJsonOutput))
                 {
+                    DeletePartExportError(packageDirectory);
                     results.Add(new PartPackageExportResult(entry, runtimeOutputPath, Array.Empty<string>()));
                     continue;
                 }
@@ -67,13 +68,14 @@ public sealed class PartPackageExporter
                 PartPackageExportResult result;
                 try
                 {
-                    var input = ResolveInput(entry);
-                    if (cachedBundle is null || !IsSameLoadedInput(cachedBundle.Input, input))
-                    {
-                        cachedBundle?.Dispose();
-                        cachedBundle = AssetStudioLoadedBundle.Load(input);
-                    }
-                    result = Export(entry, assetRoot, outputDirectory, characterHeightMetersById, cachedBundle, runtimeJsonOutput);
+                    result = ExportWithMaterialDependencyRetry(
+                        entry,
+                        assetRoot,
+                        outputDirectory,
+                        characterHeightMetersById,
+                        ref cachedBundle,
+                        runtimeJsonOutput
+                    );
                     manifest.Update(entry.PackagePath, stamp);
                 }
                 catch (Exception ex)
@@ -180,8 +182,47 @@ public sealed class PartPackageExporter
         string runtimeJsonOutput = RuntimeJsonWriter.Gzip
     )
     {
-        using var loadedBundle = AssetStudioLoadedBundle.Load(ResolveInput(entry));
-        return Export(entry, assetRoot, outputDirectory, characterHeightMetersById, loadedBundle, runtimeJsonOutput);
+        var input = ResolveInput(entry);
+        using var loadedBundle = AssetStudioLoadedBundle.Load(input);
+        try
+        {
+            return Export(entry, assetRoot, outputDirectory, characterHeightMetersById, loadedBundle, runtimeJsonOutput);
+        }
+        catch (MissingMaterialReferenceException ex)
+        {
+            using var fallbackBundle = AssetStudioLoadedBundle.Load(input, BundleLoadDependencyMode.FullDirectory);
+            var result = Export(entry, assetRoot, outputDirectory, characterHeightMetersById, fallbackBundle, runtimeJsonOutput);
+            return AddWarning(result, BuildMaterialDependencyFallbackWarning(ex));
+        }
+    }
+
+    private PartPackageExportResult ExportWithMaterialDependencyRetry(
+        PartRegistryEntry entry,
+        string assetRoot,
+        string outputDirectory,
+        IReadOnlyDictionary<string, float> characterHeightMetersById,
+        ref AssetStudioLoadedBundle? cachedBundle,
+        string runtimeJsonOutput
+    )
+    {
+        var input = ResolveInput(entry);
+        if (cachedBundle is null || !IsSameLoadedInput(cachedBundle.Input, input))
+        {
+            cachedBundle?.Dispose();
+            cachedBundle = AssetStudioLoadedBundle.Load(input);
+        }
+
+        try
+        {
+            return Export(entry, assetRoot, outputDirectory, characterHeightMetersById, cachedBundle, runtimeJsonOutput);
+        }
+        catch (MissingMaterialReferenceException ex) when (cachedBundle.DependencyMode != BundleLoadDependencyMode.FullDirectory)
+        {
+            cachedBundle.Dispose();
+            cachedBundle = AssetStudioLoadedBundle.Load(input, BundleLoadDependencyMode.FullDirectory);
+            var result = Export(entry, assetRoot, outputDirectory, characterHeightMetersById, cachedBundle, runtimeJsonOutput);
+            return AddWarning(result, BuildMaterialDependencyFallbackWarning(ex));
+        }
     }
 
     private PartPackageExportResult Export(
@@ -267,7 +308,17 @@ public sealed class PartPackageExporter
 
         var runtimePath = Path.Combine(packageDirectory, "part-runtime.json");
         WriteJson(runtimePath, package, runtimeJsonOutput);
+        DeletePartExportError(packageDirectory);
         return new PartPackageExportResult(entry, RuntimeJsonWriter.PrimaryPath(runtimePath, runtimeJsonOutput), package.Warnings);
+    }
+
+    private static void DeletePartExportError(string packageDirectory)
+    {
+        var errorPath = Path.Combine(packageDirectory, "part-export-error.json");
+        if (File.Exists(errorPath))
+        {
+            File.Delete(errorPath);
+        }
     }
 
     private ResolvedBundleInput ResolveInput(PartRegistryEntry entry)
@@ -289,6 +340,22 @@ public sealed class PartPackageExporter
         return string.Equals(current.ResolvedBundlePath, next.ResolvedBundlePath, StringComparison.Ordinal) &&
             current.PartKind == next.PartKind &&
             string.Equals(current.CharacterId, next.CharacterId, StringComparison.Ordinal);
+    }
+
+    private static PartPackageExportResult AddWarning(PartPackageExportResult result, string warning)
+    {
+        return result with
+        {
+            Warnings = result.Warnings
+                .Append(warning)
+                .Distinct(StringComparer.Ordinal)
+                .ToList()
+        };
+    }
+
+    private static string BuildMaterialDependencyFallbackWarning(MissingMaterialReferenceException ex)
+    {
+        return $"Recovered missing material reference {ex.MaterialKey} by loading the full source bundle directory.";
     }
 
     private static PartRuntimeSpringBone BuildPartSpringBone(string partType, SpringBoneExport springBone)

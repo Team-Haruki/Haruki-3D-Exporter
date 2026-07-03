@@ -12,7 +12,10 @@ public sealed class AssetStudioImportedModelFactory
 
     public IImported CreateImportedModel(ResolvedBundleInput input, string? preferredRootOverride = null)
     {
-        using var readableBundle = new SekaiBundleDecryptor().PrepareReadableWorkspace(input.ResolvedBundlePath, new[] { input.ResolvedBundlePath });
+        using var readableBundle = new SekaiBundleDecryptor().PrepareReadableWorkspace(
+            input.ResolvedBundlePath,
+            BundleDependencyResolver.ResolveLoadBundlePaths(input)
+        );
         var manager = new AssetsManager
         {
             MeshLazyLoad = false,

@@ -13,7 +13,10 @@ public sealed class AssetStudioBundleParser
 
     public BundleInventory Parse(ResolvedBundleInput input)
     {
-        using var readableBundle = decryptor.PrepareReadableWorkspace(input.ResolvedBundlePath, new[] { input.ResolvedBundlePath });
+        using var readableBundle = decryptor.PrepareReadableWorkspace(
+            input.ResolvedBundlePath,
+            BundleDependencyResolver.ResolveLoadBundlePaths(input)
+        );
         var manager = new AssetsManager
         {
             MeshLazyLoad = false,

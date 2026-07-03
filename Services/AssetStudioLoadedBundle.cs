@@ -12,17 +12,20 @@ public sealed class AssetStudioLoadedBundle : IDisposable
     private readonly AssetsManager manager;
 
     public ResolvedBundleInput Input { get; }
+    public BundleLoadDependencyMode DependencyMode { get; }
     public IReadOnlyList<Object> Objects { get; }
     public IReadOnlyList<Object> PrimaryObjects { get; }
     public int AssetsFileCount => manager.AssetsFileList.Count;
 
     private AssetStudioLoadedBundle(
         ResolvedBundleInput input,
+        BundleLoadDependencyMode dependencyMode,
         DecryptedBundleWorkspace readableBundles,
         AssetsManager manager
     )
     {
         Input = input;
+        DependencyMode = dependencyMode;
         this.readableBundles = readableBundles;
         this.manager = manager;
         Objects = manager.AssetsFileList
@@ -31,11 +34,14 @@ public sealed class AssetStudioLoadedBundle : IDisposable
         PrimaryObjects = AssetStudioObjectFilter.SelectPrimaryObjects(Objects, readableBundles.PrimaryFileName);
     }
 
-    public static AssetStudioLoadedBundle Load(ResolvedBundleInput input)
+    public static AssetStudioLoadedBundle Load(
+        ResolvedBundleInput input,
+        BundleLoadDependencyMode dependencyMode = BundleLoadDependencyMode.Default
+    )
     {
         var readableBundles = new SekaiBundleDecryptor().PrepareReadableWorkspace(
             input.ResolvedBundlePath,
-            ResolveLoadBundlePaths(input)
+            BundleDependencyResolver.ResolveLoadBundlePaths(input, dependencyMode)
         );
         var manager = new AssetsManager
         {
@@ -54,26 +60,7 @@ public sealed class AssetStudioLoadedBundle : IDisposable
             ClassIDType.SkinnedMeshRenderer
         );
         manager.LoadFilesAndFolders(readableBundles.DirectoryPath);
-        return new AssetStudioLoadedBundle(input, readableBundles, manager);
-    }
-
-    private static IReadOnlyList<string> ResolveLoadBundlePaths(ResolvedBundleInput input)
-    {
-        if (input.PartKind != BundlePartKind.Body)
-        {
-            return new[] { input.ResolvedBundlePath };
-        }
-
-        var directory = Path.GetDirectoryName(input.ResolvedBundlePath);
-        if (directory is null || !Directory.Exists(directory))
-        {
-            return new[] { input.ResolvedBundlePath };
-        }
-
-        return Directory.EnumerateFiles(directory, "*.bundle", SearchOption.TopDirectoryOnly)
-            .Prepend(input.ResolvedBundlePath)
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
+        return new AssetStudioLoadedBundle(input, dependencyMode, readableBundles, manager);
     }
 
     public void Dispose()

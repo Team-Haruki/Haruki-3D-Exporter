@@ -49,8 +49,25 @@ public sealed class MaterialIdentityLookup
             return material;
         }
 
-        throw new InvalidOperationException(
-            $"Renderer material slot {slot.SlotIndex} references missing material {slot.MaterialKey} ({slot.MaterialName ?? "<unnamed>"})."
-        );
+        throw new MissingMaterialReferenceException(slot);
     }
+}
+
+public sealed class MissingMaterialReferenceException : InvalidOperationException
+{
+    public MissingMaterialReferenceException(RenderMaterialSlotInventory slot)
+        : base($"Renderer material slot {slot.SlotIndex} references missing material {slot.MaterialKey} ({slot.MaterialName ?? "<unnamed>"}).")
+    {
+        SlotIndex = slot.SlotIndex;
+        MaterialFileId = slot.MaterialFileId;
+        MaterialPathId = slot.MaterialPathId;
+        MaterialKey = slot.MaterialKey;
+        MaterialName = slot.MaterialName;
+    }
+
+    public int SlotIndex { get; }
+    public long MaterialFileId { get; }
+    public long MaterialPathId { get; }
+    public string MaterialKey { get; }
+    public string? MaterialName { get; }
 }
