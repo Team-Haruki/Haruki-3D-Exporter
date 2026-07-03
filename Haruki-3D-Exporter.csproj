@@ -25,10 +25,13 @@
     <Compile Include="Services/SekaiMaterialMetadata.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/TextureCompactor.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Models/ConversionOptions.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
+    <Compile Include="Models/CostumeRegistryModels.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Models/ExporterConfig.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Models/InventoryModels.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Models/ManifestModels.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
+    <Compile Include="Models/MasterCostumeModels.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Models/ParseResult.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
+    <Compile Include="Services/CostumeRegistryExporter.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Tests/ConfigParserSmoke.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Tests/PartMaterialMetadataSmoke.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
   </ItemGroup>

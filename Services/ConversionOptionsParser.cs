@@ -11,7 +11,7 @@ public static class ConversionOptionsParser
         "  Haruki-3D-Exporter --character3d-id <id> --master <master-directory> --asset-root <AssetBundles-root> --out <directory> [--motion <bundle-or-export-folder>] [--keep-intermediate]\n" +
         "  Haruki-3D-Exporter --emit-costume-registries --master <master-directory> --asset-root <AssetBundles-root> --out <directory>\n" +
         "  Haruki-3D-Exporter --emit-part-packages --part-costume3d-id <id> --part-type <body|head|hair|head_optional> --master <master-directory> --asset-root <AssetBundles-root> --out <directory> [--part-unit <unit>]\n\n" +
-        "  Haruki-3D-Exporter --emit-role-runtimes --role-character3d-id <id> --master <master-directory> --asset-root <AssetBundles-root> --out <directory> [--motion <bundle-or-export-folder>]\n" +
+        "  Haruki-3D-Exporter --emit-role-runtimes [--role-character3d-id <id>] --master <master-directory> --asset-root <AssetBundles-root> --out <directory> [--motion <bundle-or-export-folder>]\n" +
         "  Haruki-3D-Exporter --export-face-motion --motion <bundle-or-decoded-folder-or-json> --out <face_motion.json-or-directory> [--source-path <bundle-path>]\n\n" +
         "  Add --config <json> to load defaults from haruki-3d-exporter.config.json.\n\n" +
         "Notes:\n" +
@@ -22,7 +22,7 @@ public static class ConversionOptionsParser
         "  --asset-root points at the AssetBundles root containing live_pv/model/characterv2\n" +
         "  --emit-costume-registries writes character3d-index.json, parts/part-registry.json, parts/head-hair-compatibility.json, and parts/card-costume-unlocks.json\n" +
         "  --emit-part-packages writes one parts/<partType>/<costume3dId>/<unit>/part-runtime.json for runtime custom assembly\n" +
-        "  --emit-role-runtimes writes roles/<characterId>/<unit>/role-runtime.json with motion metadata for selected character3ds rows\n" +
+        "  --emit-role-runtimes writes roles/<characterId>/<unit>/role-runtime.json with motion metadata; without --role-character3d-id it exports every character3ds row\n" +
         "  --manifest records part package input file stamps for incremental --emit-part-packages runs\n" +
         "  --part-package-process-concurrency runs full --emit-part-packages across N child exporter processes; 0 = auto CPU count\n" +
         "  --part-package-workers and --part-package-core-count are aliases for --part-package-process-concurrency\n" +
@@ -353,10 +353,6 @@ public static class ConversionOptionsParser
                 return new ParseResult(false, null, "--part-costume3d-id and --part-type must be used together.");
             }
 
-            if (emitRoleRuntimes && character3dId is null && roleCharacter3dIds.Count == 0)
-            {
-                return new ParseResult(false, null, "Missing --role-character3d-id for --emit-role-runtimes.");
-            }
         }
         else if (character3dId is not null)
         {

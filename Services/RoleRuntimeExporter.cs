@@ -5,6 +5,11 @@ namespace PjskBundle2Parts.Services;
 
 public sealed class RoleRuntimeExporter
 {
+    private static readonly JsonSerializerOptions ReadJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     private static readonly JsonSerializerOptions WriteJsonOptions = new()
     {
         WriteIndented = true,
@@ -29,7 +34,10 @@ public sealed class RoleRuntimeExporter
         string runtimeJsonOutput = RuntimeJsonWriter.Gzip
     )
     {
-        return character3dIds
+        var ids = character3dIds.Count == 0
+            ? LoadAllCharacter3dIds(masterDirectory)
+            : character3dIds;
+        return ids
             .Distinct()
             .OrderBy(id => id)
             .Select(id => ExportOne(masterDirectory, assetRoot, outputDirectory, id, motionPath, runtimeJsonOutput))
@@ -185,5 +193,19 @@ public sealed class RoleRuntimeExporter
             "school_refusal" => 31,
             _ => 21,
         };
+    }
+
+    private static IReadOnlyList<int> LoadAllCharacter3dIds(string masterDirectory)
+    {
+        var path = Path.Combine(Path.GetFullPath(masterDirectory), "character3ds.json");
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException($"Master file was not found: {path}");
+        }
+
+        using var stream = File.OpenRead(path);
+        var entries = JsonSerializer.Deserialize<IReadOnlyList<Character3dMaster>>(stream, ReadJsonOptions)
+            ?? throw new InvalidOperationException($"Failed to parse master file: {path}");
+        return entries.Select(entry => entry.Id).ToList();
     }
 }

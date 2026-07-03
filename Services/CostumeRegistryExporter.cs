@@ -242,9 +242,9 @@ public sealed class CostumeRegistryExporter
             foreach (var model in models.OrderBy(entry => entry.Unit ?? string.Empty, StringComparer.OrdinalIgnoreCase))
             {
                 var warnings = new List<string>();
+                var registryPartType = ResolveRegistryPartType(costume.PartType, model);
                 var bundlePath = ResolveBundlePath(costume, model, characterById, assetRoot, warnings);
                 var colorPath = ResolveColorVariationBundlePath(costume, model, characterById, assetRoot, warnings);
-                var registryPartType = ResolveRegistryPartType(costume.PartType, model);
                 var sourceIdentity = BuildSourceIdentity(registryPartType, bundlePath, colorPath, assetRoot);
                 var packagePath = sourceIdentity?.PackagePath ?? BuildPackagePath(registryPartType, costume.Id, model.Unit);
                 var status = bundlePath is null
@@ -633,7 +633,7 @@ public sealed class CostumeRegistryExporter
             "body" => ResolveBodyColorVariationPath(model, costume.CharacterId, characterById, assetRoot),
             "hair" => ResolveFaceColorVariationPath(model, assetRoot),
             "head" => IsAccessoryHeadCostume(model.HeadCostume3dAssetbundleType)
-                ? ResolveHeadOptionalColorVariationPath(model, assetRoot)
+                ? ResolveHeadOptionalColorVariationPath(model, assetRoot, warnings)
                 : ResolveFaceColorVariationPath(model, assetRoot),
             _ => null,
         };
@@ -662,7 +662,13 @@ public sealed class CostumeRegistryExporter
     private static string? ResolveFaceBundlePath(string assetbundleName, string assetRoot)
     {
         var normalizedName = assetbundleName.Replace('\\', '/').Trim('/');
-        return Path.Combine(ResolveAssetBaseDirectory(assetRoot, "face"), $"{ToSystemPath(normalizedName)}.bundle");
+        return ResolveExistingBundlePath(
+            ResolveAssetBaseDirectoryCandidates(assetRoot, "face"),
+            $"{ToSystemPath(normalizedName)}.bundle"
+        ) ?? Path.Combine(
+            ResolveAssetBaseDirectory(assetRoot, "face"),
+            $"{ToSystemPath(normalizedName)}.bundle"
+        );
     }
 
     private static string? ResolveHeadOptionalBundlePath(
@@ -678,7 +684,15 @@ public sealed class CostumeRegistryExporter
             return null;
         }
 
-        return Path.Combine(ResolveAssetBaseDirectory(assetRoot, "head_optional"), accessoryId, $"{attachNode}.bundle");
+        var path = ResolveExistingBundlePath(
+            ResolveAssetBaseDirectoryCandidates(assetRoot, "head_optional"),
+            Path.Combine(accessoryId, $"{attachNode}.bundle")
+        );
+        if (path is null)
+        {
+            warnings.Add($"head_optional bundle not found: {accessoryId}/{attachNode}.bundle");
+        }
+        return path;
     }
 
     private static string? ResolveBodyColorVariationPath(
@@ -695,25 +709,30 @@ public sealed class CostumeRegistryExporter
 
         var normalizedName = model.AssetbundleName!.Replace('\\', '/').Trim('/');
         var bodyType = Path.GetFileNameWithoutExtension(ResolveBodyBundleFileName(character));
-        return Path.Combine(
-            ResolveColorVariationBaseDirectory(assetRoot, "body"),
-            ToSystemPath(normalizedName),
-            bodyType,
-            $"{model.ColorAssetbundleName}.bundle"
+        return ResolveExistingBundlePath(
+            ResolveColorVariationBaseDirectoryCandidates(assetRoot, "body"),
+            Path.Combine(
+                ToSystemPath(normalizedName),
+                bodyType,
+                $"{model.ColorAssetbundleName}.bundle"
+            )
         );
     }
 
     private static string? ResolveFaceColorVariationPath(Costume3dModelMaster model, string assetRoot)
     {
         var normalizedName = model.AssetbundleName!.Replace('\\', '/').Trim('/');
-        return Path.Combine(
-            ResolveColorVariationBaseDirectory(assetRoot, "face"),
-            ToSystemPath(normalizedName),
-            $"{model.ColorAssetbundleName}.bundle"
+        return ResolveExistingBundlePath(
+            ResolveColorVariationBaseDirectoryCandidates(assetRoot, "face"),
+            Path.Combine(ToSystemPath(normalizedName), $"{model.ColorAssetbundleName}.bundle")
         );
     }
 
-    private static string? ResolveHeadOptionalColorVariationPath(Costume3dModelMaster model, string assetRoot)
+    private static string? ResolveHeadOptionalColorVariationPath(
+        Costume3dModelMaster model,
+        string assetRoot,
+        List<string> warnings
+    )
     {
         var (accessoryId, attachNode) = ResolveAccessoryIdAndAttachNode(model);
         if (string.IsNullOrWhiteSpace(accessoryId) || string.IsNullOrWhiteSpace(attachNode))
@@ -721,12 +740,15 @@ public sealed class CostumeRegistryExporter
             return null;
         }
 
-        return Path.Combine(
-            ResolveColorVariationBaseDirectory(assetRoot, "head_optional"),
-            accessoryId,
-            attachNode,
-            $"{model.ColorAssetbundleName}.bundle"
+        var path = ResolveExistingBundlePath(
+            ResolveColorVariationBaseDirectoryCandidates(assetRoot, "head_optional"),
+            Path.Combine(accessoryId, attachNode, $"{model.ColorAssetbundleName}.bundle")
         );
+        if (path is null)
+        {
+            warnings.Add($"head_optional color variation bundle not found: {accessoryId}/{attachNode}/{model.ColorAssetbundleName}.bundle");
+        }
+        return path;
     }
 
     private static (string? AccessoryId, string? AttachNode) ResolveAccessoryIdAndAttachNode(Costume3dModelMaster model)
@@ -834,12 +856,43 @@ public sealed class CostumeRegistryExporter
 
     private static string ResolveAssetBaseDirectory(string assetRoot, string part)
     {
+        foreach (var candidate in ResolveAssetBaseDirectoryCandidates(assetRoot, part))
+        {
+            if (Directory.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
         return Path.Combine(assetRoot, "live_pv", "model", "characterv2", part);
     }
 
-    private static string ResolveColorVariationBaseDirectory(string assetRoot, string part)
+    private static IEnumerable<string> ResolveAssetBaseDirectoryCandidates(string assetRoot, string part)
     {
-        return Path.Combine(assetRoot, "live_pv", "model", "characterv2", "color_variation", part);
+        yield return Path.Combine(assetRoot, "live_pv", "model", "characterv2", part);
+        yield return Path.Combine(assetRoot, "live_pv", "model", "character", part);
+        yield return Path.Combine(assetRoot, part);
+    }
+
+    private static IEnumerable<string> ResolveColorVariationBaseDirectoryCandidates(string assetRoot, string part)
+    {
+        yield return Path.Combine(assetRoot, "live_pv", "model", "characterv2", "color_variation", part);
+        yield return Path.Combine(assetRoot, "live_pv", "model", "character", "color_variation", part);
+        yield return Path.Combine(assetRoot, "color_variation", part);
+    }
+
+    private static string? ResolveExistingBundlePath(IEnumerable<string> baseDirectories, string relativePath)
+    {
+        foreach (var baseDirectory in baseDirectories)
+        {
+            var candidate = Path.Combine(baseDirectory, relativePath);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     private static string ResolveBodyBundleFileName(GameCharacterMaster character)

@@ -155,6 +155,16 @@ var invalidSingleAutoParsed = ConversionOptionsParser.Parse(new[]
 });
 Expect(!invalidSingleAutoParsed.IsSuccess, "auto process concurrency cannot combine with single part package export");
 
+var allRoleParsed = ConversionOptionsParser.Parse(new[]
+{
+    "--emit-role-runtimes",
+    "--master", "/data/master",
+    "--asset-root", "/data/assets",
+    "--out", "/data/out"
+});
+Expect(allRoleParsed.IsSuccess && allRoleParsed.Options is not null, "role runtime export can default to all character3ds");
+Expect(allRoleParsed.Options!.RoleCharacter3dIds.Count == 0, "empty role id list means all character3ds");
+
 var writerDir = Path.Combine(tempDir, "writer");
 var writerPath = Path.Combine(writerDir, "part-runtime.json");
 RuntimeJsonWriter.Write(writerPath, new { version = "test", value = 7 }, new JsonSerializerOptions(), RuntimeJsonWriter.Gzip);
@@ -195,12 +205,85 @@ Expect(textureA.StartsWith("/_texture_store/sha256/"), "texture compactor rewrit
 Expect(textureA == textureB, "texture compactor points same-hash textures at same store path");
 Expect(textureA != textureC, "texture compactor keeps different hashes separate");
 Expect(rewrittenA["materialSlots"]![0]!["mainTex"]!.GetValue<string>() == textureA, "texture compactor rewrites material slot texture");
+Expect(rewrittenA["textureRoles"]![0]!["uri"]!.GetValue<string>() == textureA, "texture compactor rewrites texture role URI");
 Expect(File.Exists(Path.Combine(compactDir, textureA.TrimStart('/').Replace('/', Path.DirectorySeparatorChar))), "texture compactor writes store texture");
+
+var registryMasterDir = Path.Combine(tempDir, "registry-master");
+var registryAssetRoot = Path.Combine(tempDir, "registry-assets");
+Directory.CreateDirectory(registryMasterDir);
+WriteJsonFile(Path.Combine(registryMasterDir, "character3ds.json"), Array.Empty<object>());
+WriteJsonFile(Path.Combine(registryMasterDir, "costume3ds.json"), new[]
+{
+    new
+    {
+        id = 11001,
+        costume3dGroupId = 11000,
+        partType = "head",
+        characterId = 21,
+        colorId = 2,
+        colorName = "test",
+        name = "legacy accessory",
+        costume3dType = "normal",
+        costume3dRarity = "rarity_4",
+        assetbundleName = "unused",
+        howToObtain = "test"
+    }
+});
+WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModels.json"), new[]
+{
+    new
+    {
+        costume3dId = 11001,
+        unit = "light_sound",
+        assetbundleName = "0019/a03",
+        headCostume3dAssetbundleType = "head_only",
+        colorAssetbundleName = "01",
+        part = "a03",
+        thumbnailAssetbundleName = "unused"
+    }
+});
+WriteJsonFile(Path.Combine(registryMasterDir, "gameCharacters.json"), Array.Empty<object>());
+WriteJsonFile(Path.Combine(registryMasterDir, "cards.json"), Array.Empty<object>());
+WriteJsonFile(Path.Combine(registryMasterDir, "cardCostume3ds.json"), Array.Empty<object>());
+WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModelAvailablePatterns.json"), Array.Empty<object>());
+WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModelNotAvailablePatterns.json"), Array.Empty<object>());
+WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModelDefaultHairs.json"), Array.Empty<object>());
+var legacyAccessory = Path.Combine(
+    registryAssetRoot,
+    "live_pv",
+    "model",
+    "character",
+    "head_optional",
+    "0019",
+    "a03.bundle"
+);
+var legacyAccessoryColor = Path.Combine(
+    registryAssetRoot,
+    "live_pv",
+    "model",
+    "character",
+    "color_variation",
+    "head_optional",
+    "0019",
+    "a03",
+    "01.bundle"
+);
+Directory.CreateDirectory(Path.GetDirectoryName(legacyAccessory)!);
+Directory.CreateDirectory(Path.GetDirectoryName(legacyAccessoryColor)!);
+File.WriteAllBytes(legacyAccessory, new byte[] { 1 });
+File.WriteAllBytes(legacyAccessoryColor, new byte[] { 2 });
+var registryExport = new CostumeRegistryExporter().ExportInMemory(registryMasterDir, registryAssetRoot);
+var legacyAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001);
+Expect(legacyAccessoryEntry.PartType == "head_optional", "head_only registry rows are exported as head_optional");
+Expect(legacyAccessoryEntry.BundlePath == legacyAccessory, "head_optional registry resolves legacy character base bundle");
+Expect(legacyAccessoryEntry.ColorVariationBundlePath == legacyAccessoryColor, "head_optional registry resolves legacy character color variation bundle");
+Expect(legacyAccessoryEntry.PackagePath.StartsWith("parts/_sources/head_optional/"), "head_optional registry writes shared source package path");
 
 PartMaterialMetadataSmoke.Run();
 
 var repoRoot = FindRepoRoot();
 var partPackageExporterSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "PartPackageExporter.cs"));
+var roleRuntimeExporterSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "RoleRuntimeExporter.cs"));
 Expect(partPackageExporterSource.Contains("name.Contains(\"eyelash\")"), "part package exporter classifies eyelash separately");
 Expect(partPackageExporterSource.Contains("return \"eyelash\""), "part package exporter returns eyelash material kind");
 Expect(partPackageExporterSource.Contains("name.Contains(\"eyebrow\")"), "part package exporter classifies eyebrow separately");
@@ -232,8 +315,19 @@ Expect(costumeRegistryExporterSource.Contains("part-source-map.json"), "registry
 Expect(costumeRegistryExporterSource.Contains("BuildSourceIdentity"), "registry exporter builds source identities");
 Expect(costumeRegistryExporterSource.Contains("SHA256.HashData"), "registry exporter uses stable source key hashes");
 Expect(costumeRegistryExporterSource.Contains("parts/_sources/"), "registry exporter points duplicate part ids at shared source package paths");
+Expect(costumeRegistryExporterSource.Contains("ResolveAssetBaseDirectoryCandidates"), "registry exporter checks v2, legacy, and flat asset roots");
+Expect(costumeRegistryExporterSource.Contains("\"model\", \"character\""), "registry exporter includes legacy character model fallback roots");
 Expect(partPackageExporterSource.Contains("SelectRepresentativePartEntries"), "part package exporter exports each shared source package once");
 Expect(partPackageExporterSource.Contains("GroupBy(entry => entry.PackagePath"), "part package exporter groups export work by package path");
+Expect(roleRuntimeExporterSource.Contains("ResolveDefaultCostumeSettingMotionPath"), "role runtime exporter auto-resolves costume_setting motion bundles");
+Expect(roleRuntimeExporterSource.Contains("LoadAllCharacter3dIds"), "role runtime exporter can export every character3d role by default");
+Expect(roleRuntimeExporterSource.Contains("character\", \"motion\", \"costume_setting\""), "role runtime exporter scans character motion costume_setting directory");
+Expect(roleRuntimeExporterSource.Contains("\"light_sound\" => 27"), "role runtime exporter maps Leo/need Miku motion to 27_00");
+Expect(roleRuntimeExporterSource.Contains("\"idol\" => 28"), "role runtime exporter maps idol Miku motion to 28_00");
+Expect(roleRuntimeExporterSource.Contains("\"street\" => 29"), "role runtime exporter maps street Miku motion to 29_00");
+Expect(roleRuntimeExporterSource.Contains("\"theme_park\" => 30"), "role runtime exporter maps theme park Miku motion to 30_00");
+Expect(roleRuntimeExporterSource.Contains("\"school_refusal\" => 31"), "role runtime exporter maps school refusal Miku motion to 31_00");
+Expect(roleRuntimeExporterSource.Contains("_ => 21"), "role runtime exporter keeps piapro/default Miku motion at 21_00");
 var inventoryModelsSource = File.ReadAllText(Path.Combine(repoRoot, "Models", "InventoryModels.cs"));
 var assetStudioBundleParserSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "AssetStudioBundleParser.cs"));
 Expect(inventoryModelsSource.Contains("RenderMaterialSlotInventory"), "inventory records renderer material slots with identity");
@@ -294,11 +388,31 @@ static void WriteRuntimePackage(string packageDirectory, string texturePath, byt
                     valueTex = (string?)null,
                     faceShadowTex = (string?)null
                 }
+            },
+            textureRoles = new[]
+            {
+                new
+                {
+                    part = "body",
+                    materialKey = "0:1",
+                    materialFileId = 0,
+                    materialPathId = 1,
+                    materialName = "mat",
+                    materialKind = "body",
+                    role = "main",
+                    uri = texturePath
+                }
             }
         },
         new JsonSerializerOptions(),
         RuntimeJsonWriter.Gzip
     );
+}
+
+static void WriteJsonFile(string path, object payload)
+{
+    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+    File.WriteAllText(path, JsonSerializer.Serialize(payload));
 }
 
 static JsonObject ReadRuntimePackage(string runtimeJsonPath)
