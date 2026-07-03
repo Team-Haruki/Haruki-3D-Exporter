@@ -1,9 +1,42 @@
 using AssetStudio;
+using PjskBundle2Parts.Models;
 
 namespace PjskBundle2Parts.Services;
 
 public sealed class UnityRuntimeTextureExporter
 {
+    public IReadOnlyDictionary<string, string> ExportPartTextures(
+        string outputDirectory,
+        string partKind,
+        BundleInventory inventory,
+        IReadOnlyList<ImportedTexture>? overrideTextures = null
+    )
+    {
+        Directory.CreateDirectory(outputDirectory);
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var normalizedPartKind = partKind.Equals("head_optional", StringComparison.OrdinalIgnoreCase)
+            ? "accessory"
+            : partKind;
+        var textureDirectory = Path.Combine(outputDirectory, "textures", normalizedPartKind);
+        var relativeTextureDirectory = Path.Combine("textures", normalizedPartKind);
+        ExportReferencedTextures(
+            textureDirectory,
+            inventory.Materials.SelectMany(material => material.TextureSlots),
+            normalizedPartKind,
+            relativeTextureDirectory,
+            result
+        );
+        var overrideAliases = ExportImportedTextures(
+            textureDirectory,
+            overrideTextures,
+            normalizedPartKind,
+            relativeTextureDirectory,
+            result
+        );
+        ApplyOverrideAliases(inventory, overrideAliases, result);
+        return result;
+    }
+
     public IReadOnlyDictionary<string, string> ExportPartTextures(
         string outputDirectory,
         string partKind,
@@ -16,14 +49,14 @@ public sealed class UnityRuntimeTextureExporter
         var normalizedPartKind = partKind.Equals("head_optional", StringComparison.OrdinalIgnoreCase)
             ? "accessory"
             : partKind;
-        ExportPartTextures(
+        ExportImportedTextures(
             Path.Combine(outputDirectory, "textures", normalizedPartKind),
             imported.TextureList,
             normalizedPartKind,
             Path.Combine("textures", normalizedPartKind),
             result
         );
-        ExportPartTextures(
+        ExportImportedTextures(
             Path.Combine(outputDirectory, "textures", normalizedPartKind),
             overrideTextures,
             normalizedPartKind,
@@ -46,28 +79,28 @@ public sealed class UnityRuntimeTextureExporter
         Directory.CreateDirectory(outputDirectory);
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        ExportPartTextures(
+        ExportImportedTextures(
             Path.Combine(outputDirectory, "textures", "body"),
             bodyImported.TextureList,
             "body",
             Path.Combine("textures", "body"),
             result
         );
-        ExportPartTextures(
+        ExportImportedTextures(
             Path.Combine(outputDirectory, "textures", "body"),
             bodyOverrideTextures,
             "body",
             Path.Combine("textures", "body"),
             result
         );
-        ExportPartTextures(
+        ExportImportedTextures(
             Path.Combine(outputDirectory, "textures", "head"),
             headImported.TextureList,
             "head",
             Path.Combine("textures", "head"),
             result
         );
-        ExportPartTextures(
+        ExportImportedTextures(
             Path.Combine(outputDirectory, "textures", "head"),
             headOverrideTextures,
             "head",
@@ -76,7 +109,7 @@ public sealed class UnityRuntimeTextureExporter
         );
         if (accessoryImported is not null)
         {
-            ExportPartTextures(
+            ExportImportedTextures(
                 Path.Combine(outputDirectory, "textures", "accessory"),
                 accessoryImported.TextureList,
                 "accessory",
@@ -84,7 +117,7 @@ public sealed class UnityRuntimeTextureExporter
                 result
             );
         }
-        ExportPartTextures(
+        ExportImportedTextures(
             Path.Combine(outputDirectory, "textures", "accessory"),
             accessoryOverrideTextures,
             "accessory",
@@ -95,7 +128,7 @@ public sealed class UnityRuntimeTextureExporter
         return result;
     }
 
-    private static void ExportPartTextures(
+    private static Dictionary<string, string> ExportImportedTextures(
         string textureDirectory,
         IReadOnlyList<ImportedTexture>? textures,
         string prefix,
@@ -103,9 +136,10 @@ public sealed class UnityRuntimeTextureExporter
         Dictionary<string, string> result
     )
     {
+        var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (textures is null || textures.Count == 0)
         {
-            return;
+            return aliases;
         }
 
         Directory.CreateDirectory(textureDirectory);
@@ -117,6 +151,93 @@ public sealed class UnityRuntimeTextureExporter
             var relativePath = Path.Combine(relativeTextureDirectory, safeName).Replace('\\', '/');
             AddTextureKey(result, safeName, relativePath);
             AddTextureKey(result, texture.Name, relativePath);
+            AddTextureKey(aliases, texture.Name, relativePath);
+        }
+        return aliases;
+    }
+
+    private static void ExportReferencedTextures(
+        string textureDirectory,
+        IEnumerable<TextureSlotInventory> textureSlots,
+        string prefix,
+        string relativeTextureDirectory,
+        Dictionary<string, string> result
+    )
+    {
+        var exported = new HashSet<string>(StringComparer.Ordinal);
+        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var slot in textureSlots)
+        {
+            if (string.IsNullOrWhiteSpace(slot.TextureKey) ||
+                slot.TexturePathId == 0 ||
+                slot.TextureData is null ||
+                !exported.Add(slot.TextureKey))
+            {
+                continue;
+            }
+
+            Directory.CreateDirectory(textureDirectory);
+            var safeName = UniqueTextureFileName(prefix, slot, usedNames);
+            File.WriteAllBytes(Path.Combine(textureDirectory, safeName), slot.TextureData);
+            var relativePath = Path.Combine(relativeTextureDirectory, safeName).Replace('\\', '/');
+            AddTextureKey(result, slot.TextureKey, relativePath);
+            AddTextureKey(result, safeName, relativePath);
+            if (!string.IsNullOrWhiteSpace(slot.TextureName))
+            {
+                AddTextureKey(result, slot.TextureName, relativePath);
+            }
+        }
+    }
+
+    private static string UniqueTextureFileName(
+        string prefix,
+        TextureSlotInventory slot,
+        HashSet<string> usedNames
+    )
+    {
+        var sourceName = string.IsNullOrWhiteSpace(slot.TextureName)
+            ? $"texture_{slot.TextureFileId}_{slot.TexturePathId}.png"
+            : slot.TextureName;
+        var nameWithExtension = sourceName.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+            ? sourceName
+            : $"{sourceName}.png";
+        var prefixedName = $"{prefix}_{nameWithExtension}";
+        if (usedNames.Add(prefixedName))
+        {
+            return prefixedName;
+        }
+
+        var stem = Path.GetFileNameWithoutExtension(prefixedName);
+        var extension = Path.GetExtension(prefixedName);
+        var disambiguated = $"{stem}_{slot.TextureFileId}_{slot.TexturePathId}{extension}";
+        usedNames.Add(disambiguated);
+        return disambiguated;
+    }
+
+    private static void ApplyOverrideAliases(
+        BundleInventory inventory,
+        IReadOnlyDictionary<string, string> overrideAliases,
+        Dictionary<string, string> result
+    )
+    {
+        if (overrideAliases.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var slot in inventory.Materials.SelectMany(material => material.TextureSlots))
+        {
+            if (string.IsNullOrWhiteSpace(slot.TextureKey) ||
+                string.IsNullOrWhiteSpace(slot.TextureName))
+            {
+                continue;
+            }
+
+            if (overrideAliases.TryGetValue(slot.TextureName, out var overridePath) ||
+                overrideAliases.TryGetValue(Path.GetFileNameWithoutExtension(slot.TextureName), out overridePath))
+            {
+                result[slot.TextureKey] = overridePath;
+            }
         }
     }
 

@@ -212,14 +212,20 @@ public sealed class PartPackageExporter
         var textures = textureExporter.ExportPartTextures(
             packageDirectory,
             normalizedType,
-            imported,
+            inventory,
             overrideTextures
         );
         var springBone = springBoneExporter.Export(input, loadedBundle.PrimaryObjects);
         var runtimeSpringBone = BuildPartSpringBone(normalizedType, springBone);
         var nativeMeshes = ExportNativeMeshes(normalizedType, imported, runtimeSpringBone);
         var builtMaterialSlots = BuildMaterialSlots(normalizedType, inventory, textures, imported, nativeMeshes);
-        var materialSlots = builtMaterialSlots.Slots;
+        var nativeDeduplication = DeduplicateNativeMeshes(nativeMeshes, builtMaterialSlots.Slots);
+        nativeMeshes = nativeDeduplication.NativeMeshes;
+        var materialSlots = FilterMaterialSlotsForNativeMeshes(
+            normalizedType,
+            builtMaterialSlots.Slots,
+            nativeMeshes
+        );
         var textureRoles = BuildTextureRoles(materialSlots);
         var package = new PartRuntimePackage(
             Version: "0414-part-2",
@@ -253,6 +259,7 @@ public sealed class PartPackageExporter
             Warnings: entry.Warnings
                 .Concat(nativeMeshes.Warnings)
                 .Concat(builtMaterialSlots.Warnings)
+                .Concat(nativeDeduplication.Warnings)
                 .Concat(runtimeSpringBone.Warnings)
                 .Distinct(StringComparer.Ordinal)
                 .ToList()
@@ -487,6 +494,95 @@ public sealed class PartPackageExporter
         IReadOnlyList<string> Warnings
     );
 
+    private sealed record NativeMeshDeduplicationResult(
+        PjskUnityRuntimeNativeMeshSet NativeMeshes,
+        IReadOnlyList<string> Warnings
+    );
+
+    private static NativeMeshDeduplicationResult DeduplicateNativeMeshes(
+        PjskUnityRuntimeNativeMeshSet nativeMeshes,
+        IReadOnlyList<PjskSekaiRuntimeMaterialSlot> materialSlots
+    )
+    {
+        var materialSlotByKey = materialSlots
+            .GroupBy(slot => slot.MaterialKey, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var warnings = new List<string>();
+        var meshes = nativeMeshes.Meshes
+            .GroupBy(mesh => $"{mesh.PartKind}::{mesh.MeshPath}::{mesh.RendererTransformPath}", StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                if (group.Count() == 1)
+                {
+                    return group.First();
+                }
+
+                var ranked = group
+                    .Select(mesh => new
+                    {
+                        Mesh = mesh,
+                        Score = ScoreNativeMeshMaterialCompleteness(mesh, materialSlotByKey),
+                    })
+                    .OrderByDescending(candidate => candidate.Score)
+                    .ThenBy(candidate => candidate.Mesh.RendererPathId)
+                    .ToList();
+                var kept = ranked[0];
+                var dropped = ranked.Skip(1)
+                    .Select(candidate => string.Join(",", candidate.Mesh.Submeshes.Select(submesh => submesh.MaterialKey).Distinct(StringComparer.Ordinal)))
+                    .ToList();
+                warnings.Add(
+                    $"Duplicate native mesh '{kept.Mesh.RendererTransformPath}' kept material(s) {string.Join(",", kept.Mesh.Submeshes.Select(submesh => submesh.MaterialKey).Distinct(StringComparer.Ordinal))} and dropped {string.Join("; ", dropped)} by material texture completeness."
+                );
+                return kept.Mesh;
+            })
+            .ToList();
+
+        return new NativeMeshDeduplicationResult(
+            nativeMeshes with { Meshes = meshes },
+            warnings
+        );
+    }
+
+    private static int ScoreNativeMeshMaterialCompleteness(
+        PjskUnityRuntimeNativeMesh mesh,
+        IReadOnlyDictionary<string, PjskSekaiRuntimeMaterialSlot> materialSlotByKey
+    )
+    {
+        var score = 0;
+        foreach (var submesh in mesh.Submeshes)
+        {
+            if (!materialSlotByKey.TryGetValue(submesh.MaterialKey, out var slot))
+            {
+                continue;
+            }
+            score += string.IsNullOrWhiteSpace(slot.MainTex) ? 0 : 1;
+            score += string.IsNullOrWhiteSpace(slot.ShadowTex) ? 0 : 2;
+            score += string.IsNullOrWhiteSpace(slot.ValueTex) ? 0 : 4;
+            score += string.IsNullOrWhiteSpace(slot.FaceShadowTex) ? 0 : 2;
+        }
+        return score;
+    }
+
+    private static IReadOnlyList<PjskSekaiRuntimeMaterialSlot> FilterMaterialSlotsForNativeMeshes(
+        string partType,
+        IReadOnlyList<PjskSekaiRuntimeMaterialSlot> materialSlots,
+        PjskUnityRuntimeNativeMeshSet nativeMeshes
+    )
+    {
+        if (partType == "head_optional" || nativeMeshes.Meshes.Count == 0)
+        {
+            return materialSlots;
+        }
+
+        var visibleMaterialKeys = nativeMeshes.Meshes
+            .SelectMany(mesh => mesh.Submeshes)
+            .Select(submesh => submesh.MaterialKey)
+            .ToHashSet(StringComparer.Ordinal);
+        return materialSlots
+            .Where(slot => visibleMaterialKeys.Contains(slot.MaterialKey))
+            .ToList();
+    }
+
     private static BuiltMaterialSlots BuildMaterialSlots(
         string partType,
         BundleInventory inventory,
@@ -523,9 +619,13 @@ public sealed class PartPackageExporter
                 }
 
                 var materialName = slot.MaterialName ?? material.Name;
+                var mainTex = FindTextureSlot(material, "_MainTex");
+                var shadowTex = FindTextureSlot(material, "_ShadowTex");
+                var valueTex = FindTextureSlot(material, "_ValueTex");
+                var faceShadowTex = FindTextureSlot(material, "_FaceShadowTex");
                 var materialKind = partType == "body"
                     ? ClassifyBodyMaterialKind(materialName)
-                    : partType == "head_optional" ? "accessory" : ClassifyHeadMaterialKind(materialName, FindTextureSlot(material, "_FaceShadowTex") is not null);
+                    : partType == "head_optional" ? "accessory" : ClassifyHeadMaterialKind(materialName, faceShadowTex is not null);
                 slots.Add(new PjskSekaiRuntimeMaterialSlot(
                     Part: partType,
                     MeshName: mesh.MeshName,
@@ -535,10 +635,10 @@ public sealed class PartPackageExporter
                     MaterialPathId: identity.MaterialPathId,
                     MaterialName: materialName,
                     MaterialKind: materialKind,
-                    MainTex: RewriteTexturePath(FindTextureSlot(material, "_MainTex"), textures),
-                    ShadowTex: RewriteTexturePath(FindTextureSlot(material, "_ShadowTex"), textures),
-                    ValueTex: RewriteTexturePath(FindTextureSlot(material, "_ValueTex"), textures),
-                    FaceShadowTex: RewriteTexturePath(FindTextureSlot(material, "_FaceShadowTex"), textures),
+                    MainTex: RewriteTexturePath(mainTex, textures),
+                    ShadowTex: RewriteTexturePath(shadowTex, textures),
+                    ValueTex: RewriteTexturePath(valueTex, textures),
+                    FaceShadowTex: RewriteTexturePath(faceShadowTex, textures),
                     RenderOrder: ResolveRenderOrder(materialKind),
                     ShaderPipeline: partType == "body" ? "sekai_csh_toon" : "character_tint_with_weak_sdf",
                     Lighting: SekaiMaterialMetadata.BuildLightingSettings(material)
@@ -1001,20 +1101,28 @@ public sealed class PartPackageExporter
         }
     }
 
-    private static string? FindTextureSlot(MaterialInventory? material, string slotName)
+    private static TextureSlotInventory? FindTextureSlot(MaterialInventory? material, string slotName)
     {
-        return SekaiMaterialMetadata.FindTextureSlot(material, slotName);
+        return material?.TextureSlots
+            .FirstOrDefault(slot => string.Equals(slot.SlotName, slotName, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static string? RewriteTexturePath(string? textureName, IReadOnlyDictionary<string, string> textures)
+    private static string? RewriteTexturePath(TextureSlotInventory? textureSlot, IReadOnlyDictionary<string, string> textures)
     {
+        var textureName = textureSlot?.TextureName;
         if (string.IsNullOrWhiteSpace(textureName))
         {
             return null;
         }
+        if (!string.IsNullOrWhiteSpace(textureSlot?.TextureKey) &&
+            textures.TryGetValue(textureSlot.TextureKey, out var referencedPath))
+        {
+            return referencedPath;
+        }
+
         return textures.TryGetValue(textureName, out var path)
             ? path
-            : textures.TryGetValue(Path.GetFileNameWithoutExtension(textureName), out var stemPath) ? stemPath : textureName;
+            : textures.TryGetValue(Path.GetFileNameWithoutExtension(textureName), out var stemPath) ? stemPath : null;
     }
 
     private static void AddTextureRole(List<PjskSekaiRuntimeTextureRole> roles, PjskSekaiRuntimeMaterialSlot slot, string role, string? uri)

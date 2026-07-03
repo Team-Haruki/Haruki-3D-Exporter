@@ -4,7 +4,11 @@ namespace PjskBundle2Parts.Models;
 
 public sealed record TextureSlotInventory(
     string SlotName,
-    string? TextureName
+    string? TextureName,
+    long TextureFileId = 0,
+    long TexturePathId = 0,
+    string? TextureKey = null,
+    [property: JsonIgnore] byte[]? TextureData = null
 );
 
 public sealed record ColorPropertyInventory(

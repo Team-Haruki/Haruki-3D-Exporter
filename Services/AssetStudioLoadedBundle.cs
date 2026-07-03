@@ -59,16 +59,19 @@ public sealed class AssetStudioLoadedBundle : IDisposable
 
     private static IReadOnlyList<string> ResolveLoadBundlePaths(ResolvedBundleInput input)
     {
-        var paths = new List<string> { input.ResolvedBundlePath };
-        if (input.PartKind == BundlePartKind.Body &&
-            Path.GetDirectoryName(input.ResolvedBundlePath) is { } directory &&
-            Directory.Exists(directory))
+        if (input.PartKind != BundlePartKind.Body)
         {
-            paths.AddRange(Directory
-                .GetFiles(directory, "*.bundle", SearchOption.TopDirectoryOnly)
-                .Where(path => !Path.GetFileName(path).StartsWith(".", StringComparison.Ordinal)));
+            return new[] { input.ResolvedBundlePath };
         }
-        return paths
+
+        var directory = Path.GetDirectoryName(input.ResolvedBundlePath);
+        if (directory is null || !Directory.Exists(directory))
+        {
+            return new[] { input.ResolvedBundlePath };
+        }
+
+        return Directory.EnumerateFiles(directory, "*.bundle", SearchOption.TopDirectoryOnly)
+            .Prepend(input.ResolvedBundlePath)
             .Distinct(StringComparer.Ordinal)
             .ToList();
     }

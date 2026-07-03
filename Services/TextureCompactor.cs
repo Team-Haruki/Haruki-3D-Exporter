@@ -236,6 +236,22 @@ public sealed class TextureCompactor
                 }
             }
         }
+        if (node["textureRoles"] is JsonArray textureRoles)
+        {
+            foreach (var textureRole in textureRoles.OfType<JsonObject>())
+            {
+                if (textureRole["uri"] is not JsonValue valueNode ||
+                    !valueNode.TryGetValue<string>(out var value))
+                {
+                    continue;
+                }
+                if (TryRewriteTexturePath(packageDirectory, outputDirectory, value, pathMap, out var rewrittenPath))
+                {
+                    textureRole["uri"] = rewrittenPath;
+                    rewritten += 1;
+                }
+            }
+        }
         RuntimeJsonWriter.Write(runtimeJsonPath, node, JsonOptions, runtimeJsonOutput);
         return rewritten;
     }
@@ -353,6 +369,17 @@ public sealed class TextureCompactor
                     {
                         yield return text;
                     }
+                }
+            }
+        }
+        if (node["textureRoles"] is JsonArray textureRoles)
+        {
+            foreach (var textureRole in textureRoles.OfType<JsonObject>())
+            {
+                if (textureRole["uri"] is JsonValue value &&
+                    value.TryGetValue<string>(out var text))
+                {
+                    yield return text;
                 }
             }
         }

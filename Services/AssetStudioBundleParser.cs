@@ -1,5 +1,7 @@
 using AssetStudio;
 using PjskBundle2Parts.Models;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
 using Object = AssetStudio.Object;
 
 namespace PjskBundle2Parts.Services;
@@ -116,10 +118,20 @@ public sealed class AssetStudioBundleParser
         var slots = material.m_SavedProperties?.m_TexEnvs?
             .Select(entry =>
             {
-                var textureName = entry.Value.m_Texture.TryGet<Texture>(out var texture)
+                var texturePointer = entry.Value.m_Texture;
+                var textureName = texturePointer.TryGet<Texture>(out var texture)
                     ? texture.m_Name
                     : null;
-                return new TextureSlotInventory(entry.Key, textureName);
+                var texturePathId = texturePointer.m_PathID;
+                var textureFileId = texturePointer.m_FileID;
+                return new TextureSlotInventory(
+                    SlotName: entry.Key,
+                    TextureName: textureName,
+                    TextureFileId: textureFileId,
+                    TexturePathId: texturePathId,
+                    TextureKey: texturePathId == 0 ? null : BuildTextureKey(textureFileId, texturePathId),
+                    TextureData: texture is Texture2D texture2D ? ConvertTextureToPng(texture2D) : null
+                );
             })
             .OrderBy(slot => slot.SlotName, StringComparer.OrdinalIgnoreCase)
             .ToList()
@@ -151,6 +163,30 @@ public sealed class AssetStudioBundleParser
             ColorProperties: colorProperties,
             FloatProperties: floatProperties
         );
+    }
+
+    private static string BuildTextureKey(long fileId, long pathId)
+    {
+        return $"ref:{fileId}:{pathId}";
+    }
+
+    private static byte[]? ConvertTextureToPng(Texture2D texture)
+    {
+        using var stream = texture.ConvertToStream(ImageFormat.Png, true);
+        if (stream is null)
+        {
+            return null;
+        }
+
+        if (stream.CanSeek)
+        {
+            stream.Position = 0;
+        }
+        using var image = Image.Load(stream);
+        image.Mutate(x => x.Flip(FlipMode.Vertical));
+        using var output = new MemoryStream();
+        image.SaveAsPng(output);
+        return output.ToArray();
     }
 
     private static RenderMeshInventory BuildSkinnedMeshInventory(GameObject gameObject)
