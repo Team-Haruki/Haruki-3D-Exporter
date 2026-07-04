@@ -1289,10 +1289,6 @@ public sealed class PartPackageExporter
         {
             return "eye";
         }
-        if (hasFaceShadowTex)
-        {
-            return "face_sdf";
-        }
         if (name.Contains("_hair_"))
         {
             return "hair";
@@ -1300,6 +1296,10 @@ public sealed class PartPackageExporter
         if (name.Contains("_acc_"))
         {
             return "accessory";
+        }
+        if (hasFaceShadowTex)
+        {
+            return "face_sdf";
         }
         return "face";
     }

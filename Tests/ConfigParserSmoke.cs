@@ -482,6 +482,7 @@ PartMaterialMetadataSmoke.Run();
 var repoRoot = FindRepoRoot();
 var programSource = File.ReadAllText(Path.Combine(repoRoot, "Program.cs"));
 var partPackageExporterSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "PartPackageExporter.cs"));
+var conversionPlannerSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "ConversionPlanner.cs"));
 var roleRuntimeExporterSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "RoleRuntimeExporter.cs"));
 var assetStudioLoadedBundleSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "AssetStudioLoadedBundle.cs"));
 var bundleDependencyResolverSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "BundleDependencyResolver.cs"));
@@ -493,6 +494,26 @@ Expect(partPackageExporterSource.Contains("return \"eyelash\""), "part package e
 Expect(partPackageExporterSource.Contains("name.Contains(\"eyebrow\")"), "part package exporter classifies eyebrow separately");
 Expect(partPackageExporterSource.Contains("return \"eyebrow\""), "part package exporter returns eyebrow material kind");
 Expect(partPackageExporterSource.Contains("name.Contains(\"_acc_\")"), "part package exporter classifies head acc materials as accessory");
+Expect(
+    partPackageExporterSource.IndexOf("name.Contains(\"_hair_\")", StringComparison.Ordinal) <
+    partPackageExporterSource.IndexOf("if (hasFaceShadowTex)", StringComparison.Ordinal),
+    "part package exporter classifies explicit head hair materials before FaceSDF fallback"
+);
+Expect(
+    partPackageExporterSource.IndexOf("name.Contains(\"_acc_\")", StringComparison.Ordinal) <
+    partPackageExporterSource.IndexOf("if (hasFaceShadowTex)", StringComparison.Ordinal),
+    "part package exporter classifies explicit head accessory materials before FaceSDF fallback"
+);
+Expect(
+    conversionPlannerSource.IndexOf("name.Contains(\"_hair_\")", StringComparison.Ordinal) <
+    conversionPlannerSource.IndexOf("if (hasFaceShadowTex)", StringComparison.Ordinal),
+    "conversion planner classifies explicit head hair materials before FaceSDF fallback"
+);
+Expect(
+    conversionPlannerSource.IndexOf("name.Contains(\"_acc_\")", StringComparison.Ordinal) <
+    conversionPlannerSource.IndexOf("if (hasFaceShadowTex)", StringComparison.Ordinal),
+    "conversion planner classifies explicit head accessory materials before FaceSDF fallback"
+);
 Expect(partPackageExporterSource.Contains("\"eyelash\" or \"eyebrow\""), "part package exporter uses full-runtime render order for face detail layers");
 Expect(partPackageExporterSource.Contains("BuildDeferredColliderFlagBindings"), "part package exporter preserves deferred head colliderFlag bindings");
 Expect(partPackageExporterSource.Contains("deferred_body_colliderFlag"), "part package exporter labels head colliderFlag bindings as deferred to viewer composer");
