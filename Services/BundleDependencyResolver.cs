@@ -35,17 +35,12 @@ public static class BundleDependencyResolver
 
     private static IEnumerable<string> EnumerateBundleFiles(string directory)
     {
-        return Directory
-            .EnumerateFiles(directory, "*.bundle", SearchOption.TopDirectoryOnly)
-            .Concat(Directory.EnumerateFiles(directory, "*.bundle.gz", SearchOption.TopDirectoryOnly));
+        return Directory.EnumerateFiles(directory, "*.bundle", SearchOption.TopDirectoryOnly);
     }
 
     private static string GetBundleStem(string path)
     {
-        var fileName = Path.GetFileName(path);
-        return fileName.EndsWith(".bundle.gz", StringComparison.OrdinalIgnoreCase)
-            ? fileName[..^".bundle.gz".Length]
-            : Path.GetFileNameWithoutExtension(fileName);
+        return Path.GetFileNameWithoutExtension(path);
     }
 
     private static IReadOnlyList<string> BuildOrderedBundleList(string primaryPath, IEnumerable<string> bundlePaths)

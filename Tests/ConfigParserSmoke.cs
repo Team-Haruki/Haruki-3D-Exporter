@@ -113,16 +113,6 @@ Expect(
     "head dependency resolver loads underscore siblings for head_all bundles"
 );
 
-var gzipOnlyRoot = Path.Combine(tempDir, "dependencies", "face", "13");
-Directory.CreateDirectory(gzipOnlyRoot);
-File.WriteAllText(Path.Combine(gzipOnlyRoot, "0001.bundle.gz"), "compressed placeholder");
-var gzipHeadInput = new BundleInputResolver().ResolveHead(gzipOnlyRoot);
-Expect(
-    gzipHeadInput.ResolvedBundlePath.EndsWith("0001.bundle.gz", StringComparison.OrdinalIgnoreCase),
-    "head input resolver accepts .bundle.gz files"
-);
-Expect(gzipHeadInput.BundleStem == "0001", "head input resolver strips .bundle.gz from bundle stems");
-
 var workerParsed = ConversionOptionsParser.Parse(new[]
 {
     "--emit-part-packages",
@@ -564,9 +554,10 @@ Expect(partPackageExporterSource.Contains("bundle-open-summary.json"), "part pac
 Expect(partPackageExporterSource.Contains("missing_after_fallback"), "part package exporter marks material failures after full-directory fallback");
 Expect(assetStudioLoadedBundleSource.Contains("BundleDependencyResolver.ResolveLoadBundlePaths"), "loaded bundle uses shared dependency resolver");
 Expect(bundleDependencyResolverSource.Contains("BundleLoadDependencyMode.FullDirectory"), "bundle dependency resolver supports full-directory fallback");
-Expect(bundleDependencyResolverSource.Contains("\"*.bundle.gz\""), "bundle dependency resolver includes compressed bundle siblings");
-Expect(bundleInputResolverSource.Contains("\"*.bundle.gz\""), "bundle input resolver accepts compressed bundle inputs");
-Expect(sekaiBundleDecryptorSource.Contains("GZipStream"), "bundle decryptor inflates gzip bundles before AssetStudio load");
+var nonexistentCompressedBundlePattern = "\"*.bundle" + ".gz\"";
+Expect(!bundleDependencyResolverSource.Contains(nonexistentCompressedBundlePattern), "bundle dependency resolver only scans plain bundles");
+Expect(!bundleInputResolverSource.Contains(nonexistentCompressedBundlePattern), "bundle input resolver only accepts plain bundle inputs");
+Expect(!sekaiBundleDecryptorSource.Contains("IsGzipBundle"), "bundle decryptor does not special-case nonexistent gzip bundles");
 Expect(partPackageExporterSource.Contains("MissingMaterialReferenceException"), "part package exporter retries missing material references");
 Expect(partPackageExporterSource.Contains("Recovered missing material reference"), "part package exporter records material dependency fallback warnings");
 Expect(materialIdentityLookupSource.Contains("MissingMaterialReferenceException"), "material lookup raises a typed missing reference error");

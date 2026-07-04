@@ -29,7 +29,7 @@ public sealed class BundleInputResolver
         if (candidates.Length == 0)
         {
             throw new InvalidOperationException(
-                $"No .bundle or .bundle.gz files found in body directory: {inputPath}"
+                $"No .bundle files found in body directory: {inputPath}"
             );
         }
 
@@ -57,7 +57,7 @@ public sealed class BundleInputResolver
         if (candidates.Length == 0)
         {
             throw new InvalidOperationException(
-                $"No .bundle or .bundle.gz files found in head directory: {inputPath}"
+                $"No .bundle files found in head directory: {inputPath}"
             );
         }
 
@@ -84,17 +84,12 @@ public sealed class BundleInputResolver
 
     private static IEnumerable<string> EnumerateBundleFiles(string directory)
     {
-        return Directory
-            .GetFiles(directory, "*.bundle", SearchOption.TopDirectoryOnly)
-            .Concat(Directory.GetFiles(directory, "*.bundle.gz", SearchOption.TopDirectoryOnly));
+        return Directory.GetFiles(directory, "*.bundle", SearchOption.TopDirectoryOnly);
     }
 
     private static string GetBundleStem(string path)
     {
-        var fileName = Path.GetFileName(path);
-        return fileName.EndsWith(".bundle.gz", StringComparison.OrdinalIgnoreCase)
-            ? fileName[..^".bundle.gz".Length]
-            : Path.GetFileNameWithoutExtension(fileName);
+        return Path.GetFileNameWithoutExtension(path);
     }
 
     private static string InferCharacterId(string path)
