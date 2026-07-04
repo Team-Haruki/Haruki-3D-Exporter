@@ -604,12 +604,12 @@ public sealed class CostumeRegistryExporter
                 ? ResolveBodyBundlePath(assetbundleName, costume.CharacterId, characterById, assetRoot, warnings)
                 : null,
             "hair" => RequireModelAssetbundleName(model, warnings) is { } assetbundleName
-                ? ResolveFaceBundlePath(assetbundleName, assetRoot)
+                ? ResolveFaceBundlePath(assetbundleName, assetRoot, warnings)
                 : null,
             "head" => IsAccessoryHeadCostume(model.HeadCostume3dAssetbundleType)
                 ? ResolveHeadOptionalBundlePath(headOptional ?? ResolveHeadOptionalDescriptor(costume, model), assetRoot, warnings)
                 : RequireModelAssetbundleName(model, warnings) is { } assetbundleName
-                    ? ResolveFaceBundlePath(assetbundleName, assetRoot)
+                    ? ResolveFaceBundlePath(assetbundleName, assetRoot, warnings)
                     : null,
             _ => null,
         };
@@ -656,19 +656,66 @@ public sealed class CostumeRegistryExporter
             return null;
         }
 
-        var directory = ResolveAssetDirectory(assetRoot, "body", assetbundleName);
-        return Path.Combine(directory, ResolveBodyBundleFileName(character));
+        var normalizedName = assetbundleName.Replace('\\', '/').Trim('/');
+        var relativePath = Path.Combine(ToSystemPath(normalizedName), ResolveBodyBundleFileName(character));
+        var path = ResolveExistingBundlePath(
+            ResolveAssetBaseDirectoryCandidates(assetRoot, "body"),
+            relativePath
+        );
+        if (path is null)
+        {
+            warnings.Add($"body bundle not found: {normalizedName}/{ResolveBodyBundleFileName(character)}");
+        }
+        return path;
     }
 
-    private static string? ResolveFaceBundlePath(string assetbundleName, string assetRoot)
+    private static string? ResolveFaceBundlePath(
+        string assetbundleName,
+        string assetRoot,
+        List<string> warnings
+    )
     {
         var normalizedName = assetbundleName.Replace('\\', '/').Trim('/');
+        var relativePath = $"{ToSystemPath(normalizedName)}.bundle";
+        var path = ResolveExistingBundlePath(
+            ResolveAssetBaseDirectoryCandidates(assetRoot, "face"),
+            relativePath
+        );
+        if (path is not null)
+        {
+            return path;
+        }
+
+        path = ResolveDefaultFaceBundleFallbackPath(assetRoot, normalizedName);
+        if (path is not null)
+        {
+            return path;
+        }
+
+        warnings.Add($"face bundle not found: {normalizedName}.bundle");
+        return null;
+    }
+
+    private static string? ResolveDefaultFaceBundleFallbackPath(
+        string assetRoot,
+        string normalizedAssetbundleName
+    )
+    {
+        var trimmedName = normalizedAssetbundleName.Trim('/');
+        var leaf = Path.GetFileName(trimmedName);
+        if (string.IsNullOrWhiteSpace(leaf) || leaf.Any(static character => character != '0'))
+        {
+            return null;
+        }
+
+        var directory = Path.GetDirectoryName(trimmedName)?.Replace('\\', '/') ?? string.Empty;
+        var fallbackLeaf = new string('0', Math.Max(leaf.Length - 1, 0)) + "1";
+        var fallbackName = string.IsNullOrWhiteSpace(directory)
+            ? fallbackLeaf
+            : $"{directory}/{fallbackLeaf}";
         return ResolveExistingBundlePath(
             ResolveAssetBaseDirectoryCandidates(assetRoot, "face"),
-            $"{ToSystemPath(normalizedName)}.bundle"
-        ) ?? Path.Combine(
-            ResolveAssetBaseDirectory(assetRoot, "face"),
-            $"{ToSystemPath(normalizedName)}.bundle"
+            $"{ToSystemPath(fallbackName)}.bundle"
         );
     }
 
@@ -911,6 +958,11 @@ public sealed class CostumeRegistryExporter
             if (File.Exists(candidate))
             {
                 return candidate;
+            }
+            var gzipCandidate = candidate + ".gz";
+            if (File.Exists(gzipCandidate))
+            {
+                return gzipCandidate;
             }
         }
 

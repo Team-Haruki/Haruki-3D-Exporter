@@ -220,7 +220,18 @@ public sealed class PartPackageExporter
         {
             cachedBundle.Dispose();
             cachedBundle = AssetStudioLoadedBundle.Load(input, BundleLoadDependencyMode.FullDirectory);
-            var result = Export(entry, assetRoot, outputDirectory, characterHeightMetersById, cachedBundle, runtimeJsonOutput);
+            PartPackageExportResult result;
+            try
+            {
+                result = Export(entry, assetRoot, outputDirectory, characterHeightMetersById, cachedBundle, runtimeJsonOutput);
+            }
+            catch (MissingMaterialReferenceException fallbackEx)
+            {
+                throw new InvalidOperationException(
+                    $"missing_after_fallback: {fallbackEx.Message}",
+                    fallbackEx
+                );
+            }
             return AddWarning(result, BuildMaterialDependencyFallbackWarning(ex));
         }
     }
@@ -240,6 +251,7 @@ public sealed class PartPackageExporter
         var input = loadedBundle.Input;
 
         var inventory = parser.Parse(input, loadedBundle.PrimaryObjects, loadedBundle.Objects, loadedBundle.AssetsFileCount);
+        WriteBundleOpenSummary(packageDirectory, entry, input, loadedBundle.DependencyMode, inventory);
         var imported = modelFactory.CreateImportedModel(
             input,
             loadedBundle.PrimaryObjects,
@@ -310,6 +322,48 @@ public sealed class PartPackageExporter
         WriteJson(runtimePath, package, runtimeJsonOutput);
         DeletePartExportError(packageDirectory);
         return new PartPackageExportResult(entry, RuntimeJsonWriter.PrimaryPath(runtimePath, runtimeJsonOutput), package.Warnings);
+    }
+
+    private static void WriteBundleOpenSummary(
+        string packageDirectory,
+        PartRegistryEntry entry,
+        ResolvedBundleInput input,
+        BundleLoadDependencyMode dependencyMode,
+        BundleInventory inventory
+    )
+    {
+        var path = Path.Combine(packageDirectory, "bundle-open-summary.json");
+        File.WriteAllText(path, JsonSerializer.Serialize(new
+        {
+            status = "opened",
+            dependencyMode = dependencyMode.ToString(),
+            input = new
+            {
+                originalPath = input.OriginalInputPath,
+                resolvedBundlePath = input.ResolvedBundlePath,
+                partKind = input.PartKind.ToString(),
+                characterId = input.CharacterId,
+                bundleStem = input.BundleStem,
+            },
+            part = new
+            {
+                costume3dId = entry.Costume3dId,
+                partType = entry.PartType,
+                packagePath = entry.PackagePath,
+                sourcePackagePath = entry.SourcePackagePath,
+            },
+            inventory = new
+            {
+                assetsFileCount = inventory.AssetsFileCount,
+                objectCount = inventory.ObjectCount,
+                objectTypeCounts = inventory.ObjectTypeCounts,
+                rootCount = inventory.Roots.Count,
+                roots = inventory.Roots,
+                skinnedMeshCount = inventory.SkinnedMeshes.Count,
+                staticMeshCount = inventory.StaticMeshes.Count,
+                materialCount = inventory.Materials.Count,
+            },
+        }, WriteJsonOptions));
     }
 
     private static void DeletePartExportError(string packageDirectory)

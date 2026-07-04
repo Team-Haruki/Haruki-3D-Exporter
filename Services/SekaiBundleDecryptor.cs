@@ -1,3 +1,5 @@
+using System.IO.Compression;
+
 namespace PjskBundle2Parts.Services;
 
 public sealed class SekaiBundleDecryptor
@@ -6,6 +8,13 @@ public sealed class SekaiBundleDecryptor
 
     public DecryptedBundleHandle PrepareReadableBundle(string bundlePath)
     {
+        if (IsGzipBundle(bundlePath))
+        {
+            var tempPath = CreateTempSiblingPath(StripGzipExtension(bundlePath));
+            PrepareReadableBundleFile(bundlePath, tempPath);
+            return new DecryptedBundleHandle(tempPath, deleteOnDispose: true);
+        }
+
         using var source = File.Open(bundlePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         Span<byte> header = stackalloc byte[4];
         var read = source.Read(header);
@@ -30,7 +39,10 @@ public sealed class SekaiBundleDecryptor
             .Where(File.Exists)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(path => string.Equals(path, normalizedPrimary, StringComparison.Ordinal) ? 0 : 1)
+            .ThenBy(path => IsGzipBundle(path) ? 1 : 0)
             .ThenBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
+            .GroupBy(NormalizeReadableFileName, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
             .ToList();
 
         if (!sourcePaths.Contains(normalizedPrimary, StringComparer.Ordinal))
@@ -45,7 +57,7 @@ public sealed class SekaiBundleDecryptor
         {
             foreach (var sourcePath in sourcePaths)
             {
-                var targetPath = Path.Combine(workspacePath, Path.GetFileName(sourcePath));
+                var targetPath = Path.Combine(workspacePath, NormalizeReadableFileName(sourcePath));
                 PrepareReadableBundleFile(sourcePath, targetPath);
             }
         }
@@ -57,11 +69,36 @@ public sealed class SekaiBundleDecryptor
 
         return new DecryptedBundleWorkspace(
             workspacePath,
-            Path.Combine(workspacePath, Path.GetFileName(normalizedPrimary))
+            Path.Combine(workspacePath, NormalizeReadableFileName(normalizedPrimary))
         );
     }
 
     private void PrepareReadableBundleFile(string sourcePath, string targetPath)
+    {
+        if (IsGzipBundle(sourcePath))
+        {
+            var inflatedPath = $"{targetPath}.inflated";
+            try
+            {
+                using (var source = File.Open(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var gzip = new GZipStream(source, CompressionMode.Decompress))
+                using (var inflated = File.Create(inflatedPath))
+                {
+                    gzip.CopyTo(inflated);
+                }
+                PrepareReadablePlainBundleFile(inflatedPath, targetPath);
+            }
+            finally
+            {
+                TryDeleteFile(inflatedPath);
+            }
+            return;
+        }
+
+        PrepareReadablePlainBundleFile(sourcePath, targetPath);
+    }
+
+    private void PrepareReadablePlainBundleFile(string sourcePath, string targetPath)
     {
         using var source = File.Open(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         Span<byte> header = stackalloc byte[4];
@@ -76,6 +113,23 @@ public sealed class SekaiBundleDecryptor
         }
 
         File.Copy(sourcePath, targetPath, overwrite: true);
+    }
+
+    private static bool IsGzipBundle(string path)
+    {
+        return path.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeReadableFileName(string sourcePath)
+    {
+        return StripGzipExtension(Path.GetFileName(sourcePath));
+    }
+
+    private static string StripGzipExtension(string path)
+    {
+        return path.EndsWith(".gz", StringComparison.OrdinalIgnoreCase)
+            ? path[..^".gz".Length]
+            : path;
     }
 
     private static void DecryptTo(Stream source, Stream target)
@@ -125,6 +179,21 @@ public sealed class SekaiBundleDecryptor
             if (Directory.Exists(path))
             {
                 Directory.Delete(path, recursive: true);
+            }
+        }
+        catch
+        {
+            // Keep best-effort cleanup silent for converter probing.
+        }
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
             }
         }
         catch

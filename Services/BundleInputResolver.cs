@@ -21,8 +21,7 @@ public sealed class BundleInputResolver
             throw new FileNotFoundException($"Body input not found: {inputPath}");
         }
 
-        var candidates = Directory
-            .GetFiles(normalized, "*.bundle", SearchOption.TopDirectoryOnly)
+        var candidates = EnumerateBundleFiles(normalized)
             .OrderBy(path => ScoreBodyCandidate(Path.GetFileName(path)))
             .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -30,7 +29,7 @@ public sealed class BundleInputResolver
         if (candidates.Length == 0)
         {
             throw new InvalidOperationException(
-                $"No .bundle files found in body directory: {inputPath}"
+                $"No .bundle or .bundle.gz files found in body directory: {inputPath}"
             );
         }
 
@@ -50,8 +49,7 @@ public sealed class BundleInputResolver
             throw new FileNotFoundException($"Head input not found: {inputPath}");
         }
 
-        var candidates = Directory
-            .GetFiles(normalized, "*.bundle", SearchOption.TopDirectoryOnly)
+        var candidates = EnumerateBundleFiles(normalized)
             .OrderBy(path => ScoreHeadCandidate(Path.GetFileName(path)))
             .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -59,7 +57,7 @@ public sealed class BundleInputResolver
         if (candidates.Length == 0)
         {
             throw new InvalidOperationException(
-                $"No .bundle files found in head directory: {inputPath}"
+                $"No .bundle or .bundle.gz files found in head directory: {inputPath}"
             );
         }
 
@@ -74,7 +72,7 @@ public sealed class BundleInputResolver
     {
         var normalizedResolved = Normalize(resolvedBundlePath);
         var characterId = InferCharacterId(normalizedResolved);
-        var bundleStem = Path.GetFileNameWithoutExtension(normalizedResolved);
+        var bundleStem = GetBundleStem(normalizedResolved);
         return new ResolvedBundleInput(
             partKind,
             originalInputPath,
@@ -82,6 +80,21 @@ public sealed class BundleInputResolver
             characterId,
             bundleStem
         );
+    }
+
+    private static IEnumerable<string> EnumerateBundleFiles(string directory)
+    {
+        return Directory
+            .GetFiles(directory, "*.bundle", SearchOption.TopDirectoryOnly)
+            .Concat(Directory.GetFiles(directory, "*.bundle.gz", SearchOption.TopDirectoryOnly));
+    }
+
+    private static string GetBundleStem(string path)
+    {
+        var fileName = Path.GetFileName(path);
+        return fileName.EndsWith(".bundle.gz", StringComparison.OrdinalIgnoreCase)
+            ? fileName[..^".bundle.gz".Length]
+            : Path.GetFileNameWithoutExtension(fileName);
     }
 
     private static string InferCharacterId(string path)

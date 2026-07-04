@@ -24,14 +24,28 @@ public static class BundleDependencyResolver
 
         if (mode == BundleLoadDependencyMode.FullDirectory || input.PartKind == BundlePartKind.Body)
         {
-            return BuildOrderedBundleList(primaryPath, Directory.EnumerateFiles(directory, "*.bundle", SearchOption.TopDirectoryOnly));
+            return BuildOrderedBundleList(primaryPath, EnumerateBundleFiles(directory));
         }
 
-        var familyStem = ResolveFamilyStem(Path.GetFileNameWithoutExtension(primaryPath));
-        var familyBundles = Directory
-            .EnumerateFiles(directory, "*.bundle", SearchOption.TopDirectoryOnly)
-            .Where(path => IsSameHeadFamily(Path.GetFileNameWithoutExtension(path), familyStem));
+        var familyStem = ResolveFamilyStem(GetBundleStem(primaryPath));
+        var familyBundles = EnumerateBundleFiles(directory)
+            .Where(path => IsSameHeadFamily(GetBundleStem(path), familyStem));
         return BuildOrderedBundleList(primaryPath, familyBundles);
+    }
+
+    private static IEnumerable<string> EnumerateBundleFiles(string directory)
+    {
+        return Directory
+            .EnumerateFiles(directory, "*.bundle", SearchOption.TopDirectoryOnly)
+            .Concat(Directory.EnumerateFiles(directory, "*.bundle.gz", SearchOption.TopDirectoryOnly));
+    }
+
+    private static string GetBundleStem(string path)
+    {
+        var fileName = Path.GetFileName(path);
+        return fileName.EndsWith(".bundle.gz", StringComparison.OrdinalIgnoreCase)
+            ? fileName[..^".bundle.gz".Length]
+            : Path.GetFileNameWithoutExtension(fileName);
     }
 
     private static IReadOnlyList<string> BuildOrderedBundleList(string primaryPath, IEnumerable<string> bundlePaths)

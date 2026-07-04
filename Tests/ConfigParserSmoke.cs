@@ -113,6 +113,16 @@ Expect(
     "head dependency resolver loads underscore siblings for head_all bundles"
 );
 
+var gzipOnlyRoot = Path.Combine(tempDir, "dependencies", "face", "13");
+Directory.CreateDirectory(gzipOnlyRoot);
+File.WriteAllText(Path.Combine(gzipOnlyRoot, "0001.bundle.gz"), "compressed placeholder");
+var gzipHeadInput = new BundleInputResolver().ResolveHead(gzipOnlyRoot);
+Expect(
+    gzipHeadInput.ResolvedBundlePath.EndsWith("0001.bundle.gz", StringComparison.OrdinalIgnoreCase),
+    "head input resolver accepts .bundle.gz files"
+);
+Expect(gzipHeadInput.BundleStem == "0001", "head input resolver strips .bundle.gz from bundle stems");
+
 var workerParsed = ConversionOptionsParser.Parse(new[]
 {
     "--emit-part-packages",
@@ -302,6 +312,34 @@ WriteJsonFile(Path.Combine(registryMasterDir, "costume3ds.json"), new[]
         costume3dRarity = "rarity_1",
         assetbundleName = "head_default_01",
         howToObtain = "default"
+    },
+    new
+    {
+        id = 202,
+        costume3dGroupId = 202,
+        partType = "hair",
+        characterId = 2,
+        colorId = 1,
+        colorName = "default",
+        name = "default hair fallback",
+        costume3dType = "normal",
+        costume3dRarity = "rarity_1",
+        assetbundleName = "unused",
+        howToObtain = "default"
+    },
+    new
+    {
+        id = 12000,
+        costume3dGroupId = 12000,
+        partType = "head",
+        characterId = 2,
+        colorId = 1,
+        colorName = "missing",
+        name = "missing complete head",
+        costume3dType = "normal",
+        costume3dRarity = "rarity_4",
+        assetbundleName = "unused",
+        howToObtain = "test"
     }
 });
 WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModels.json"), new object[]
@@ -335,6 +373,26 @@ WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModels.json"), new objec
         colorAssetbundleName = (string?)null,
         part = (string?)null,
         thumbnailAssetbundleName = "head_default_01"
+    },
+    new
+    {
+        costume3dId = 202,
+        unit = "light_sound",
+        assetbundleName = "02/0000",
+        headCostume3dAssetbundleType = (string?)null,
+        colorAssetbundleName = (string?)null,
+        part = (string?)null,
+        thumbnailAssetbundleName = "unused"
+    },
+    new
+    {
+        costume3dId = 12000,
+        unit = "light_sound",
+        assetbundleName = "0710/a05",
+        headCostume3dAssetbundleType = "head",
+        colorAssetbundleName = (string?)null,
+        part = (string?)null,
+        thumbnailAssetbundleName = "unused"
     }
 });
 WriteJsonFile(Path.Combine(registryMasterDir, "gameCharacters.json"), Array.Empty<object>());
@@ -383,14 +441,25 @@ var fallbackAccessoryColor = Path.Combine(
     "a04",
     "02.bundle"
 );
+var defaultHairFallback = Path.Combine(
+    registryAssetRoot,
+    "live_pv",
+    "model",
+    "characterv2",
+    "face",
+    "02",
+    "0001.bundle"
+);
 Directory.CreateDirectory(Path.GetDirectoryName(legacyAccessory)!);
 Directory.CreateDirectory(Path.GetDirectoryName(legacyAccessoryColor)!);
 Directory.CreateDirectory(Path.GetDirectoryName(fallbackAccessory)!);
 Directory.CreateDirectory(Path.GetDirectoryName(fallbackAccessoryColor)!);
+Directory.CreateDirectory(Path.GetDirectoryName(defaultHairFallback)!);
 File.WriteAllBytes(legacyAccessory, new byte[] { 1 });
 File.WriteAllBytes(legacyAccessoryColor, new byte[] { 2 });
 File.WriteAllBytes(fallbackAccessory, new byte[] { 3 });
 File.WriteAllBytes(fallbackAccessoryColor, new byte[] { 4 });
+File.WriteAllBytes(defaultHairFallback, new byte[] { 5 });
 var registryExport = new CostumeRegistryExporter().ExportInMemory(registryMasterDir, registryAssetRoot);
 var legacyAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001);
 Expect(legacyAccessoryEntry.PartType == "head_optional", "head_only registry rows are exported as head_optional");
@@ -408,6 +477,15 @@ Expect(emptyAccessoryEntry.Status == "empty", "empty head_default slot is a vali
 Expect(emptyAccessoryEntry.BundlePath is null, "empty head_default slot does not point at a bundle");
 Expect(emptyAccessoryEntry.SourceKey is null, "empty head_default slot does not create a source package");
 Expect(emptyAccessoryEntry.Warnings.Count == 0, "empty head_default slot is not a warning");
+var defaultHairEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 202);
+Expect(defaultHairEntry.Status == "planned", "default hair 0000 row falls back to existing 0001 bundle");
+Expect(defaultHairEntry.BundlePath == defaultHairFallback, "default hair fallback points at the existing 0001 bundle");
+Expect(defaultHairEntry.PackagePath.StartsWith("parts/_sources/hair/"), "default hair fallback keeps a source package");
+var missingHeadEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 12000);
+Expect(missingHeadEntry.Status == "missing", "missing complete head remains missing after fallback attempts");
+Expect(missingHeadEntry.BundlePath is null, "missing complete head does not keep a fabricated bundle path");
+Expect(missingHeadEntry.SourceKey is null, "missing complete head does not create a dangling source key");
+Expect(missingHeadEntry.Warnings.Any(warning => warning.Contains("face bundle not found")), "missing complete head records a file warning");
 
 PartMaterialMetadataSmoke.Run();
 
@@ -418,6 +496,8 @@ var roleRuntimeExporterSource = File.ReadAllText(Path.Combine(repoRoot, "Service
 var assetStudioLoadedBundleSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "AssetStudioLoadedBundle.cs"));
 var bundleDependencyResolverSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "BundleDependencyResolver.cs"));
 var materialIdentityLookupSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "MaterialIdentityLookup.cs"));
+var bundleInputResolverSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "BundleInputResolver.cs"));
+var sekaiBundleDecryptorSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "SekaiBundleDecryptor.cs"));
 Expect(partPackageExporterSource.Contains("name.Contains(\"eyelash\")"), "part package exporter classifies eyelash separately");
 Expect(partPackageExporterSource.Contains("return \"eyelash\""), "part package exporter returns eyelash material kind");
 Expect(partPackageExporterSource.Contains("name.Contains(\"eyebrow\")"), "part package exporter classifies eyebrow separately");
@@ -480,8 +560,13 @@ Expect(partPackageExporterSource.Contains("Part package export skipped"), "part 
 Expect(partPackageExporterSource.Contains("DeletePartExportError"), "part package exporter removes stale per-package errors after success");
 Expect(partPackageExporterSource.Contains("IsInShard"), "part package exporter can filter deterministic shards");
 Expect(partPackageExporterSource.Contains("public static void Merge"), "part package exporter can merge worker manifests");
+Expect(partPackageExporterSource.Contains("bundle-open-summary.json"), "part package exporter writes bundle-open diagnostics");
+Expect(partPackageExporterSource.Contains("missing_after_fallback"), "part package exporter marks material failures after full-directory fallback");
 Expect(assetStudioLoadedBundleSource.Contains("BundleDependencyResolver.ResolveLoadBundlePaths"), "loaded bundle uses shared dependency resolver");
 Expect(bundleDependencyResolverSource.Contains("BundleLoadDependencyMode.FullDirectory"), "bundle dependency resolver supports full-directory fallback");
+Expect(bundleDependencyResolverSource.Contains("\"*.bundle.gz\""), "bundle dependency resolver includes compressed bundle siblings");
+Expect(bundleInputResolverSource.Contains("\"*.bundle.gz\""), "bundle input resolver accepts compressed bundle inputs");
+Expect(sekaiBundleDecryptorSource.Contains("GZipStream"), "bundle decryptor inflates gzip bundles before AssetStudio load");
 Expect(partPackageExporterSource.Contains("MissingMaterialReferenceException"), "part package exporter retries missing material references");
 Expect(partPackageExporterSource.Contains("Recovered missing material reference"), "part package exporter records material dependency fallback warnings");
 Expect(materialIdentityLookupSource.Contains("MissingMaterialReferenceException"), "material lookup raises a typed missing reference error");
