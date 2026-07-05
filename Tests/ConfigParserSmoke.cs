@@ -532,11 +532,19 @@ Expect(partPackageExporterSource.Contains("Z: ReadAxisLimit(bone.Raw, \"zAngleLi
 Expect(partPackageExporterSource.Contains("ReadOptionalBool(axis, \"active\") ??"), "part package exporter reads explicit angle limit active flags");
 Expect(partPackageExporterSource.Contains("ReadOptionalBool(axis, \"m_Enabled\") ??"), "part package exporter reads Unity enabled angle limit flags");
 Expect(partPackageExporterSource.Contains("                true,"), "part package exporter defaults present angle limits to active like full runtime output");
+Expect(partPackageExporterSource.Contains("AccessoryTransformAdjustments: accessoryTransformAdjustments"), "part package exporter writes head_optional accessory transform adjustments");
 
+var partRuntimeModelsSource = File.ReadAllText(Path.Combine(repoRoot, "Models", "PartRuntimeModels.cs"));
+var springBoneExporterSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "SpringBoneExporter.cs"));
 var costumeRegistryModelsSource = File.ReadAllText(Path.Combine(repoRoot, "Models", "CostumeRegistryModels.cs"));
 var costumeRegistryExporterSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "CostumeRegistryExporter.cs"));
 var pjskRuntimeModelsSource = File.ReadAllText(Path.Combine(repoRoot, "Models", "PjskSekaiRuntimeModels.cs"));
 var pjskRuntimeBuilderSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "PjskSekaiRuntimeExtensionBuilder.cs"));
+Expect(partRuntimeModelsSource.Contains("accessoryTransformAdjustments"), "part runtime mount exposes accessory transform adjustment map");
+Expect(springBoneExporterSource.Contains("CharacterAccessoryTransformController"), "spring bone exporter keeps accessory transform controller mono behaviours");
+Expect(springBoneExporterSource.Contains("CharacterAccessoryTransformData"), "spring bone exporter keeps accessory transform data mono behaviours");
+Expect(springBoneExporterSource.Contains("BuildAccessoryTransformAdjustments"), "spring bone exporter extracts accessory transform adjustments");
+Expect(springBoneExporterSource.Contains("_faceIdAccessoryTransformDict"), "spring bone exporter reads official face-id accessory transform dictionary");
 Expect(pjskRuntimeModelsSource.Contains("faceRendererName"), "runtime body-head assembly exposes official face renderer predicate name");
 Expect(pjskRuntimeModelsSource.Contains("combineNodeAName"), "runtime body-head assembly exposes official combine node A");
 Expect(pjskRuntimeModelsSource.Contains("combineNodeBName"), "runtime body-head assembly exposes official combine node B");

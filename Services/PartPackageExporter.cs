@@ -299,7 +299,7 @@ public sealed class PartPackageExporter
                 ColorVariationBundlePath: entry.ColorVariationBundlePath,
                 AssetRootRelativeBundlePath: TryRelativePath(assetRoot, input.ResolvedBundlePath)
             ),
-            Mount: BuildMount(entry, inventory, normalizedType),
+            Mount: BuildMount(entry, inventory, normalizedType, springBone),
             Manifest: BuildManifest(entry, input, inventory, normalizedType, characterHeightMetersById),
             NativeMeshes: nativeMeshes,
             MaterialSlots: materialSlots,
@@ -997,8 +997,24 @@ public sealed class PartPackageExporter
         }
     }
 
-    private static PartRuntimeMount BuildMount(PartRegistryEntry entry, BundleInventory inventory, string partType)
+    private static PartRuntimeMount BuildMount(
+        PartRegistryEntry entry,
+        BundleInventory inventory,
+        string partType,
+        SpringBoneExport springBone
+    )
     {
+        var accessoryTransformAdjustments = partType == "head_optional"
+            ? springBone.AccessoryTransformAdjustments.ToDictionary(
+                adjustment => adjustment.FaceId,
+                adjustment => new PartRuntimeAccessoryTransformAdjustment(
+                    Position: adjustment.Position,
+                    RotationEulerDegrees: adjustment.RotationEulerDegrees,
+                    Scale: adjustment.Scale
+                ),
+                StringComparer.Ordinal
+            )
+            : null;
         return new PartRuntimeMount(
             MountKind: partType switch
             {
@@ -1011,7 +1027,10 @@ public sealed class PartPackageExporter
             ExpectedSkeletonId: entry.CharacterId.ToString("00"),
             Notes: partType == "head_optional"
                 ? new[] { "Viewer must verify attachNode exists in the current composed prefab graph before mounting." }
-                : new[] { "Viewer composer mounts this part and rebuilds SpringBone runtime after changes." }
+                : new[] { "Viewer composer mounts this part and rebuilds SpringBone runtime after changes." },
+            AccessoryTransformAdjustments: accessoryTransformAdjustments is { Count: > 0 }
+                ? accessoryTransformAdjustments
+                : null
         );
     }
 
@@ -1162,6 +1181,7 @@ public sealed class PartPackageExporter
             ForceProviders: Array.Empty<SpringMonoBehaviourEntry>(),
             SpringBonePivots: Array.Empty<SpringMonoBehaviourEntry>(),
             ExtraBones: Array.Empty<SpringExtraBoneEntry>(),
+            AccessoryTransformAdjustments: Array.Empty<SpringAccessoryTransformAdjustment>(),
             CharacterHair: null,
             CharacterEye: null,
             Warnings: Array.Empty<string>()

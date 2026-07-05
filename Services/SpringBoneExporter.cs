@@ -22,6 +22,8 @@ public sealed class SpringBoneExporter
         "WindVolumeOneSelf",
         "SekaiCharacterHair",
         "SekaiCharacterEye",
+        "CharacterAccessoryTransformController",
+        "CharacterAccessoryTransformData",
     };
 
     public SpringBoneExport Export(ResolvedBundleInput input)
@@ -147,6 +149,7 @@ public sealed class SpringBoneExporter
             .Where(entry => string.Equals(entry.ScriptName, "ExtraBone", StringComparison.OrdinalIgnoreCase))
             .Select(entry => BuildExtraBoneEntry(entry, objectRefsByPathId))
             .ToList();
+        var accessoryTransformAdjustments = BuildAccessoryTransformAdjustments(allMonoBehaviours);
         var characterHair = monoBehaviours
             .Where(entry => string.Equals(entry.ScriptName, "SekaiCharacterHair", StringComparison.OrdinalIgnoreCase))
             .Select(entry => BuildCharacterHairEntry(entry, objectRefsByPathId))
@@ -187,6 +190,7 @@ public sealed class SpringBoneExporter
             ForceProviders: forceProviders,
             SpringBonePivots: springBonePivots,
             ExtraBones: extraBones,
+            AccessoryTransformAdjustments: accessoryTransformAdjustments,
             CharacterHair: characterHair,
             CharacterEye: characterEye,
             Warnings: warnings
@@ -439,6 +443,185 @@ public sealed class SpringBoneExporter
         );
     }
 
+    private static IReadOnlyList<SpringAccessoryTransformAdjustment> BuildAccessoryTransformAdjustments(
+        IReadOnlyList<SpringMonoRaw> allMonoBehaviours
+    )
+    {
+        var dataPathIds = allMonoBehaviours
+            .Where(entry => string.Equals(entry.ScriptName, "CharacterAccessoryTransformController", StringComparison.OrdinalIgnoreCase))
+            .Select(entry => ReadObjectPathId(ReadObject(entry.Raw, "_characterAccessoryTransformData")) ??
+                ReadObjectPathId(ReadObject(entry.Raw, "characterAccessoryTransformData")))
+            .Where(pathId => pathId is not null)
+            .Select(pathId => pathId!.Value)
+            .ToHashSet();
+        var dataEntries = allMonoBehaviours
+            .Where(entry => string.Equals(entry.ScriptName, "CharacterAccessoryTransformData", StringComparison.OrdinalIgnoreCase))
+            .Where(entry => dataPathIds.Count == 0 || dataPathIds.Contains(entry.Mono.m_PathID))
+            .ToList();
+        var byFaceId = new Dictionary<string, SpringAccessoryTransformAdjustment>(StringComparer.Ordinal);
+        foreach (var entry in dataEntries)
+        {
+            foreach (var adjustment in ReadAccessoryTransformAdjustments(entry.Raw))
+            {
+                byFaceId.TryAdd(adjustment.FaceId, adjustment);
+            }
+        }
+        return byFaceId.Values
+            .OrderBy(adjustment => adjustment.FaceId, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private static IReadOnlyList<SpringAccessoryTransformAdjustment> ReadAccessoryTransformAdjustments(JsonObject raw)
+    {
+        var root = ReadObject(raw, "_faceIdAccessoryTransformDict") ??
+            ReadObject(raw, "faceIdAccessoryTransformDict") ??
+            ReadObject(raw, "FaceIdAccessoryTransformDict") ??
+            raw;
+        var result = new List<SpringAccessoryTransformAdjustment>();
+        CollectAccessoryTransformAdjustments(root, null, result);
+        return result;
+    }
+
+    private static void CollectAccessoryTransformAdjustments(
+        JsonNode? node,
+        string? faceId,
+        List<SpringAccessoryTransformAdjustment> output
+    )
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+            {
+                var currentFaceId = ReadString(obj, "key") ??
+                    ReadString(obj, "Key") ??
+                    ReadString(obj, "faceId") ??
+                    ReadString(obj, "FaceId") ??
+                    faceId;
+                var valueNode = ReadObject(obj, "value") ??
+                    ReadObject(obj, "Value");
+                if (valueNode is not null)
+                {
+                    if (TryReadAccessoryTransform(valueNode, currentFaceId, out var adjustment))
+                    {
+                        output.Add(adjustment);
+                    }
+                    CollectAccessoryTransformAdjustments(valueNode, currentFaceId, output);
+                    return;
+                }
+
+                if (TryReadAccessoryTransform(obj, currentFaceId, out var directAdjustment))
+                {
+                    output.Add(directAdjustment);
+                    return;
+                }
+
+                if (TryReadPairedDictionaryArrays(obj, output))
+                {
+                    return;
+                }
+
+                foreach (var pair in obj)
+                {
+                    var pairFaceId = LooksLikeFaceId(pair.Key) ? pair.Key : currentFaceId;
+                    if (TryReadAccessoryTransform(pair.Value, pairFaceId, out var pairAdjustment))
+                    {
+                        output.Add(pairAdjustment);
+                        continue;
+                    }
+                    CollectAccessoryTransformAdjustments(pair.Value, pairFaceId, output);
+                }
+                return;
+            }
+            case JsonArray array:
+                foreach (var item in array)
+                {
+                    CollectAccessoryTransformAdjustments(item, faceId, output);
+                }
+                return;
+        }
+    }
+
+    private static bool TryReadPairedDictionaryArrays(
+        JsonObject obj,
+        List<SpringAccessoryTransformAdjustment> output
+    )
+    {
+        var keys = ReadArray(obj, "keys") ??
+            ReadArray(obj, "Keys") ??
+            ReadArray(obj, "_keys") ??
+            ReadArray(obj, "m_keys");
+        var values = ReadArray(obj, "values") ??
+            ReadArray(obj, "Values") ??
+            ReadArray(obj, "_values") ??
+            ReadArray(obj, "m_values");
+        if (keys is null || values is null)
+        {
+            return false;
+        }
+
+        var count = Math.Min(keys.Count, values.Count);
+        for (var index = 0; index < count; index += 1)
+        {
+            var faceId = ReadString(keys[index]);
+            if (TryReadAccessoryTransform(values[index], faceId, out var adjustment))
+            {
+                output.Add(adjustment);
+            }
+        }
+        return true;
+    }
+
+    private static bool TryReadAccessoryTransform(
+        JsonNode? node,
+        string? faceId,
+        out SpringAccessoryTransformAdjustment adjustment
+    )
+    {
+        adjustment = default!;
+        if (string.IsNullOrWhiteSpace(faceId) || node is not JsonObject obj)
+        {
+            return false;
+        }
+
+        if (!HasVectorProperty(obj, "pos") &&
+            !HasVectorProperty(obj, "position") &&
+            !HasVectorProperty(obj, "rot") &&
+            !HasVectorProperty(obj, "rotation") &&
+            !HasVectorProperty(obj, "rotationEulerDegrees") &&
+            !HasVectorProperty(obj, "scale"))
+        {
+            return false;
+        }
+
+        var position = ReadVector3(obj, "pos") ??
+            ReadVector3(obj, "position") ??
+            new SpringVector3(0f, 0f, 0f);
+        var rotation = ReadVector3(obj, "rot") ??
+            ReadVector3(obj, "rotation") ??
+            ReadVector3(obj, "rotationEulerDegrees") ??
+            new SpringVector3(0f, 0f, 0f);
+        var scale = ReadVector3(obj, "scale") ??
+            new SpringVector3(1f, 1f, 1f);
+        adjustment = new SpringAccessoryTransformAdjustment(
+            FaceId: faceId,
+            Position: position,
+            RotationEulerDegrees: rotation,
+            Scale: scale
+        );
+        return true;
+    }
+
+    private static bool HasVectorProperty(JsonObject obj, string key)
+    {
+        return TryGetProperty(obj, key, out var value) && value is JsonObject;
+    }
+
+    private static bool LooksLikeFaceId(string key)
+    {
+        return key.Count(ch => ch == '/') == 1 &&
+            key.Split('/').All(part => !string.IsNullOrWhiteSpace(part));
+    }
+
     private static SpringCharacterHairEntry BuildCharacterHairEntry(
         SpringMonoRaw entry,
         IReadOnlyDictionary<long, SpringObjectRef> objectRefsByPathId
@@ -641,6 +824,31 @@ public sealed class SpringBoneExporter
             return Array.Empty<JsonNode?>();
         }
         return array;
+    }
+
+    private static JsonArray? ReadArray(JsonObject obj, string key)
+    {
+        return TryGetProperty(obj, key, out var value) && value is JsonArray array
+            ? array
+            : null;
+    }
+
+    private static string? ReadString(JsonObject obj, string key)
+    {
+        return TryGetProperty(obj, key, out var value)
+            ? ReadString(value)
+            : null;
+    }
+
+    private static string? ReadString(JsonNode? value)
+    {
+        if (value is null || value.GetValueKind() != System.Text.Json.JsonValueKind.String)
+        {
+            return null;
+        }
+        return value.AsValue().TryGetValue<string>(out var text) && !string.IsNullOrWhiteSpace(text)
+            ? text
+            : null;
     }
 
     private static float? ReadFloat(JsonObject obj, string key)

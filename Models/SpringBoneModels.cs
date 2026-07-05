@@ -16,6 +16,7 @@ public sealed record SpringBoneExport(
     IReadOnlyList<SpringMonoBehaviourEntry> ForceProviders,
     IReadOnlyList<SpringMonoBehaviourEntry> SpringBonePivots,
     IReadOnlyList<SpringExtraBoneEntry> ExtraBones,
+    IReadOnlyList<SpringAccessoryTransformAdjustment> AccessoryTransformAdjustments,
     SpringCharacterHairEntry? CharacterHair,
     SpringCharacterEyeEntry? CharacterEye,
     IReadOnlyList<string> Warnings
@@ -171,6 +172,13 @@ public sealed record SpringExtraBoneEntry(
     int? AxisY,
     int? AxisZ,
     JsonObject Raw
+);
+
+public sealed record SpringAccessoryTransformAdjustment(
+    string FaceId,
+    SpringVector3 Position,
+    SpringVector3 RotationEulerDegrees,
+    SpringVector3 Scale
 );
 
 public sealed record SpringCharacterHairEntry(

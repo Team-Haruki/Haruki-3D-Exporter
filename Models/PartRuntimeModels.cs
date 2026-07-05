@@ -41,7 +41,15 @@ public sealed record PartRuntimeMount(
     [property: JsonPropertyName("rootNodeName")] string? RootNodeName,
     [property: JsonPropertyName("attachNode")] string? AttachNode,
     [property: JsonPropertyName("expectedSkeletonId")] string? ExpectedSkeletonId,
-    [property: JsonPropertyName("notes")] IReadOnlyList<string> Notes
+    [property: JsonPropertyName("notes")] IReadOnlyList<string> Notes,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [property: JsonPropertyName("accessoryTransformAdjustments")] IReadOnlyDictionary<string, PartRuntimeAccessoryTransformAdjustment>? AccessoryTransformAdjustments = null
+);
+
+public sealed record PartRuntimeAccessoryTransformAdjustment(
+    [property: JsonPropertyName("position")] SpringVector3 Position,
+    [property: JsonPropertyName("rotationEulerDegrees")] SpringVector3 RotationEulerDegrees,
+    [property: JsonPropertyName("scale")] SpringVector3 Scale
 );
 
 public sealed record PartRuntimeSpringBone(
@@ -55,4 +63,3 @@ public sealed record PartRuntimeSpringBone(
     [property: JsonPropertyName("activeRootProfile")] PjskSpringBoneActiveRootProfile ActiveRootProfile,
     [property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings
 );
-
