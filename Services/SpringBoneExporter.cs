@@ -10,6 +10,12 @@ namespace PjskBundle2Parts.Services;
 public sealed class SpringBoneExporter
 {
     private const string SekaiUnityVersion = "2022.3.21f1";
+    private static readonly string[] UnityConstraintTypeNames =
+    {
+        "RotationConstraint",
+        "ParentConstraint",
+        "AimConstraint",
+    };
     private static readonly HashSet<string> SpringScriptNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "SpringManager",
@@ -37,14 +43,7 @@ public sealed class SpringBoneExporter
             MeshLazyLoad = false,
         };
         manager.Options.CustomUnityVersion = new UnityVersion(SekaiUnityVersion);
-        manager.SetAssetFilter(
-            ClassIDType.GameObject,
-            ClassIDType.Transform,
-            ClassIDType.Animator,
-            ClassIDType.MonoBehaviour,
-            ClassIDType.MeshRenderer,
-            ClassIDType.SkinnedMeshRenderer
-        );
+        manager.SetAssetFilter(BuildModelAssetFilter());
         manager.LoadFilesAndFolders(readableBundle.DirectoryPath);
 
         var objects = manager.AssetsFileList
@@ -334,6 +333,13 @@ public sealed class SpringBoneExporter
                 );
             })
             .ToList();
+        var constraints = objects
+            .Where(IsUnityConstraintObject)
+            .OrderBy(constraint => ResolveObjectRef(ReadObject(ConvertToJsonObject(constraint.ToType()) ?? new JsonObject(), "m_GameObject"), objectRefsByPathId)?.TransformPath, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.type.ToString(), StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.m_PathID)
+            .Select(constraint => BuildPrefabConstraint(constraint, objectRefsByPathId))
+            .ToList();
         var rootTransformPathIds = transforms
             .Where(transform => transform.ParentPathId is null)
             .Select(transform => transform.PathId)
@@ -348,8 +354,132 @@ public sealed class SpringBoneExporter
             Renderers: renderers,
             Animators: animators,
             MonoBehaviours: monoGraph,
+            Constraints: constraints,
+            ConstraintCapability: BuildConstraintCapability(),
             RootTransformPathIds: rootTransformPathIds
         );
+    }
+
+    private static ClassIDType[] BuildModelAssetFilter()
+    {
+        return new[]
+            {
+                ClassIDType.GameObject,
+                ClassIDType.Transform,
+                ClassIDType.Animator,
+                ClassIDType.MonoBehaviour,
+                ClassIDType.MeshRenderer,
+                ClassIDType.SkinnedMeshRenderer,
+            }
+            .Concat(ReadSupportedConstraintClassIds())
+            .Distinct()
+            .ToArray();
+    }
+
+    private static IEnumerable<ClassIDType> ReadSupportedConstraintClassIds()
+    {
+        foreach (var typeName in UnityConstraintTypeNames)
+        {
+            if (Enum.TryParse<ClassIDType>(typeName, ignoreCase: true, out var classId))
+            {
+                yield return classId;
+            }
+        }
+    }
+
+    private static SpringPrefabConstraintCapability BuildConstraintCapability()
+    {
+        var supported = UnityConstraintTypeNames
+            .Where(typeName => Enum.TryParse<ClassIDType>(typeName, ignoreCase: true, out _))
+            .ToList();
+        return new SpringPrefabConstraintCapability(
+            RequestedTypes: UnityConstraintTypeNames,
+            SupportedTypes: supported,
+            MissingTypes: UnityConstraintTypeNames.Except(supported, StringComparer.OrdinalIgnoreCase).ToList()
+        );
+    }
+
+    private static bool IsUnityConstraintObject(Object value)
+    {
+        return UnityConstraintTypeNames.Contains(value.type.ToString(), StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static SpringPrefabConstraint BuildPrefabConstraint(
+        Object constraint,
+        IReadOnlyDictionary<long, SpringObjectRef> objectRefsByPathId
+    )
+    {
+        var raw = ConvertToJsonObject(constraint.ToType()) ?? new JsonObject();
+        var owner = ResolveObjectRef(ReadObject(raw, "m_GameObject"), objectRefsByPathId);
+        return new SpringPrefabConstraint(
+            PathId: constraint.m_PathID,
+            Type: NormalizeConstraintType(constraint.type.ToString()),
+            TypeName: constraint.type.ToString(),
+            GameObjectPathId: owner?.PathId,
+            OwnerName: owner?.Name,
+            OwnerPath: owner?.TransformPath,
+            PoseRoot: ExtractPoseRoot(owner?.TransformPath),
+            Enabled: ReadBool(raw, "m_Enabled"),
+            Active: ReadBool(raw, "m_Active"),
+            Sources: ReadConstraintSources(raw, objectRefsByPathId),
+            ObjectReferenceFields: CollectObjectReferenceFields(raw)
+        );
+    }
+
+    private static string NormalizeConstraintType(string typeName)
+    {
+        return typeName switch
+        {
+            _ when string.Equals(typeName, "RotationConstraint", StringComparison.OrdinalIgnoreCase) => "rotation",
+            _ when string.Equals(typeName, "ParentConstraint", StringComparison.OrdinalIgnoreCase) => "parent",
+            _ when string.Equals(typeName, "AimConstraint", StringComparison.OrdinalIgnoreCase) => "aim",
+            _ => typeName,
+        };
+    }
+
+    private static IReadOnlyList<SpringPrefabConstraintSource> ReadConstraintSources(
+        JsonObject raw,
+        IReadOnlyDictionary<long, SpringObjectRef> objectRefsByPathId
+    )
+    {
+        var sourceNodes = ReadFirstArray(raw, "m_Sources", "sources", "Sources");
+        var offsets = ReadFirstArray(raw, "m_TranslationOffsets", "translationOffsets", "TranslationOffsets");
+        var sources = new List<SpringPrefabConstraintSource>();
+        if (sourceNodes is null)
+        {
+            return sources;
+        }
+
+        for (var index = 0; index < sourceNodes.Count; index += 1)
+        {
+            if (sourceNodes[index] is not JsonObject sourceObject)
+            {
+                continue;
+            }
+            var transformRef = ResolveObjectRef(
+                ReadObject(sourceObject, "sourceTransform") ??
+                    ReadObject(sourceObject, "m_SourceTransform") ??
+                    ReadObject(sourceObject, "transform") ??
+                    ReadObject(sourceObject, "Transform"),
+                objectRefsByPathId
+            );
+            var weight = ReadFloat(sourceObject, "weight") ??
+                ReadFloat(sourceObject, "m_Weight") ??
+                1f;
+            var offset = ReadVector3(sourceObject, "translationOffset") ??
+                ReadVector3(sourceObject, "m_TranslationOffset") ??
+                ReadVector3(sourceObject, "offset") ??
+                ReadVector3(sourceObject, "m_Offset") ??
+                ReadVector3(offsets, index);
+            sources.Add(new SpringPrefabConstraintSource(
+                SourcePathId: transformRef?.PathId,
+                SourceName: transformRef?.Name,
+                SourcePath: transformRef?.TransformPath,
+                Weight: weight,
+                TranslationOffset: offset
+            ));
+        }
+        return sources;
     }
 
     private static SpringBoneEntry BuildSpringBoneEntry(
@@ -833,6 +963,46 @@ public sealed class SpringBoneExporter
             : null;
     }
 
+    private static JsonArray? ReadFirstArray(JsonObject obj, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (!TryGetProperty(obj, key, out var value))
+            {
+                continue;
+            }
+            var array = UnwrapUnityArray(value);
+            if (array is not null)
+            {
+                return array;
+            }
+        }
+        return null;
+    }
+
+    private static JsonArray? UnwrapUnityArray(JsonNode? value)
+    {
+        if (value is JsonArray array)
+        {
+            return array;
+        }
+        if (value is not JsonObject obj)
+        {
+            return null;
+        }
+        if (TryGetProperty(obj, "data", out var data))
+        {
+            return UnwrapUnityArray(data);
+        }
+        if (TryGetProperty(obj, "Array", out var unityArray))
+        {
+            return UnwrapUnityArray(unityArray);
+        }
+        return TryGetProperty(obj, "items", out var items)
+            ? UnwrapUnityArray(items)
+            : null;
+    }
+
     private static string? ReadString(JsonObject obj, string key)
     {
         return TryGetProperty(obj, key, out var value)
@@ -961,6 +1131,23 @@ public sealed class SpringBoneExporter
         {
             return null;
         }
+        var x = ReadFloat(vector, "x") ?? ReadFloat(vector, "X");
+        var y = ReadFloat(vector, "y") ?? ReadFloat(vector, "Y");
+        var z = ReadFloat(vector, "z") ?? ReadFloat(vector, "Z");
+        return x.HasValue && y.HasValue && z.HasValue
+            ? new SpringVector3(x.Value, y.Value, z.Value)
+            : null;
+    }
+
+    private static SpringVector3? ReadVector3(JsonArray? array, int index)
+    {
+        return array is not null && index >= 0 && index < array.Count && array[index] is JsonObject vector
+            ? ReadVector3(vector)
+            : null;
+    }
+
+    private static SpringVector3? ReadVector3(JsonObject vector)
+    {
         var x = ReadFloat(vector, "x") ?? ReadFloat(vector, "X");
         var y = ReadFloat(vector, "y") ?? ReadFloat(vector, "Y");
         var z = ReadFloat(vector, "z") ?? ReadFloat(vector, "Z");

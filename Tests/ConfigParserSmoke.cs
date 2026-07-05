@@ -549,6 +549,15 @@ Expect(pjskRuntimeModelsSource.Contains("faceRendererName"), "runtime body-head 
 Expect(pjskRuntimeModelsSource.Contains("combineNodeAName"), "runtime body-head assembly exposes official combine node A");
 Expect(pjskRuntimeModelsSource.Contains("combineNodeBName"), "runtime body-head assembly exposes official combine node B");
 Expect(pjskRuntimeModelsSource.Contains("childMoveSuffix"), "runtime body-head assembly exposes official child move suffix");
+Expect(pjskRuntimeModelsSource.Contains("PjskUnityRuntimeConstraintSetup"), "runtime unity setup exposes constraint setup metadata");
+Expect(pjskRuntimeModelsSource.Contains("PjskUnityRuntimeConstraint"), "runtime unity setup exposes constraint records");
+Expect(pjskRuntimeModelsSource.Contains("PjskUnityRuntimeConstraintSource"), "runtime unity setup exposes multi-source constraint records");
+Expect(springBoneExporterSource.Contains("Enum.TryParse<ClassIDType>"), "spring exporter probes AssetStudio constraint ClassID support dynamically");
+Expect(springBoneExporterSource.Contains("SpringPrefabConstraintCapability"), "spring exporter records AssetStudio constraint capability");
+Expect(springBoneExporterSource.Contains("ReadConstraintSources"), "spring exporter reads Unity constraint sources");
+Expect(pjskRuntimeBuilderSource.Contains("BuildConstraintSetup"), "runtime builder emits constraint setup metadata");
+Expect(pjskRuntimeBuilderSource.Contains("ModelUtility.ConstraintSetup"), "runtime setup plan includes official constraint setup step");
+Expect(partPackageExporterSource.Contains("repair constraints after composition"), "part package setup plan carries constraint repair through viewer composition");
 Expect(pjskRuntimeBuilderSource.Contains("ParentingMode: \"model_combine_setup\""), "full runtime setup declares official ModelCombineSetup parenting mode");
 Expect(pjskRuntimeBuilderSource.Contains("FaceRendererName: \"Face\""), "full runtime setup writes official face renderer predicate");
 Expect(pjskRuntimeBuilderSource.Contains("ChildMoveSuffix: \"_target\""), "full runtime setup writes official child move suffix");

@@ -296,12 +296,41 @@ public sealed record PjskSpringBoneRuntimeUnitySetup(
     [property: JsonPropertyName("setupPlan")] PjskSpringBoneSetupPlan SetupPlan,
     [property: JsonPropertyName("bindingDecisions")] IReadOnlyList<PjskSpringBoneBindingDecision> BindingDecisions,
     [property: JsonPropertyName("activeRootProfile")] PjskSpringBoneActiveRootProfile ActiveRootProfile,
+    [property: JsonPropertyName("constraintSetup")] PjskUnityRuntimeConstraintSetup ConstraintSetup,
     [property: JsonPropertyName("managerColliderCaches")] IReadOnlyList<PjskSpringBoneRuntimeManagerColliderCache> ManagerColliderCaches,
     [property: JsonPropertyName("managers")] IReadOnlyList<PjskSpringBoneRuntimeManager> Managers,
     [property: JsonPropertyName("bones")] IReadOnlyList<PjskSpringBoneRuntimeBone> Bones,
     [property: JsonPropertyName("colliders")] IReadOnlyList<PjskSpringBoneRuntimeCollider> Colliders,
     [property: JsonPropertyName("colliderBindings")] IReadOnlyList<PjskSpringBoneRuntimeColliderBinding> ColliderBindings,
     [property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings
+);
+
+public sealed record PjskUnityRuntimeConstraintSetup(
+    [property: JsonPropertyName("version")] string Version,
+    [property: JsonPropertyName("sourceKind")] string SourceKind,
+    [property: JsonPropertyName("constraints")] IReadOnlyList<PjskUnityRuntimeConstraint> Constraints,
+    [property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings
+);
+
+public sealed record PjskUnityRuntimeConstraint(
+    [property: JsonPropertyName("partKind")] string PartKind,
+    [property: JsonPropertyName("type")] string Type,
+    [property: JsonPropertyName("pathId")] long PathId,
+    [property: JsonPropertyName("ownerPath")] string? OwnerPath,
+    [property: JsonPropertyName("ownerName")] string? OwnerName,
+    [property: JsonPropertyName("enabled")] bool? Enabled,
+    [property: JsonPropertyName("active")] bool? Active,
+    [property: JsonPropertyName("sources")] IReadOnlyList<PjskUnityRuntimeConstraintSource> Sources,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("reason")] string Reason
+);
+
+public sealed record PjskUnityRuntimeConstraintSource(
+    [property: JsonPropertyName("sourcePathId")] long? SourcePathId,
+    [property: JsonPropertyName("sourceName")] string? SourceName,
+    [property: JsonPropertyName("sourcePath")] string? SourcePath,
+    [property: JsonPropertyName("weight")] float Weight,
+    [property: JsonPropertyName("translationOffset")] SpringVector3? TranslationOffset
 );
 
 public sealed record PjskUnityRuntimeBodyHeadAssembly(

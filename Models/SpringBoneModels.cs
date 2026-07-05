@@ -37,6 +37,8 @@ public sealed record SpringPrefabGraph(
     [property: JsonPropertyName("renderers")] IReadOnlyList<SpringPrefabRenderer> Renderers,
     [property: JsonPropertyName("animators")] IReadOnlyList<SpringPrefabAnimator> Animators,
     [property: JsonPropertyName("monoBehaviours")] IReadOnlyList<SpringPrefabMonoBehaviour> MonoBehaviours,
+    [property: JsonPropertyName("constraints")] IReadOnlyList<SpringPrefabConstraint> Constraints,
+    [property: JsonPropertyName("constraintCapability")] SpringPrefabConstraintCapability ConstraintCapability,
     [property: JsonPropertyName("rootTransformPathIds")] IReadOnlyList<long> RootTransformPathIds
 );
 
@@ -113,6 +115,34 @@ public sealed record SpringPrefabObjectReferenceField(
 public sealed record SpringPrefabObjectReference(
     [property: JsonPropertyName("fileId")] int FileId,
     [property: JsonPropertyName("pathId")] long PathId
+);
+
+public sealed record SpringPrefabConstraintCapability(
+    [property: JsonPropertyName("requestedTypes")] IReadOnlyList<string> RequestedTypes,
+    [property: JsonPropertyName("supportedTypes")] IReadOnlyList<string> SupportedTypes,
+    [property: JsonPropertyName("missingTypes")] IReadOnlyList<string> MissingTypes
+);
+
+public sealed record SpringPrefabConstraint(
+    [property: JsonPropertyName("pathId")] long PathId,
+    [property: JsonPropertyName("type")] string Type,
+    [property: JsonPropertyName("typeName")] string TypeName,
+    [property: JsonPropertyName("gameObjectPathId")] long? GameObjectPathId,
+    [property: JsonPropertyName("ownerName")] string? OwnerName,
+    [property: JsonPropertyName("ownerPath")] string? OwnerPath,
+    [property: JsonPropertyName("poseRoot")] string? PoseRoot,
+    [property: JsonPropertyName("enabled")] bool? Enabled,
+    [property: JsonPropertyName("active")] bool? Active,
+    [property: JsonPropertyName("sources")] IReadOnlyList<SpringPrefabConstraintSource> Sources,
+    [property: JsonPropertyName("objectReferenceFields")] IReadOnlyList<SpringPrefabObjectReferenceField> ObjectReferenceFields
+);
+
+public sealed record SpringPrefabConstraintSource(
+    [property: JsonPropertyName("sourcePathId")] long? SourcePathId,
+    [property: JsonPropertyName("sourceName")] string? SourceName,
+    [property: JsonPropertyName("sourcePath")] string? SourcePath,
+    [property: JsonPropertyName("weight")] float Weight,
+    [property: JsonPropertyName("translationOffset")] SpringVector3? TranslationOffset
 );
 
 public sealed record SpringObjectRef(

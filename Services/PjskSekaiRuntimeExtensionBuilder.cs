@@ -448,6 +448,10 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
                     .Where(root => !activeRoots.Contains(root, StringComparer.Ordinal))
                     .ToList()
             ),
+            ConstraintSetup: BuildConstraintSetup(
+                "combined_body_head_runtime",
+                prefabGraphs
+            ),
             ManagerColliderCaches: BuildManagerColliderCaches(managers, colliders),
             Managers: managers,
             Bones: bones,
@@ -457,6 +461,87 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
         );
     }
 
+    public static PjskUnityRuntimeConstraintSetup BuildConstraintSetup(
+        string sourceKind,
+        IReadOnlyList<SpringPrefabGraph> prefabGraphs
+    )
+    {
+        var constraints = prefabGraphs
+            .SelectMany(graph => graph.Constraints.Select(constraint => new { graph.PartKind, constraint }))
+            .Select(entry => BuildConstraint(entry.PartKind, entry.constraint))
+            .ToList();
+        IReadOnlyList<string> warnings = constraints.Count == 0
+            ? new[]
+            {
+                BuildMissingConstraintWarning(prefabGraphs),
+            }
+            : constraints
+                .Where(constraint => constraint.Status != "resolved")
+                .Select(constraint => $"Constraint {constraint.Type} at {constraint.OwnerPath ?? constraint.OwnerName ?? constraint.PathId.ToString()} is {constraint.Status}: {constraint.Reason}")
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+        return new PjskUnityRuntimeConstraintSetup(
+            Version: "0414",
+            SourceKind: sourceKind,
+            Constraints: constraints,
+            Warnings: warnings
+        );
+    }
+
+    private static PjskUnityRuntimeConstraint BuildConstraint(
+        string partKind,
+        SpringPrefabConstraint constraint
+    )
+    {
+        var sources = constraint.Sources
+            .Select(source => new PjskUnityRuntimeConstraintSource(
+                SourcePathId: source.SourcePathId,
+                SourceName: source.SourceName,
+                SourcePath: source.SourcePath,
+                Weight: source.Weight,
+                TranslationOffset: source.TranslationOffset
+            ))
+            .ToList();
+        var hasResolvedSource = sources.Count > 0 &&
+            sources.All(source => !string.IsNullOrWhiteSpace(source.SourcePath) || !string.IsNullOrWhiteSpace(source.SourceName));
+        var hasOwner = !string.IsNullOrWhiteSpace(constraint.OwnerPath) || !string.IsNullOrWhiteSpace(constraint.OwnerName);
+        var status = hasOwner && hasResolvedSource ? "resolved" : "unresolved_source";
+        return new PjskUnityRuntimeConstraint(
+            PartKind: partKind,
+            Type: constraint.Type,
+            PathId: constraint.PathId,
+            OwnerPath: constraint.OwnerPath,
+            OwnerName: constraint.OwnerName,
+            Enabled: constraint.Enabled,
+            Active: constraint.Active,
+            Sources: sources,
+            Status: status,
+            Reason: status == "resolved"
+                ? "Constraint source transforms were exported by the AssetStudio runtime payload."
+                : "Constraint component was detected, but owner/source transform path or name is incomplete in the normalized payload."
+        );
+    }
+
+    private static string BuildMissingConstraintWarning(IReadOnlyList<SpringPrefabGraph> prefabGraphs)
+    {
+        var capabilities = prefabGraphs
+            .Select(graph => graph.ConstraintCapability)
+            .ToList();
+        var supported = capabilities
+            .SelectMany(capability => capability.SupportedTypes)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(type => type, StringComparer.Ordinal)
+            .ToList();
+        var missing = capabilities
+            .SelectMany(capability => capability.MissingTypes)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(type => type, StringComparer.Ordinal)
+            .ToList();
+        return supported.Count == 0
+            ? "No Unity RotationConstraint/ParentConstraint/AimConstraint ClassID is exposed by the current AssetStudio runtime; runtime constraint repair is inactive for this package."
+            : $"No Unity constraint components were found in this package. AssetStudio supports [{string.Join(", ", supported)}]; missing [{string.Join(", ", missing)}].";
+    }
     private static PjskUnityRuntimeBodyHeadAssembly BuildBodyHeadAssembly(
         string defaultBodyRoot,
         IReadOnlyList<SpringPrefabGraph> prefabGraphs
@@ -613,8 +698,10 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
             ManagerPathIds: managers.Select(manager => manager.PathId).OrderBy(pathId => pathId).ToList(),
             OrderedSteps: new[]
             {
+                "ModelUtility.ModelCombineSetup",
                 "CharacterModel.SetupSpringBone",
                 "ModelUtility.SpringBoneSetup",
+                "ModelUtility.ConstraintSetup",
                 "SpringManager.FindSpringBones(true)",
                 "SpringManager.SetupCollider",
                 "SpringBone.Initialize",

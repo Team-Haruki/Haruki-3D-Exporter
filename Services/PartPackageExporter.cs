@@ -528,7 +528,7 @@ public sealed class PartPackageExporter
                 DiscoveryMode: "single_part_runtime_package",
                 RootPolicy: "viewer_composer_merge",
                 ManagerPathIds: managers.Select(manager => manager.PathId).ToList(),
-                OrderedSteps: new[] { "mount part graph", "merge active part springbone", "rebind current body colliders", "reset spring runtime" },
+                OrderedSteps: new[] { "mount part graph", "merge active part springbone", "repair constraints after composition", "rebind current body colliders", "reset spring runtime" },
                 DirectBindingCount: bindings.Count(binding => binding.SourceKind == "direct"),
                 ColliderFlagBindingCount: bindings.Count(binding => binding.SourceKind == "colliderFlag")
             ),
@@ -537,6 +537,10 @@ public sealed class PartPackageExporter
                 DefaultBodyRoot: defaultRoot,
                 ActiveRoots: activeRoots.Count == 0 ? new[] { defaultRoot } : activeRoots,
                 InactiveRoots: Array.Empty<string>()
+            ),
+            ConstraintSetup: PjskSekaiRuntimeExtensionBuilder.BuildConstraintSetup(
+                "single_part_runtime_package",
+                new[] { springBone.PrefabGraph }
             ),
             ManagerColliderCaches: BuildManagerColliderCaches(managers, colliders),
             Managers: managers,
@@ -1172,7 +1176,23 @@ public sealed class PartPackageExporter
             Version: 1,
             BundlePath: string.Empty,
             PartKind: partKind,
-            PrefabGraph: new SpringPrefabGraph(1, partKind, string.Empty, Array.Empty<SpringPrefabGameObject>(), Array.Empty<SpringPrefabTransform>(), Array.Empty<SpringPrefabRenderer>(), Array.Empty<SpringPrefabAnimator>(), Array.Empty<SpringPrefabMonoBehaviour>(), Array.Empty<long>()),
+            PrefabGraph: new SpringPrefabGraph(
+                1,
+                partKind,
+                string.Empty,
+                Array.Empty<SpringPrefabGameObject>(),
+                Array.Empty<SpringPrefabTransform>(),
+                Array.Empty<SpringPrefabRenderer>(),
+                Array.Empty<SpringPrefabAnimator>(),
+                Array.Empty<SpringPrefabMonoBehaviour>(),
+                Array.Empty<SpringPrefabConstraint>(),
+                new SpringPrefabConstraintCapability(
+                    RequestedTypes: Array.Empty<string>(),
+                    SupportedTypes: Array.Empty<string>(),
+                    MissingTypes: Array.Empty<string>()
+                ),
+                Array.Empty<long>()
+            ),
             Managers: Array.Empty<SpringMonoBehaviourEntry>(),
             Bones: Array.Empty<SpringBoneEntry>(),
             SphereColliders: Array.Empty<SpringColliderEntry>(),
