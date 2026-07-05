@@ -411,6 +411,12 @@ public sealed class SpringBoneExporter
     {
         var raw = ConvertToJsonObject(constraint.ToType()) ?? new JsonObject();
         var owner = ResolveObjectRef(ReadObject(raw, "m_GameObject"), objectRefsByPathId);
+        var worldUpObject = ResolveObjectRef(
+            ReadObject(raw, "m_WorldUpObject") ??
+                ReadObject(raw, "worldUpObject") ??
+                ReadObject(raw, "WorldUpObject"),
+            objectRefsByPathId
+        );
         return new SpringPrefabConstraint(
             PathId: constraint.m_PathID,
             Type: NormalizeConstraintType(constraint.type.ToString()),
@@ -421,6 +427,17 @@ public sealed class SpringBoneExporter
             PoseRoot: ExtractPoseRoot(owner?.TransformPath),
             Enabled: ReadBool(raw, "m_Enabled"),
             Active: ReadBool(raw, "m_Active"),
+            TranslationAtRest: ReadVector3(raw, "m_TranslationAtRest") ?? ReadVector3(raw, "translationAtRest"),
+            RotationAtRest: ReadVector3(raw, "m_RotationAtRest") ?? ReadVector3(raw, "rotationAtRest"),
+            TranslationOffset: ReadVector3(raw, "m_TranslationOffset") ?? ReadVector3(raw, "translationOffset"),
+            RotationOffset: ReadVector3(raw, "m_RotationOffset") ?? ReadVector3(raw, "rotationOffset"),
+            AimVector: ReadVector3(raw, "m_AimVector") ?? ReadVector3(raw, "aimVector"),
+            UpVector: ReadVector3(raw, "m_UpVector") ?? ReadVector3(raw, "upVector"),
+            WorldUpVector: ReadVector3(raw, "m_WorldUpVector") ?? ReadVector3(raw, "worldUpVector"),
+            WorldUpType: ReadInt(raw, "m_WorldUpType") ?? ReadInt(raw, "worldUpType"),
+            WorldUpObjectPathId: worldUpObject?.PathId,
+            WorldUpObjectName: worldUpObject?.Name,
+            WorldUpObjectPath: worldUpObject?.TransformPath,
             Sources: ReadConstraintSources(raw, objectRefsByPathId),
             ObjectReferenceFields: CollectObjectReferenceFields(raw)
         );
@@ -444,6 +461,7 @@ public sealed class SpringBoneExporter
     {
         var sourceNodes = ReadFirstArray(raw, "m_Sources", "sources", "Sources");
         var offsets = ReadFirstArray(raw, "m_TranslationOffsets", "translationOffsets", "TranslationOffsets");
+        var rotationOffsets = ReadFirstArray(raw, "m_RotationOffsets", "rotationOffsets", "RotationOffsets");
         var sources = new List<SpringPrefabConstraintSource>();
         if (sourceNodes is null)
         {
@@ -471,12 +489,16 @@ public sealed class SpringBoneExporter
                 ReadVector3(sourceObject, "offset") ??
                 ReadVector3(sourceObject, "m_Offset") ??
                 ReadVector3(offsets, index);
+            var rotationOffset = ReadVector3(sourceObject, "rotationOffset") ??
+                ReadVector3(sourceObject, "m_RotationOffset") ??
+                ReadVector3(rotationOffsets, index);
             sources.Add(new SpringPrefabConstraintSource(
                 SourcePathId: transformRef?.PathId,
                 SourceName: transformRef?.Name,
                 SourcePath: transformRef?.TransformPath,
                 Weight: weight,
-                TranslationOffset: offset
+                TranslationOffset: offset,
+                RotationOffset: rotationOffset
             ));
         }
         return sources;

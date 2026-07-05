@@ -555,6 +555,12 @@ Expect(pjskRuntimeModelsSource.Contains("PjskUnityRuntimeConstraintSource"), "ru
 Expect(springBoneExporterSource.Contains("Enum.TryParse<ClassIDType>"), "spring exporter probes AssetStudio constraint ClassID support dynamically");
 Expect(springBoneExporterSource.Contains("SpringPrefabConstraintCapability"), "spring exporter records AssetStudio constraint capability");
 Expect(springBoneExporterSource.Contains("ReadConstraintSources"), "spring exporter reads Unity constraint sources");
+Expect(springBoneExporterSource.Contains("m_AimVector"), "spring exporter reads Unity AimConstraint axis fields");
+Expect(springBoneExporterSource.Contains("m_WorldUpObject"), "spring exporter reads Unity AimConstraint world-up object");
+Expect(springBoneExporterSource.Contains("m_RotationOffsets"), "spring exporter reads Unity per-source rotation offsets");
+Expect(pjskRuntimeModelsSource.Contains("aimVector"), "runtime constraint records expose aim vector");
+Expect(pjskRuntimeModelsSource.Contains("worldUpObjectPath"), "runtime constraint records expose world-up object path");
+Expect(pjskRuntimeModelsSource.Contains("rotationOffset"), "runtime constraint records expose rotation offsets");
 Expect(pjskRuntimeBuilderSource.Contains("BuildConstraintSetup"), "runtime builder emits constraint setup metadata");
 Expect(pjskRuntimeBuilderSource.Contains("ModelUtility.ConstraintSetup"), "runtime setup plan includes official constraint setup step");
 Expect(partPackageExporterSource.Contains("repair constraints after composition"), "part package setup plan carries constraint repair through viewer composition");

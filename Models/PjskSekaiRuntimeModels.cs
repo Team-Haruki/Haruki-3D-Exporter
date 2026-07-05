@@ -320,6 +320,17 @@ public sealed record PjskUnityRuntimeConstraint(
     [property: JsonPropertyName("ownerName")] string? OwnerName,
     [property: JsonPropertyName("enabled")] bool? Enabled,
     [property: JsonPropertyName("active")] bool? Active,
+    [property: JsonPropertyName("translationAtRest")] SpringVector3? TranslationAtRest,
+    [property: JsonPropertyName("rotationAtRest")] SpringVector3? RotationAtRest,
+    [property: JsonPropertyName("translationOffset")] SpringVector3? TranslationOffset,
+    [property: JsonPropertyName("rotationOffset")] SpringVector3? RotationOffset,
+    [property: JsonPropertyName("aimVector")] SpringVector3? AimVector,
+    [property: JsonPropertyName("upVector")] SpringVector3? UpVector,
+    [property: JsonPropertyName("worldUpVector")] SpringVector3? WorldUpVector,
+    [property: JsonPropertyName("worldUpType")] int? WorldUpType,
+    [property: JsonPropertyName("worldUpObjectPathId")] long? WorldUpObjectPathId,
+    [property: JsonPropertyName("worldUpObjectName")] string? WorldUpObjectName,
+    [property: JsonPropertyName("worldUpObjectPath")] string? WorldUpObjectPath,
     [property: JsonPropertyName("sources")] IReadOnlyList<PjskUnityRuntimeConstraintSource> Sources,
     [property: JsonPropertyName("status")] string Status,
     [property: JsonPropertyName("reason")] string Reason
@@ -330,7 +341,8 @@ public sealed record PjskUnityRuntimeConstraintSource(
     [property: JsonPropertyName("sourceName")] string? SourceName,
     [property: JsonPropertyName("sourcePath")] string? SourcePath,
     [property: JsonPropertyName("weight")] float Weight,
-    [property: JsonPropertyName("translationOffset")] SpringVector3? TranslationOffset
+    [property: JsonPropertyName("translationOffset")] SpringVector3? TranslationOffset,
+    [property: JsonPropertyName("rotationOffset")] SpringVector3? RotationOffset
 );
 
 public sealed record PjskUnityRuntimeBodyHeadAssembly(

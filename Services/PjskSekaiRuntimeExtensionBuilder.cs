@@ -500,7 +500,8 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
                 SourceName: source.SourceName,
                 SourcePath: source.SourcePath,
                 Weight: source.Weight,
-                TranslationOffset: source.TranslationOffset
+                TranslationOffset: source.TranslationOffset,
+                RotationOffset: source.RotationOffset
             ))
             .ToList();
         var hasResolvedSource = sources.Count > 0 &&
@@ -515,6 +516,17 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
             OwnerName: constraint.OwnerName,
             Enabled: constraint.Enabled,
             Active: constraint.Active,
+            TranslationAtRest: constraint.TranslationAtRest,
+            RotationAtRest: constraint.RotationAtRest,
+            TranslationOffset: constraint.TranslationOffset,
+            RotationOffset: constraint.RotationOffset,
+            AimVector: constraint.AimVector,
+            UpVector: constraint.UpVector,
+            WorldUpVector: constraint.WorldUpVector,
+            WorldUpType: constraint.WorldUpType,
+            WorldUpObjectPathId: constraint.WorldUpObjectPathId,
+            WorldUpObjectName: constraint.WorldUpObjectName,
+            WorldUpObjectPath: constraint.WorldUpObjectPath,
             Sources: sources,
             Status: status,
             Reason: status == "resolved"

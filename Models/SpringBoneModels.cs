@@ -133,6 +133,17 @@ public sealed record SpringPrefabConstraint(
     [property: JsonPropertyName("poseRoot")] string? PoseRoot,
     [property: JsonPropertyName("enabled")] bool? Enabled,
     [property: JsonPropertyName("active")] bool? Active,
+    [property: JsonPropertyName("translationAtRest")] SpringVector3? TranslationAtRest,
+    [property: JsonPropertyName("rotationAtRest")] SpringVector3? RotationAtRest,
+    [property: JsonPropertyName("translationOffset")] SpringVector3? TranslationOffset,
+    [property: JsonPropertyName("rotationOffset")] SpringVector3? RotationOffset,
+    [property: JsonPropertyName("aimVector")] SpringVector3? AimVector,
+    [property: JsonPropertyName("upVector")] SpringVector3? UpVector,
+    [property: JsonPropertyName("worldUpVector")] SpringVector3? WorldUpVector,
+    [property: JsonPropertyName("worldUpType")] int? WorldUpType,
+    [property: JsonPropertyName("worldUpObjectPathId")] long? WorldUpObjectPathId,
+    [property: JsonPropertyName("worldUpObjectName")] string? WorldUpObjectName,
+    [property: JsonPropertyName("worldUpObjectPath")] string? WorldUpObjectPath,
     [property: JsonPropertyName("sources")] IReadOnlyList<SpringPrefabConstraintSource> Sources,
     [property: JsonPropertyName("objectReferenceFields")] IReadOnlyList<SpringPrefabObjectReferenceField> ObjectReferenceFields
 );
@@ -142,7 +153,8 @@ public sealed record SpringPrefabConstraintSource(
     [property: JsonPropertyName("sourceName")] string? SourceName,
     [property: JsonPropertyName("sourcePath")] string? SourcePath,
     [property: JsonPropertyName("weight")] float Weight,
-    [property: JsonPropertyName("translationOffset")] SpringVector3? TranslationOffset
+    [property: JsonPropertyName("translationOffset")] SpringVector3? TranslationOffset,
+    [property: JsonPropertyName("rotationOffset")] SpringVector3? RotationOffset
 );
 
 public sealed record SpringObjectRef(
