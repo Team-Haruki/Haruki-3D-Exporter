@@ -314,7 +314,23 @@ public sealed record PjskUnityRuntimeBodyHeadAssembly(
     [property: JsonPropertyName("runtimeMountPath")] string? RuntimeMountPath,
     [property: JsonPropertyName("parentingMode")] string ParentingMode,
     [property: JsonPropertyName("coordinateSpace")] string CoordinateSpace,
-    [property: JsonPropertyName("notes")] IReadOnlyList<string> Notes
+    [property: JsonPropertyName("notes")] IReadOnlyList<string> Notes,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [property: JsonPropertyName("faceRendererName")] string? FaceRendererName = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [property: JsonPropertyName("combineNodeAName")] string? CombineNodeAName = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [property: JsonPropertyName("combineNodeBName")] string? CombineNodeBName = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [property: JsonPropertyName("childMoveSuffix")] string? ChildMoveSuffix = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [property: JsonPropertyName("parentCombineNodeAPath")] string? ParentCombineNodeAPath = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [property: JsonPropertyName("parentCombineNodeBPath")] string? ParentCombineNodeBPath = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [property: JsonPropertyName("childCombineNodeAPath")] string? ChildCombineNodeAPath = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [property: JsonPropertyName("childCombineNodeBPath")] string? ChildCombineNodeBPath = null
 );
 
 public sealed record PjskSpringBoneRootSelectionProfile(

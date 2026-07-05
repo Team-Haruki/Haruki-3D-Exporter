@@ -478,9 +478,8 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
         {
             "face/Position/Hip/Waist/Spine/Chest/Neck",
         });
-        var runtimeMountPath = parentAttachPath is null || childRootPath is null
-            ? null
-            : $"{parentAttachPath}/__PJSK_RuntimeMount_{childRootPath.Replace('/', '_')}";
+        var parentHeadPath = parentAttachPath is null ? null : $"{parentAttachPath}/Head";
+        var childHeadPath = childOriginPath is null ? null : $"{childOriginPath}/Head";
 
         return new PjskUnityRuntimeBodyHeadAssembly(
             Version: "0414",
@@ -489,15 +488,23 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
             ParentAttachPath: parentAttachPath,
             ChildRootPath: childRootPath,
             ChildOriginPath: childOriginPath,
-            RuntimeMountPath: runtimeMountPath,
-            ParentingMode: "parent_child_runtime_mount",
+            RuntimeMountPath: null,
+            ParentingMode: "model_combine_setup",
             CoordinateSpace: "unity-left-handed",
             Notes: new[]
             {
                 "Body and head prefab roots are stored as separate Unity prefab graphs.",
-                "The viewer must create the declared runtime mount under parentAttachPath and parent childRootPath below it.",
-                "The child origin is aligned to the parent attach after animation sampling while preserving the child prefab animation chain.",
-            }
+                "Runtime must reproduce Sekai.Live.ModelUtility.ModelCombineSetup: graft face Neck/Head into body bones.",
+                "Body Head children are drained to face Head; body renderer Neck/Head slots resolve to face Neck/Head.",
+            },
+            FaceRendererName: "Face",
+            CombineNodeAName: "Neck",
+            CombineNodeBName: "Head",
+            ChildMoveSuffix: "_target",
+            ParentCombineNodeAPath: parentAttachPath,
+            ParentCombineNodeBPath: parentHeadPath is not null && transformPaths.Contains(parentHeadPath) ? parentHeadPath : null,
+            ChildCombineNodeAPath: childOriginPath,
+            ChildCombineNodeBPath: childHeadPath is not null && transformPaths.Contains(childHeadPath) ? childHeadPath : null
         );
     }
 

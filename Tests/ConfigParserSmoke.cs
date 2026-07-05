@@ -518,6 +518,12 @@ Expect(partPackageExporterSource.Contains("\"eyelash\" or \"eyebrow\""), "part p
 Expect(partPackageExporterSource.Contains("BuildDeferredColliderFlagBindings"), "part package exporter preserves deferred head colliderFlag bindings");
 Expect(partPackageExporterSource.Contains("deferred_body_colliderFlag"), "part package exporter labels head colliderFlag bindings as deferred to viewer composer");
 Expect(partPackageExporterSource.Contains("ResolveColliderFlagPrefixes"), "part package exporter resolves colliderFlag matched prefixes for viewer rebinding");
+Expect(partPackageExporterSource.Contains("prefixes.Add(\"CL_Hip\")"), "part package exporter maps colliderFlag Hip");
+Expect(partPackageExporterSource.Contains("prefixes.Add(\"CL_Chest\")"), "part package exporter maps colliderFlag Chest");
+Expect(partPackageExporterSource.Contains("prefixes.Add(\"CL_Left_Arm\")"), "part package exporter maps colliderFlag L_Arm");
+Expect(partPackageExporterSource.Contains("prefixes.Add(\"CL_Right_Arm\")"), "part package exporter maps colliderFlag R_Arm");
+Expect(partPackageExporterSource.Contains("prefixes.Add(\"CL_Left_Elbow\")"), "part package exporter maps colliderFlag L_Elbow");
+Expect(partPackageExporterSource.Contains("prefixes.Add(\"CL_Right_Elbow\")"), "part package exporter maps colliderFlag R_Elbow");
 Expect(partPackageExporterSource.Contains("MatchedPrefixes: prefixes"), "part package exporter writes colliderFlag matched prefixes for viewer rebinding");
 Expect(partPackageExporterSource.Contains("IsSumOfForcesOnBone: ReadBool(manager.Raw, \"isSumOfForcesOnBone\", defaultValue: true)"), "part package exporter defaults SpringManager force summing on like full runtime export");
 Expect(partPackageExporterSource.Contains("RawAngleLimits: new VrmSpringBoneAngleLimitsCandidate("), "part package exporter preserves per-bone angle limits");
@@ -529,6 +535,15 @@ Expect(partPackageExporterSource.Contains("                true,"), "part packag
 
 var costumeRegistryModelsSource = File.ReadAllText(Path.Combine(repoRoot, "Models", "CostumeRegistryModels.cs"));
 var costumeRegistryExporterSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "CostumeRegistryExporter.cs"));
+var pjskRuntimeModelsSource = File.ReadAllText(Path.Combine(repoRoot, "Models", "PjskSekaiRuntimeModels.cs"));
+var pjskRuntimeBuilderSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "PjskSekaiRuntimeExtensionBuilder.cs"));
+Expect(pjskRuntimeModelsSource.Contains("faceRendererName"), "runtime body-head assembly exposes official face renderer predicate name");
+Expect(pjskRuntimeModelsSource.Contains("combineNodeAName"), "runtime body-head assembly exposes official combine node A");
+Expect(pjskRuntimeModelsSource.Contains("combineNodeBName"), "runtime body-head assembly exposes official combine node B");
+Expect(pjskRuntimeModelsSource.Contains("childMoveSuffix"), "runtime body-head assembly exposes official child move suffix");
+Expect(pjskRuntimeBuilderSource.Contains("ParentingMode: \"model_combine_setup\""), "full runtime setup declares official ModelCombineSetup parenting mode");
+Expect(pjskRuntimeBuilderSource.Contains("FaceRendererName: \"Face\""), "full runtime setup writes official face renderer predicate");
+Expect(pjskRuntimeBuilderSource.Contains("ChildMoveSuffix: \"_target\""), "full runtime setup writes official child move suffix");
 Expect(costumeRegistryModelsSource.Contains("headCompositionKind"), "head-hair compatibility rules expose composition kind");
 Expect(costumeRegistryModelsSource.Contains("activeContributors"), "head-hair compatibility rules expose active contributors");
 Expect(costumeRegistryModelsSource.Contains("PartSourceMap"), "costume registry exposes part source map");

@@ -503,7 +503,11 @@ public sealed class PartPackageExporter
                 RuntimeMountPath: null,
                 ParentingMode: "viewer_composer",
                 CoordinateSpace: "unity-left-handed",
-                Notes: new[] { "Resolved by viewer runtime composer." }
+                Notes: new[] { "Resolved by viewer runtime composer." },
+                FaceRendererName: "Face",
+                CombineNodeAName: "Neck",
+                CombineNodeBName: "Head",
+                ChildMoveSuffix: "_target"
             ),
             RootSelectionProfile: new PjskSpringBoneRootSelectionProfile(
                 Policy: "single_part_active_roots",
@@ -581,6 +585,10 @@ public sealed class PartPackageExporter
     private static IReadOnlyList<string> ResolveColliderFlagPrefixes(int colliderFlag)
     {
         var prefixes = new List<string>();
+        if ((colliderFlag & 1) != 0)
+        {
+            prefixes.Add("CL_Hip");
+        }
         if ((colliderFlag & 2) != 0)
         {
             prefixes.Add("CL_Chest");
@@ -592,6 +600,14 @@ public sealed class PartPackageExporter
         if ((colliderFlag & 8) != 0)
         {
             prefixes.Add("CL_Right_Arm");
+        }
+        if ((colliderFlag & 16) != 0)
+        {
+            prefixes.Add("CL_Left_Elbow");
+        }
+        if ((colliderFlag & 32) != 0)
+        {
+            prefixes.Add("CL_Right_Elbow");
         }
         return prefixes;
     }
