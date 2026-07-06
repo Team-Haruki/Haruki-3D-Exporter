@@ -25,6 +25,8 @@ public sealed class SpringBoneExporter
         "SpringPanelCollider",
         "SpringBonePivot",
         "ExtraBone",
+        "ForceVolume",
+        "WindVolume",
         "WindVolumeOneSelf",
         "SekaiCharacterHair",
         "SekaiCharacterEye",
@@ -129,7 +131,10 @@ public sealed class SpringBoneExporter
             .Select(entry => BuildSpringColliderEntry(entry, objectRefsByPathId, rendererEnabledByPathId))
             .ToList();
         var forceProviderEntries = allMonoBehaviours
-            .Where(entry => string.Equals(entry.ScriptName, "WindVolumeOneSelf", StringComparison.OrdinalIgnoreCase));
+            .Where(entry =>
+                string.Equals(entry.ScriptName, "ForceVolume", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(entry.ScriptName, "WindVolume", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(entry.ScriptName, "WindVolumeOneSelf", StringComparison.OrdinalIgnoreCase));
         var forceProviders = forceProviderEntries
             .Where(entry => entry is not null)
             .Cast<SpringMonoRaw>()

@@ -57,6 +57,7 @@ public sealed record PartRuntimeSpringBone(
     [property: JsonPropertyName("prefabGraph")] SpringPrefabGraph PrefabGraph,
     [property: JsonPropertyName("managers")] IReadOnlyList<PjskSpringBoneRuntimeManager> Managers,
     [property: JsonPropertyName("bones")] IReadOnlyList<PjskSpringBoneRuntimeBone> Bones,
+    [property: JsonPropertyName("extraBones")] IReadOnlyList<SpringExtraBoneEntry> ExtraBones,
     [property: JsonPropertyName("colliders")] IReadOnlyList<PjskSpringBoneRuntimeCollider> Colliders,
     [property: JsonPropertyName("colliderBindings")] IReadOnlyList<PjskSpringBoneRuntimeColliderBinding> ColliderBindings,
     [property: JsonPropertyName("managerColliderCaches")] IReadOnlyList<PjskSpringBoneRuntimeManagerColliderCache> ManagerColliderCaches,

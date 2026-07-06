@@ -728,15 +728,16 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
     )
     {
         return new PjskSpringBoneSetupPlan(
-            DiscoveryMode: "Unity prefab PathID graph; SpringManager.springBones references remain authoritative",
+            DiscoveryMode: "Unity prefab transform hierarchy; SpringManager.FindSpringBones(true) ownership is authoritative",
             RootPolicy: "managerColliderCaches are the collider binding anchor; viewer/runtime must constrain colliderFlag candidates by manager cache before selecting one body/sit_body/guitar_body root",
             ManagerPathIds: managers.Select(manager => manager.PathId).OrderBy(pathId => pathId).ToList(),
             OrderedSteps: new[]
             {
                 "ModelUtility.ModelCombineSetup",
-                "CharacterModel.SetupSpringBone",
                 "ModelUtility.SpringBoneSetup",
                 "ModelUtility.ConstraintSetup",
+                "CharacterModel.Setup",
+                "CharacterModel.SetupSpringBone",
                 "SpringManager.FindSpringBones(true)",
                 "SpringManager.SetupCollider",
                 "SpringBone.Initialize",
@@ -965,7 +966,8 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
             RawSpringForce: bone.SpringForce,
             RawWindInfluence: bone.WindInfluence,
             RawAngularStiffness: ReadFloat(bone.Raw, "angularStiffness"),
-            RawSpringConstant: ReadFloat(bone.Raw, "SpringConstant"),
+            RawSpringConstant: ReadFloat(bone.Raw, "SpringConstant") ??
+                ReadFloat(bone.Raw, "springConstant"),
             LengthLimitTargets: bone.LengthLimitTargets
                 .Select(target => new VrmSpringBoneLengthLimitTargetCandidate(
                     NodeName: target.Name,

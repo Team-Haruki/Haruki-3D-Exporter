@@ -654,8 +654,23 @@ Expect(pjskRuntimeBuilderSource.Contains("IsAccessory: false"), "runtime builder
 Expect(partPackageExporterSource.Contains("IsAccessory: partType == \"head_optional\""), "part package exporter marks head_optional materials as accessories");
 Expect(springBoneExporterSource.Contains("CharacterAccessoryTransformController"), "spring bone exporter keeps accessory transform controller mono behaviours");
 Expect(springBoneExporterSource.Contains("CharacterAccessoryTransformData"), "spring bone exporter keeps accessory transform data mono behaviours");
+Expect(springBoneExporterSource.Contains("\"ForceVolume\""), "spring bone exporter keeps standard UTJ ForceVolume providers");
+Expect(springBoneExporterSource.Contains("\"WindVolume\""), "spring bone exporter keeps standard UTJ WindVolume providers");
+Expect(springBoneExporterSource.Contains("\"WindVolumeOneSelf\""), "spring bone exporter keeps PJSK WindVolumeOneSelf providers");
 Expect(springBoneExporterSource.Contains("BuildAccessoryTransformAdjustments"), "spring bone exporter extracts accessory transform adjustments");
 Expect(springBoneExporterSource.Contains("_faceIdAccessoryTransformDict"), "spring bone exporter reads official face-id accessory transform dictionary");
+Expect(springBoneExporterSource.Contains("string.Equals(entry.ScriptName, \"ExtraBone\", StringComparison.OrdinalIgnoreCase)"), "spring bone exporter serializes ExtraBone only from real MonoBehaviour records");
+Expect(!springBoneExporterSource.Contains("StartsWith(\"EX_\""), "spring bone exporter does not infer ExtraBone records from EX_* transform names");
+Expect(partRuntimeModelsSource.Contains("JsonPropertyName(\"extraBones\")"), "part runtime spring payload exposes ExtraBone records");
+Expect(partPackageExporterSource.Contains("ExtraBones: springBone.ExtraBones"), "part package exporter preserves ExtraBone records for custom composition");
+Expect(pjskRuntimeBuilderSource.Contains("SpringManager.FindSpringBones(true) ownership is authoritative"), "runtime builder documents hierarchy-based SpringManager ownership");
+Expect(!pjskRuntimeBuilderSource.Contains("SpringManager.springBones references remain authoritative"), "runtime builder does not treat serialized springBones as authoritative");
+Expect(
+    pjskRuntimeBuilderSource.IndexOf("\"ModelUtility.SpringBoneSetup\"", StringComparison.Ordinal) <
+    pjskRuntimeBuilderSource.IndexOf("\"CharacterModel.SetupSpringBone\"", StringComparison.Ordinal),
+    "runtime builder setup plan follows official SpringBoneSetup before SetupSpringBone order"
+);
+Expect(partPackageExporterSource.Contains("rebuild SpringManager ownership from composed hierarchy"), "part package setup plan rebuilds manager ownership after composition");
 Expect(partRuntimeModelsSource.Contains("JsonPropertyName(\"funit\")"), "part runtime spring payload exposes FUnit metadata separately");
 Expect(pjskRuntimeModelsSource.Contains("JsonPropertyName(\"funit\")"), "runtime unity setup exposes FUnit metadata separately");
 Expect(springBoneExporterSource.Contains("BuildFUnitSummary"), "spring bone exporter detects FUnit metadata");

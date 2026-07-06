@@ -424,6 +424,7 @@ public sealed class PartPackageExporter
             PrefabGraph: springBone.PrefabGraph,
             Managers: setup.Managers,
             Bones: setup.Bones,
+            ExtraBones: springBone.ExtraBones,
             Colliders: setup.Colliders,
             ColliderBindings: setup.ColliderBindings,
             ManagerColliderCaches: setup.ManagerColliderCaches,
@@ -527,9 +528,9 @@ public sealed class PartPackageExporter
             ),
             SetupPlan: new PjskSpringBoneSetupPlan(
                 DiscoveryMode: "single_part_runtime_package",
-                RootPolicy: "viewer_composer_merge",
+                RootPolicy: "viewer_composer_merge; manager ownership is rebuilt from composed hierarchy",
                 ManagerPathIds: managers.Select(manager => manager.PathId).ToList(),
-                OrderedSteps: new[] { "mount part graph", "merge active part springbone", "repair constraints after composition", "rebind current body colliders", "reset spring runtime" },
+                OrderedSteps: new[] { "mount part graph", "merge active part springbone", "rebuild SpringManager ownership from composed hierarchy", "repair constraints after composition", "rebind current body colliders", "reset spring runtime" },
                 DirectBindingCount: bindings.Count(binding => binding.SourceKind == "direct"),
                 ColliderFlagBindingCount: bindings.Count(binding => binding.SourceKind == "colliderFlag")
             ),
@@ -1113,7 +1114,8 @@ public sealed class PartPackageExporter
             RawSpringForce: bone.SpringForce,
             RawWindInfluence: bone.WindInfluence,
             RawAngularStiffness: ReadNullableFloat(bone.Raw, "angularStiffness"),
-            RawSpringConstant: ReadNullableFloat(bone.Raw, "springConstant"),
+            RawSpringConstant: ReadNullableFloat(bone.Raw, "SpringConstant") ??
+                ReadNullableFloat(bone.Raw, "springConstant"),
             LengthLimitTargets: bone.LengthLimitTargets.Select(target => new VrmSpringBoneLengthLimitTargetCandidate(target.Name, target.TransformPath, target.PathId)).ToList(),
             RawAngleLimits: new VrmSpringBoneAngleLimitsCandidate(
                 Y: ReadAxisLimit(bone.Raw, "yAngleLimits"),

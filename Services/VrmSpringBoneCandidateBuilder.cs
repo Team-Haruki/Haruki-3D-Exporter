@@ -683,7 +683,8 @@ public sealed class VrmSpringBoneCandidateBuilder
             RawSpringForce: bone.SpringForce,
             RawWindInfluence: bone.WindInfluence,
             RawAngularStiffness: ReadFloat(bone.Raw, "angularStiffness"),
-            RawSpringConstant: ReadFloat(bone.Raw, "SpringConstant"),
+            RawSpringConstant: ReadFloat(bone.Raw, "SpringConstant") ??
+                ReadFloat(bone.Raw, "springConstant"),
             LengthLimitTargets: bone.LengthLimitTargets
                 .Select(target => new VrmSpringBoneLengthLimitTargetCandidate(
                     NodeName: target.Name,
