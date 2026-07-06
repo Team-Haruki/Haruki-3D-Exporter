@@ -258,9 +258,35 @@ Expect(File.Exists(Path.Combine(compactDir, textureA.TrimStart('/').Replace('/',
 var registryMasterDir = Path.Combine(tempDir, "registry-master");
 var registryAssetRoot = Path.Combine(tempDir, "registry-assets");
 Directory.CreateDirectory(registryMasterDir);
-WriteJsonFile(Path.Combine(registryMasterDir, "character3ds.json"), Array.Empty<object>());
+WriteJsonFile(Path.Combine(registryMasterDir, "character3ds.json"), new[]
+{
+    new
+    {
+        id = 9001,
+        characterId = 23,
+        unit = "light_sound",
+        name = "cross-role official preset",
+        headCostume3dId = 11001,
+        hairCostume3dId = 202,
+        bodyCostume3dId = 13000
+    }
+});
 WriteJsonFile(Path.Combine(registryMasterDir, "costume3ds.json"), new[]
 {
+    new
+    {
+        id = 13000,
+        costume3dGroupId = 13000,
+        partType = "body",
+        characterId = 21,
+        colorId = 1,
+        colorName = "test",
+        name = "cross-role body",
+        costume3dType = "normal",
+        costume3dRarity = "rarity_4",
+        assetbundleName = "unused",
+        howToObtain = "test"
+    },
     new
     {
         id = 11001,
@@ -336,6 +362,16 @@ WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModels.json"), new objec
 {
     new
     {
+        costume3dId = 13000,
+        unit = "light_sound",
+        assetbundleName = "99/0081",
+        headCostume3dAssetbundleType = (string?)null,
+        colorAssetbundleName = (string?)null,
+        part = (string?)null,
+        thumbnailAssetbundleName = "unused"
+    },
+    new
+    {
         costume3dId = 11001,
         unit = "light_sound",
         assetbundleName = "0019/a03",
@@ -367,7 +403,7 @@ WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModels.json"), new objec
     new
     {
         costume3dId = 202,
-        unit = "light_sound",
+        unit = (string?)null,
         assetbundleName = "02/0000",
         headCostume3dAssetbundleType = (string?)null,
         colorAssetbundleName = (string?)null,
@@ -451,7 +487,7 @@ File.WriteAllBytes(fallbackAccessory, new byte[] { 3 });
 File.WriteAllBytes(fallbackAccessoryColor, new byte[] { 4 });
 File.WriteAllBytes(defaultHairFallback, new byte[] { 5 });
 var registryExport = new CostumeRegistryExporter().ExportInMemory(registryMasterDir, registryAssetRoot);
-var legacyAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001);
+var legacyAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001 && entry.CharacterId == 21);
 Expect(legacyAccessoryEntry.PartType == "head_optional", "head_only registry rows are exported as head_optional");
 Expect(legacyAccessoryEntry.BundlePath == legacyAccessory, "head_optional registry resolves legacy character base bundle");
 Expect(legacyAccessoryEntry.ColorVariationBundlePath == legacyAccessoryColor, "head_optional registry resolves legacy character color variation bundle");
@@ -467,7 +503,7 @@ Expect(emptyAccessoryEntry.Status == "empty", "empty head_default slot is a vali
 Expect(emptyAccessoryEntry.BundlePath is null, "empty head_default slot does not point at a bundle");
 Expect(emptyAccessoryEntry.SourceKey is null, "empty head_default slot does not create a source package");
 Expect(emptyAccessoryEntry.Warnings.Count == 0, "empty head_default slot is not a warning");
-var defaultHairEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 202);
+var defaultHairEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 202 && entry.CharacterId == 2);
 Expect(defaultHairEntry.Status == "planned", "default hair 0000 row falls back to existing 0001 bundle");
 Expect(defaultHairEntry.BundlePath == defaultHairFallback, "default hair fallback points at the existing 0001 bundle");
 Expect(defaultHairEntry.PackagePath.StartsWith("parts/_sources/hair/"), "default hair fallback keeps a source package");
@@ -476,6 +512,13 @@ Expect(missingHeadEntry.Status == "missing", "missing complete head remains miss
 Expect(missingHeadEntry.BundlePath is null, "missing complete head does not keep a fabricated bundle path");
 Expect(missingHeadEntry.SourceKey is null, "missing complete head does not create a dangling source key");
 Expect(missingHeadEntry.Warnings.Any(warning => warning.Contains("face bundle not found")), "missing complete head records a file warning");
+var roleHeadOptionalAlias = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001 && entry.CharacterId == 23);
+Expect(roleHeadOptionalAlias.PartType == "head_optional", "official cross-role head_only preset aliases as head_optional");
+Expect(roleHeadOptionalAlias.Unit == "light_sound", "official cross-role alias keeps model unit");
+Expect(roleHeadOptionalAlias.PackagePath == legacyAccessoryEntry.PackagePath, "official cross-role alias reuses source package path");
+var roleHairAlias = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 202 && entry.CharacterId == 23);
+Expect(roleHairAlias.Unit == "light_sound", "official cross-role alias promotes default-unit rows into the preset role unit");
+Expect(roleHairAlias.PackagePath == defaultHairEntry.PackagePath, "official cross-role hair alias reuses source package path");
 
 PartMaterialMetadataSmoke.Run();
 

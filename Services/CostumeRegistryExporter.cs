@@ -155,6 +155,7 @@ public sealed class CostumeRegistryExporter
 
         var partRegistry = BuildPartRegistry(
             costume3ds,
+            character3ds,
             modelsByCostumeId,
             characterById,
             normalizedAssetRoot,
@@ -224,6 +225,7 @@ public sealed class CostumeRegistryExporter
 
     private static PartRegistry BuildPartRegistry(
         IReadOnlyList<Costume3dMaster> costume3ds,
+        IReadOnlyList<Character3dMaster> character3ds,
         IReadOnlyDictionary<int, IReadOnlyList<Costume3dModelMaster>> modelsByCostumeId,
         IReadOnlyDictionary<int, GameCharacterMaster> characterById,
         string assetRoot,
@@ -259,7 +261,91 @@ public sealed class CostumeRegistryExporter
             }
         }
 
+        AddOfficialPresetRoleAliases(entries, character3ds);
         return new PartRegistry(Version: 1, Source: source, Entries: entries);
+    }
+
+    private static void AddOfficialPresetRoleAliases(
+        List<PartRegistryEntry> entries,
+        IReadOnlyList<Character3dMaster> character3ds
+    )
+    {
+        if (character3ds.Count == 0 || entries.Count == 0)
+        {
+            return;
+        }
+
+        var entriesByCostumeAndUnit = entries
+            .GroupBy(entry => (entry.Costume3dId, UnitKey(entry.Unit)))
+            .ToDictionary(group => group.Key, group => group.ToList());
+        var existing = entries
+            .Select(PartRegistryRoleKey)
+            .ToHashSet(StringComparer.Ordinal);
+        var aliases = new List<PartRegistryEntry>();
+
+        foreach (var preset in character3ds.OrderBy(entry => entry.Id))
+        {
+            AddOfficialPresetPartAlias(entriesByCostumeAndUnit, existing, aliases, preset, preset.BodyCostume3dId);
+            AddOfficialPresetPartAlias(entriesByCostumeAndUnit, existing, aliases, preset, preset.HeadCostume3dId);
+            AddOfficialPresetPartAlias(entriesByCostumeAndUnit, existing, aliases, preset, preset.HairCostume3dId);
+        }
+
+        entries.AddRange(aliases);
+    }
+
+    private static void AddOfficialPresetPartAlias(
+        IReadOnlyDictionary<(int Costume3dId, string Unit), List<PartRegistryEntry>> entriesByCostumeAndUnit,
+        HashSet<string> existing,
+        List<PartRegistryEntry> aliases,
+        Character3dMaster preset,
+        int costume3dId
+    )
+    {
+        var candidates = ResolveOfficialPresetPartCandidates(entriesByCostumeAndUnit, costume3dId, preset.Unit);
+        foreach (var entry in candidates)
+        {
+            if (entry.CharacterId == preset.CharacterId)
+            {
+                continue;
+            }
+
+            var alias = entry with
+            {
+                CharacterId = preset.CharacterId,
+                Unit = string.IsNullOrWhiteSpace(entry.Unit) ? preset.Unit : entry.Unit,
+            };
+            if (existing.Add(PartRegistryRoleKey(alias)))
+            {
+                aliases.Add(alias);
+            }
+        }
+    }
+
+    private static IReadOnlyList<PartRegistryEntry> ResolveOfficialPresetPartCandidates(
+        IReadOnlyDictionary<(int Costume3dId, string Unit), List<PartRegistryEntry>> entriesByCostumeAndUnit,
+        int costume3dId,
+        string? unit
+    )
+    {
+        if (entriesByCostumeAndUnit.TryGetValue((costume3dId, UnitKey(unit)), out var exact))
+        {
+            return exact;
+        }
+        if (entriesByCostumeAndUnit.TryGetValue((costume3dId, string.Empty), out var defaultUnit))
+        {
+            return defaultUnit;
+        }
+        return Array.Empty<PartRegistryEntry>();
+    }
+
+    private static string PartRegistryRoleKey(PartRegistryEntry entry)
+    {
+        return $"{entry.CharacterId}\n{UnitKey(entry.Unit)}\n{entry.PartType}\n{entry.Costume3dId}";
+    }
+
+    private static string UnitKey(string? unit)
+    {
+        return unit ?? string.Empty;
     }
 
     private static HeadHairCompatibilityRegistry BuildHeadHairCompatibility(
