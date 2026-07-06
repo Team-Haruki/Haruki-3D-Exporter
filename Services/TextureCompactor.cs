@@ -46,13 +46,15 @@ public sealed class TextureCompactor
         }
 
         var runtimeFiles = EnumerateRuntimeJsonFiles(outputDirectory).ToList();
-        var rewritten = 0;
-        foreach (var runtimePath in runtimeFiles)
-        {
-            rewritten += RewriteRuntimeJson(runtimePath, outputDirectory, pathMap, runtimeJsonOutput);
-        }
-        DeleteReplacedTextureFiles(entries.Select(entry => entry.Path), outputDirectory);
-        ValidateRuntimeTexturePaths(runtimeFiles, outputDirectory);
+        var rewritten = RewriteRuntimeJsonFiles(
+            runtimeFiles,
+            outputDirectory,
+            pathMap,
+            runtimeJsonOutput,
+            workerCount
+        );
+        DeleteReplacedTextureFiles(entries.Select(entry => entry.Path), outputDirectory, workerCount);
+        ValidateRuntimeTexturePaths(runtimeFiles, outputDirectory, workerCount);
 
         var report = new TextureCompactionReport(
             Version: 1,
@@ -190,6 +192,35 @@ public sealed class TextureCompactor
         }
     }
 
+    private static int RewriteRuntimeJsonFiles(
+        IReadOnlyList<string> runtimeFiles,
+        string outputDirectory,
+        IReadOnlyDictionary<string, string> pathMap,
+        string runtimeJsonOutput,
+        int workers
+    )
+    {
+        var rewritten = 0;
+        var errors = new ConcurrentBag<Exception>();
+        var options = new ParallelOptions { MaxDegreeOfParallelism = workers };
+        Parallel.ForEach(runtimeFiles, options, runtimePath =>
+        {
+            try
+            {
+                Interlocked.Add(
+                    ref rewritten,
+                    RewriteRuntimeJson(runtimePath, outputDirectory, pathMap, runtimeJsonOutput)
+                );
+            }
+            catch (Exception ex)
+            {
+                errors.Add(ex);
+            }
+        });
+        ThrowIfAny(errors, "Texture runtime JSON rewrite failed");
+        return rewritten;
+    }
+
     private static int RewriteRuntimeJson(
         string runtimeJsonPath,
         string outputDirectory,
@@ -299,16 +330,31 @@ public sealed class TextureCompactor
         return Path.GetFullPath(path);
     }
 
-    private static void DeleteReplacedTextureFiles(IEnumerable<string> paths, string outputDirectory)
+    private static void DeleteReplacedTextureFiles(IEnumerable<string> paths, string outputDirectory, int workers)
     {
-        foreach (var path in paths.Distinct(StringComparer.Ordinal))
+        var errors = new ConcurrentBag<Exception>();
+        var options = new ParallelOptions { MaxDegreeOfParallelism = workers };
+        Parallel.ForEach(paths.Distinct(StringComparer.Ordinal), options, path =>
         {
-            if (File.Exists(path))
+            try
             {
-                File.Delete(path);
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
             }
-        }
+            catch (Exception ex)
+            {
+                errors.Add(ex);
+            }
+        });
+        ThrowIfAny(errors, "Texture file cleanup failed");
+
         var sourcesRoot = Path.Combine(outputDirectory, "parts", "_sources");
+        if (!Directory.Exists(sourcesRoot))
+        {
+            return;
+        }
         foreach (var directory in Directory.EnumerateDirectories(sourcesRoot, "textures", SearchOption.AllDirectories)
                      .OrderByDescending(path => path.Length))
         {
@@ -318,6 +364,10 @@ public sealed class TextureCompactor
 
     private static void DeleteEmptyDirectories(string directory)
     {
+        if (!Directory.Exists(directory))
+        {
+            return;
+        }
         foreach (var child in Directory.EnumerateDirectories(directory).OrderByDescending(path => path.Length))
         {
             DeleteEmptyDirectories(child);
@@ -328,22 +378,32 @@ public sealed class TextureCompactor
         }
     }
 
-    private static void ValidateRuntimeTexturePaths(IEnumerable<string> runtimeFiles, string outputDirectory)
+    private static void ValidateRuntimeTexturePaths(IReadOnlyList<string> runtimeFiles, string outputDirectory, int workers)
     {
-        foreach (var runtimePath in runtimeFiles)
+        var errors = new ConcurrentBag<Exception>();
+        var options = new ParallelOptions { MaxDegreeOfParallelism = workers };
+        Parallel.ForEach(runtimeFiles, options, runtimePath =>
         {
-            var packageDirectory = Path.GetDirectoryName(runtimePath)
-                ?? throw new InvalidOperationException($"Runtime JSON has no parent directory: {runtimePath}");
-            var node = ReadRuntimeJson(runtimePath);
-            foreach (var value in EnumerateTextureValues(node))
+            try
             {
-                var resolved = ResolveTexturePath(packageDirectory, outputDirectory, value);
-                if (resolved is not null && !File.Exists(resolved))
+                var packageDirectory = Path.GetDirectoryName(runtimePath)
+                    ?? throw new InvalidOperationException($"Runtime JSON has no parent directory: {runtimePath}");
+                var node = ReadRuntimeJson(runtimePath);
+                foreach (var value in EnumerateTextureValues(node))
                 {
-                    throw new InvalidOperationException($"Runtime JSON references missing texture: {runtimePath} -> {value}");
+                    var resolved = ResolveTexturePath(packageDirectory, outputDirectory, value);
+                    if (resolved is not null && !File.Exists(resolved))
+                    {
+                        throw new InvalidOperationException($"Runtime JSON references missing texture: {runtimePath} -> {value}");
+                    }
                 }
             }
-        }
+            catch (Exception ex)
+            {
+                errors.Add(ex);
+            }
+        });
+        ThrowIfAny(errors, "Texture runtime JSON validation failed");
     }
 
     private static IEnumerable<string> EnumerateTextureValues(JsonObject node)
@@ -428,6 +488,14 @@ public sealed class TextureCompactor
     {
         using var stream = File.OpenRead(path);
         return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+    }
+
+    private static void ThrowIfAny(ConcurrentBag<Exception> errors, string message)
+    {
+        if (!errors.IsEmpty)
+        {
+            throw new InvalidOperationException($"{message}: {errors.First().Message}", errors.First());
+        }
     }
 
     private sealed record TextureFileEntry(string Path, long Size, string OriginalSha256)
