@@ -355,26 +355,79 @@ public sealed class TextureCompactor
         {
             return;
         }
-        foreach (var directory in Directory.EnumerateDirectories(sourcesRoot, "textures", SearchOption.AllDirectories)
-                     .OrderByDescending(path => path.Length))
-        {
-            DeleteEmptyDirectories(directory);
-        }
+        DeleteEmptyTextureDirectories(sourcesRoot, workerCount: workers);
     }
 
-    private static void DeleteEmptyDirectories(string directory)
+    private static void DeleteEmptyTextureDirectories(string sourcesRoot, int workerCount)
+    {
+        var textureRoots = Directory
+            .EnumerateDirectories(sourcesRoot, "textures", SearchOption.AllDirectories)
+            .Select(Path.GetFullPath)
+            .ToList();
+        if (textureRoots.Count == 0)
+        {
+            return;
+        }
+
+        var directories = textureRoots
+            .SelectMany(root => Directory
+                .EnumerateDirectories(root, "*", SearchOption.AllDirectories)
+                .Append(root))
+            .Distinct(StringComparer.Ordinal)
+            .Select(path => new
+            {
+                Path = path,
+                Depth = GetDirectoryDepth(path)
+            })
+            .GroupBy(entry => entry.Depth)
+            .OrderByDescending(group => group.Key)
+            .ToList();
+
+        var options = new ParallelOptions { MaxDegreeOfParallelism = workerCount };
+        var errors = new ConcurrentBag<Exception>();
+        foreach (var depthGroup in directories)
+        {
+            Parallel.ForEach(depthGroup, options, entry =>
+            {
+                try
+                {
+                    DeleteDirectoryIfEmpty(entry.Path);
+                }
+                catch (Exception ex)
+                {
+                    errors.Add(ex);
+                }
+            });
+        }
+        ThrowIfAny(errors, "Texture directory cleanup failed");
+    }
+
+    private static int GetDirectoryDepth(string path)
+    {
+        return Path.GetFullPath(path)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries)
+            .Length;
+    }
+
+    private static void DeleteDirectoryIfEmpty(string directory)
     {
         if (!Directory.Exists(directory))
         {
             return;
         }
-        foreach (var child in Directory.EnumerateDirectories(directory).OrderByDescending(path => path.Length))
+        try
         {
-            DeleteEmptyDirectories(child);
+            if (!Directory.EnumerateFileSystemEntries(directory).Any())
+            {
+                Directory.Delete(directory);
+            }
         }
-        if (!Directory.EnumerateFileSystemEntries(directory).Any())
+        catch (DirectoryNotFoundException)
         {
-            Directory.Delete(directory);
+        }
+        catch (IOException) when (Directory.Exists(directory) && Directory.EnumerateFileSystemEntries(directory).Any())
+        {
         }
     }
 
