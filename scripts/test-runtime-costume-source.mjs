@@ -15,9 +15,11 @@ test("costume resolver keeps default face and head optional bundle fallbacks", (
   const registry = source("Services/CostumeRegistryExporter.cs");
 
   for (const text of [resolver, registry]) {
-    assert.match(text, /ResolveDefaultFaceBundleFallbackPath/);
+    assert.match(text, /ResolveDefaultFaceBundleFallback/);
     assert.match(text, /leaf\.Any\(static character => character != '0'\)/);
     assert.match(text, /fallbackLeaf = new string\('0', Math\.Max\(leaf\.Length - 1, 0\)\) \+ "1"/);
+    assert.match(text, /ResolveFaceModelTypeBundleName/);
+    assert.match(text, /FaceModelType/);
     assert.match(text, /ResolveAssetBaseDirectoryCandidates\(assetRoot, "head_optional"\)/);
     assert.match(text, /ResolveColorVariationBaseDirectoryCandidates\(assetRoot, "head_optional"\)/);
   }

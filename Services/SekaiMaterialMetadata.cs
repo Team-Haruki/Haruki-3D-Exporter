@@ -55,7 +55,12 @@ public static class SekaiMaterialMetadata
                 FindFloatProperty(material, "_RimThreshold") ??
                 0.2f,
             ShadowTexWeight: FindFloatProperty(material, "_ShadowTexWeight") ?? 1f,
+            FadeMode: (int)(FindFloatProperty(material, "_FadeMode") ?? 0f),
+            HueSinAngle: FindFloatProperty(material, "_HueSinAngle") ?? 0f,
+            HueCosAngle: FindFloatProperty(material, "_HueCosAngle") ?? 1f,
             Saturation: FindFloatProperty(material, "_Saturation") ?? 0.5f,
+            Value: FindFloatProperty(material, "_Value") ?? 0.5f,
+            Contrast: FindFloatProperty(material, "_Contrast") ?? 0.5f,
             PartsAmbientColor: FindColorProperty(material, "_PartsAmbientColor") ?? "#ffffff",
             ReflectionBlendColor: FindColorProperty(material, "_ReflectionBlendColor") ?? "#ffffff",
             OutlineWidth: FindFloatProperty(material, "_OutlineWidth") ?? 0.001f,

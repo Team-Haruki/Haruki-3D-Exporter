@@ -48,14 +48,16 @@ public sealed class Character3dCostumeResolver
             body.ColorAssetbundleName
         );
         var bodyPath = bodyDefaultPath;
-        var hairPath = ResolveFaceBundlePath(normalizedAssetRoot, hair.AssetbundleName!, "hair");
+        var hairBundle = ResolveFaceBundle(normalizedAssetRoot, hair.AssetbundleName!, "hair", character);
+        var hairPath = hairBundle.Path;
         var headType = head.HeadCostume3dAssetbundleType ?? "unknown";
         var hairType = hair.HeadCostume3dAssetbundleType ?? "head_and_hair";
         var hairBundleKind = ClassifyFaceBundleName(hair.AssetbundleName);
         var headBundleKind = ClassifyHeadBundleName(head);
         var hairVariantGroupKey = ResolveFaceVariantGroupKey(hair.AssetbundleName);
         var headVariantGroupKey = ResolveFaceVariantGroupKey(head.AssetbundleName);
-        var completeHeadPath = ResolveCompleteHeadPath(normalizedAssetRoot, head);
+        var completeHeadBundle = ResolveCompleteHeadBundle(normalizedAssetRoot, head, character);
+        var completeHeadPath = completeHeadBundle?.Path;
         var hairDrivenSameGroupHead =
             hairBundleKind == "alternate_hair_no_accessory"
             && !string.IsNullOrWhiteSpace(hairVariantGroupKey)
@@ -63,7 +65,7 @@ public sealed class Character3dCostumeResolver
             && completeHeadPath is not null;
         var useHeadAsMain = completeHeadPath is not null;
         var mainHeadPath = useHeadAsMain ? completeHeadPath! : hairPath;
-        var mainHeadAssetbundleName = useHeadAsMain ? head.AssetbundleName! : hair.AssetbundleName!;
+        var mainHeadAssetbundleName = useHeadAsMain ? completeHeadBundle!.AssetbundleName : hairBundle.AssetbundleName;
         var mainHeadColorVariationPath = (useHeadAsMain ? head.ColorAssetbundleName : hair.ColorAssetbundleName) is not null
             ? mainHeadPath
             : null;
@@ -76,7 +78,21 @@ public sealed class Character3dCostumeResolver
             : ResolveAccessoryHead(normalizedAssetRoot, head);
         var hasAccessory = accessory.AssetbundleName is not null;
         var headTextureFallbackPath = hairDrivenSameGroupHead ? hairPath : null;
-        var headTextureFallbackAssetbundleName = hairDrivenSameGroupHead ? hair.AssetbundleName : null;
+        var headTextureFallbackAssetbundleName = hairDrivenSameGroupHead ? hairBundle.AssetbundleName : null;
+        var assetBundleNames = BuildAssetBundleNames(
+            mainHeadAssetbundleName,
+            accessory.AssetbundleName,
+            head.ColorAssetbundleName,
+            body.AssetbundleName!,
+            body.ColorAssetbundleName
+        );
+        var assetBundlePaths = BuildAssetBundlePaths(
+            mainHeadPath,
+            accessory.Path,
+            accessory.ColorVariationPath,
+            bodyPath,
+            bodyColorVariationPath
+        );
         var headCompositionKind = hairDrivenSameGroupHead
             ? "complete_head_with_same_group_hair_texture_fallback"
             : ResolveHeadCompositionKind(
@@ -114,6 +130,8 @@ public sealed class Character3dCostumeResolver
             AccessoryAttachNode: accessory.AttachNode,
             AccessoryColorAssetbundleName: head.ColorAssetbundleName,
             AccessoryColorVariationPath: accessory.ColorVariationPath,
+            AssetBundleNames: assetBundleNames,
+            AssetBundlePaths: assetBundlePaths,
             BodyCostume3dId: character3d.BodyCostume3dId,
             HairCostume3dId: character3d.HairCostume3dId,
             HeadCostume3dId: character3d.HeadCostume3dId,
@@ -173,32 +191,55 @@ public sealed class Character3dCostumeResolver
         throw new FileNotFoundException($"Body bundle was not found: {path}");
     }
 
-    private static string ResolveFaceBundlePath(
+    private static ResolvedFaceBundle ResolveFaceBundle(
         string assetRoot,
         string assetbundleName,
-        string label
+        string label,
+        GameCharacterMaster character
     )
     {
-        var normalizedName = assetbundleName.Replace('\\', '/');
+        var normalizedName = assetbundleName.Replace('\\', '/').Trim('/');
+        var effectiveName = ResolveFaceModelTypeBundleName(assetRoot, normalizedName, character);
+        var path = ResolveExistingFaceBundlePath(assetRoot, effectiveName);
+        if (path is not null)
+        {
+            return new ResolvedFaceBundle(effectiveName, path);
+        }
+
+        if (!string.Equals(effectiveName, normalizedName, StringComparison.Ordinal))
+        {
+            path = ResolveExistingFaceBundlePath(assetRoot, normalizedName);
+            if (path is not null)
+            {
+                return new ResolvedFaceBundle(normalizedName, path);
+            }
+        }
+
+        var fallback = ResolveDefaultFaceBundleFallback(assetRoot, normalizedName);
+        if (fallback is not null)
+        {
+            return fallback;
+        }
+
+        throw new FileNotFoundException($"{label} face bundle was not found: {Path.Combine(ResolveAssetBaseDirectory(assetRoot, "face"), $"{ToSystemPath(normalizedName)}.bundle")}");
+    }
+
+    private static string? ResolveExistingFaceBundlePath(string assetRoot, string assetbundleName)
+    {
         var path = Path.Combine(
             ResolveAssetBaseDirectory(assetRoot, "face"),
-            $"{ToSystemPath(normalizedName)}.bundle"
+            $"{ToSystemPath(assetbundleName)}.bundle"
         );
         if (File.Exists(path))
         {
             return path;
         }
 
-        var fallbackPath = ResolveDefaultFaceBundleFallbackPath(assetRoot, normalizedName);
-        if (fallbackPath is not null)
-        {
-            return fallbackPath;
-        }
-
-        throw new FileNotFoundException($"{label} face bundle was not found: {path}");
+        var gzipPath = path + ".gz";
+        return File.Exists(gzipPath) ? gzipPath : null;
     }
 
-    private static string? ResolveDefaultFaceBundleFallbackPath(
+    private static ResolvedFaceBundle? ResolveDefaultFaceBundleFallback(
         string assetRoot,
         string normalizedAssetbundleName
     )
@@ -215,15 +256,18 @@ public sealed class Character3dCostumeResolver
         var fallbackName = string.IsNullOrWhiteSpace(directory)
             ? fallbackLeaf
             : $"{directory}/{fallbackLeaf}";
-        var fallbackPath = Path.Combine(
-            ResolveAssetBaseDirectory(assetRoot, "face"),
-            $"{ToSystemPath(fallbackName)}.bundle"
-        );
+        var fallbackPath = ResolveExistingFaceBundlePath(assetRoot, fallbackName);
 
-        return File.Exists(fallbackPath) ? fallbackPath : null;
+        return fallbackPath is not null
+            ? new ResolvedFaceBundle(fallbackName, fallbackPath)
+            : null;
     }
 
-    private static string? ResolveCompleteHeadPath(string assetRoot, Costume3dModelMaster head)
+    private static ResolvedFaceBundle? ResolveCompleteHeadBundle(
+        string assetRoot,
+        Costume3dModelMaster head,
+        GameCharacterMaster character
+    )
     {
         var headType = head.HeadCostume3dAssetbundleType ?? string.Empty;
         if (!IsCompleteHeadCostume(headType) || string.IsNullOrWhiteSpace(head.AssetbundleName))
@@ -231,7 +275,7 @@ public sealed class Character3dCostumeResolver
             return null;
         }
 
-        return ResolveFaceBundlePath(assetRoot, head.AssetbundleName!, "head");
+        return ResolveFaceBundle(assetRoot, head.AssetbundleName!, "head", character);
     }
 
     private static ResolvedAccessoryHead ResolveAccessoryHead(
@@ -434,6 +478,80 @@ public sealed class Character3dCostumeResolver
         return $"{character.Figure.ToLowerInvariant()}.bundle";
     }
 
+    private static string ResolveFaceModelTypeBundleName(
+        string assetRoot,
+        string normalizedAssetbundleName,
+        GameCharacterMaster character
+    )
+    {
+        var suffix = ResolveFaceModelTypeSuffix(character);
+        if (suffix is null)
+        {
+            return normalizedAssetbundleName;
+        }
+
+        var candidateName = $"{normalizedAssetbundleName}_{suffix}";
+        return ResolveExistingFaceBundlePath(assetRoot, candidateName) is not null
+            ? candidateName
+            : normalizedAssetbundleName;
+    }
+
+    private static string? ResolveFaceModelTypeSuffix(GameCharacterMaster character)
+    {
+        if (character.FaceModelType is not { } value ||
+            value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        var raw = value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : value.GetRawText();
+        raw = raw?.Trim().Trim('"');
+        if (string.IsNullOrWhiteSpace(raw) ||
+            string.Equals(raw, "0", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(raw, "default", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(raw, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return raw.ToLowerInvariant();
+    }
+
+    private static IReadOnlyList<string> BuildAssetBundleNames(
+        string faceAssetbundleName,
+        string? accessoryAssetbundleName,
+        string? accessoryColorAssetbundleName,
+        string bodyAssetbundleName,
+        string? bodyColorAssetbundleName
+    )
+    {
+        var names = new List<string> { faceAssetbundleName };
+        if (!string.IsNullOrWhiteSpace(accessoryAssetbundleName))
+        {
+            names.Add(accessoryAssetbundleName!);
+            if (!string.IsNullOrWhiteSpace(accessoryColorAssetbundleName))
+            {
+                names.Add($"{accessoryAssetbundleName}/{accessoryColorAssetbundleName}");
+            }
+        }
+        names.Add(bodyAssetbundleName);
+        if (!string.IsNullOrWhiteSpace(bodyColorAssetbundleName))
+        {
+            names.Add($"{bodyAssetbundleName}/{bodyColorAssetbundleName}");
+        }
+        return names;
+    }
+
+    private static IReadOnlyList<string> BuildAssetBundlePaths(params string?[] paths)
+    {
+        return paths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => path!)
+            .ToList();
+    }
+
     private static bool IsCompleteHeadCostume(string type)
     {
         return type is "head_and_hair" or "head_all" or "head_front" or "head_back";
@@ -542,6 +660,8 @@ public sealed class Character3dCostumeResolver
     {
         return assetbundleName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
     }
+
+    private sealed record ResolvedFaceBundle(string AssetbundleName, string Path);
 
     private static T ReadJson<T>(string path)
     {

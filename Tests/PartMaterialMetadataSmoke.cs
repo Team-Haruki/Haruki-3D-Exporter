@@ -50,7 +50,12 @@ public static class PartMaterialMetadataSmoke
         Expect(headManifestJson.Contains("\"skinColor2\":\"#cb97a2\""), "part head manifest writes exported second shadow color");
 
         var lighting = SekaiMaterialMetadata.BuildLightingSettings(bodyMaterial);
+        Expect(lighting.FadeMode == 1, "lighting reads fade mode");
+        Expect(Math.Abs(lighting.HueSinAngle - 0.25f) < 0.0001f, "lighting reads hue sin angle");
+        Expect(Math.Abs(lighting.HueCosAngle - 0.75f) < 0.0001f, "lighting reads hue cos angle");
         Expect(Math.Abs(lighting.Saturation - 0.5f) < 0.0001f, "lighting reads saturation");
+        Expect(Math.Abs(lighting.Value - 0.6f) < 0.0001f, "lighting reads value");
+        Expect(Math.Abs(lighting.Contrast - 0.7f) < 0.0001f, "lighting reads contrast");
         Expect(Math.Abs(lighting.OutlineWidth - 0.001f) < 0.0001f, "lighting reads outline width");
         Expect(Math.Abs(lighting.DistortionFps - 12f) < 0.0001f, "lighting reads distortion FPS");
         Expect(Math.Abs(lighting.LightInfluence - 1f) < 0.0001f, "lighting reads light influence");
@@ -74,7 +79,12 @@ public static class PartMaterialMetadataSmoke
             },
             FloatProperties: new[]
             {
+                new FloatPropertyInventory("_FadeMode", 1f),
+                new FloatPropertyInventory("_HueSinAngle", 0.25f),
+                new FloatPropertyInventory("_HueCosAngle", 0.75f),
                 new FloatPropertyInventory("_Saturation", 0.5f),
+                new FloatPropertyInventory("_Value", 0.6f),
+                new FloatPropertyInventory("_Contrast", 0.7f),
                 new FloatPropertyInventory("_OutlineWidth", 0.001f),
                 new FloatPropertyInventory("_DistortionFPS", 12f),
                 new FloatPropertyInventory("_LightInfluence", 1f),

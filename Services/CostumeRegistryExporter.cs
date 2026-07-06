@@ -167,6 +167,8 @@ public sealed class CostumeRegistryExporter
                 character3ds,
                 costumeById,
                 modelsByCostumeId,
+                characterById,
+                normalizedAssetRoot,
                 source
             ),
             PartRegistry: partRegistry,
@@ -192,6 +194,8 @@ public sealed class CostumeRegistryExporter
         IReadOnlyList<Character3dMaster> character3ds,
         IReadOnlyDictionary<int, Costume3dMaster> costumeById,
         IReadOnlyDictionary<int, IReadOnlyList<Costume3dModelMaster>> modelsByCostumeId,
+        IReadOnlyDictionary<int, GameCharacterMaster> characterById,
+        string assetRoot,
         IReadOnlyDictionary<string, string> source
     )
     {
@@ -203,6 +207,7 @@ public sealed class CostumeRegistryExporter
                 AddPresetWarnings(warnings, "body", entry.BodyCostume3dId, "body", costumeById, modelsByCostumeId);
                 AddPresetWarnings(warnings, "head", entry.HeadCostume3dId, "head", costumeById, modelsByCostumeId);
                 AddPresetWarnings(warnings, "hair", entry.HairCostume3dId, "hair", costumeById, modelsByCostumeId);
+                var assetBundles = ResolvePresetAssetBundleGroup(entry, modelsByCostumeId, characterById, assetRoot, warnings);
 
                 return new Character3dIndexEntry(
                     Character3dId: entry.Id,
@@ -212,6 +217,8 @@ public sealed class CostumeRegistryExporter
                     BodyCostume3dId: entry.BodyCostume3dId,
                     HeadCostume3dId: entry.HeadCostume3dId,
                     HairCostume3dId: entry.HairCostume3dId,
+                    AssetBundleNames: assetBundles.Names,
+                    AssetBundlePaths: assetBundles.Paths,
                     OutputPath: $"presets/{entry.Id}/",
                     RoleRuntimePath: BuildRoleRuntimePath(entry.CharacterId, entry.Unit),
                     Status: warnings.Count == 0 ? "available" : "partial",
@@ -263,6 +270,92 @@ public sealed class CostumeRegistryExporter
 
         AddOfficialPresetRoleAliases(entries, character3ds);
         return new PartRegistry(Version: 1, Source: source, Entries: entries);
+    }
+
+    private static PresetAssetBundleGroup ResolvePresetAssetBundleGroup(
+        Character3dMaster preset,
+        IReadOnlyDictionary<int, IReadOnlyList<Costume3dModelMaster>> modelsByCostumeId,
+        IReadOnlyDictionary<int, GameCharacterMaster> characterById,
+        string assetRoot,
+        List<string> warnings
+    )
+    {
+        var names = new List<string>();
+        var paths = new List<string>();
+        if (!characterById.TryGetValue(preset.CharacterId, out var character))
+        {
+            warnings.Add($"missing gameCharacters row for characterId {preset.CharacterId}");
+            return new PresetAssetBundleGroup(names, paths);
+        }
+
+        var body = ResolvePatternModel(modelsByCostumeId, preset.BodyCostume3dId, preset.Unit);
+        var head = ResolvePatternModel(modelsByCostumeId, preset.HeadCostume3dId, preset.Unit);
+        var hair = ResolvePatternModel(modelsByCostumeId, preset.HairCostume3dId, preset.Unit);
+        var faceSource = head is not null && IsCompleteHeadCostume(head.HeadCostume3dAssetbundleType)
+            ? head
+            : hair;
+
+        if (faceSource?.AssetbundleName is { Length: > 0 } faceAssetbundleName)
+        {
+            var faceBundle = ResolveFaceBundle(faceAssetbundleName, assetRoot, character, warnings);
+            if (faceBundle is not null)
+            {
+                names.Add(faceBundle.AssetbundleName);
+                paths.Add(ToAssetRootRelativePath(assetRoot, faceBundle.Path)!);
+            }
+        }
+
+        if (head is not null &&
+            IsAccessoryHeadCostume(head.HeadCostume3dAssetbundleType) &&
+            ResolveHeadOptionalDescriptor(null, head) is { IsEmptySlot: false } descriptor)
+        {
+            var accessoryPath = ResolveHeadOptionalBundlePath(descriptor, assetRoot, warnings);
+            if (!string.IsNullOrWhiteSpace(accessoryPath))
+            {
+                names.Add($"{descriptor.AccessoryId}/{descriptor.AttachNode}");
+                paths.Add(ToAssetRootRelativePath(assetRoot, accessoryPath)!);
+            }
+
+            if (!string.IsNullOrWhiteSpace(head.ColorAssetbundleName))
+            {
+                var accessoryColorPath = ResolveHeadOptionalColorVariationPath(
+                    descriptor,
+                    head.ColorAssetbundleName,
+                    assetRoot,
+                    warnings
+                );
+                if (!string.IsNullOrWhiteSpace(accessoryColorPath))
+                {
+                    names.Add($"{descriptor.AccessoryId}/{descriptor.AttachNode}/{head.ColorAssetbundleName}");
+                    paths.Add(ToAssetRootRelativePath(assetRoot, accessoryColorPath)!);
+                }
+            }
+        }
+
+        if (body?.AssetbundleName is { Length: > 0 } bodyAssetbundleName)
+        {
+            var bodyPath = ResolveBodyBundlePath(bodyAssetbundleName, preset.CharacterId, characterById, assetRoot, warnings);
+            if (!string.IsNullOrWhiteSpace(bodyPath))
+            {
+                names.Add(bodyAssetbundleName.Replace('\\', '/').Trim('/'));
+                paths.Add(ToAssetRootRelativePath(assetRoot, bodyPath)!);
+            }
+
+            if (!string.IsNullOrWhiteSpace(body.ColorAssetbundleName))
+            {
+                var bodyColorPath = ResolveBodyColorVariationPath(body, preset.CharacterId, characterById, assetRoot);
+                if (!string.IsNullOrWhiteSpace(bodyColorPath))
+                {
+                    names.Add($"{bodyAssetbundleName.Replace('\\', '/').Trim('/')}/{body.ColorAssetbundleName}");
+                    paths.Add(ToAssetRootRelativePath(assetRoot, bodyColorPath)!);
+                }
+            }
+        }
+
+        return new PresetAssetBundleGroup(
+            names.Distinct(StringComparer.Ordinal).ToList(),
+            paths.Distinct(StringComparer.Ordinal).ToList()
+        );
     }
 
     private static void AddOfficialPresetRoleAliases(
@@ -690,12 +783,12 @@ public sealed class CostumeRegistryExporter
                 ? ResolveBodyBundlePath(assetbundleName, costume.CharacterId, characterById, assetRoot, warnings)
                 : null,
             "hair" => RequireModelAssetbundleName(model, warnings) is { } assetbundleName
-                ? ResolveFaceBundlePath(assetbundleName, assetRoot, warnings)
+                ? ResolveFaceBundlePath(assetbundleName, costume.CharacterId, characterById, assetRoot, warnings)
                 : null,
             "head" => IsAccessoryHeadCostume(model.HeadCostume3dAssetbundleType)
                 ? ResolveHeadOptionalBundlePath(headOptional ?? ResolveHeadOptionalDescriptor(costume, model), assetRoot, warnings)
                 : RequireModelAssetbundleName(model, warnings) is { } assetbundleName
-                    ? ResolveFaceBundlePath(assetbundleName, assetRoot, warnings)
+                    ? ResolveFaceBundlePath(assetbundleName, costume.CharacterId, characterById, assetRoot, warnings)
                     : null,
             _ => null,
         };
@@ -757,32 +850,58 @@ public sealed class CostumeRegistryExporter
 
     private static string? ResolveFaceBundlePath(
         string assetbundleName,
+        int characterId,
+        IReadOnlyDictionary<int, GameCharacterMaster> characterById,
         string assetRoot,
         List<string> warnings
     )
     {
+        characterById.TryGetValue(characterId, out var character);
+        return ResolveFaceBundle(assetbundleName, assetRoot, character, warnings)?.Path;
+    }
+
+    private static ResolvedFaceBundle? ResolveFaceBundle(
+        string assetbundleName,
+        string assetRoot,
+        GameCharacterMaster? character,
+        List<string> warnings
+    )
+    {
         var normalizedName = assetbundleName.Replace('\\', '/').Trim('/');
-        var relativePath = $"{ToSystemPath(normalizedName)}.bundle";
+        var effectiveName = ResolveFaceModelTypeBundleName(assetRoot, normalizedName, character);
+        var relativePath = $"{ToSystemPath(effectiveName)}.bundle";
         var path = ResolveExistingBundlePath(
             ResolveAssetBaseDirectoryCandidates(assetRoot, "face"),
             relativePath
         );
         if (path is not null)
         {
-            return path;
+            return new ResolvedFaceBundle(effectiveName, path);
         }
 
-        path = ResolveDefaultFaceBundleFallbackPath(assetRoot, normalizedName);
-        if (path is not null)
+        if (!string.Equals(effectiveName, normalizedName, StringComparison.Ordinal))
         {
-            return path;
+            path = ResolveExistingBundlePath(
+                ResolveAssetBaseDirectoryCandidates(assetRoot, "face"),
+                $"{ToSystemPath(normalizedName)}.bundle"
+            );
+            if (path is not null)
+            {
+                return new ResolvedFaceBundle(normalizedName, path);
+            }
+        }
+
+        var fallback = ResolveDefaultFaceBundleFallback(assetRoot, normalizedName);
+        if (fallback is not null)
+        {
+            return fallback;
         }
 
         warnings.Add($"face bundle not found: {normalizedName}.bundle");
         return null;
     }
 
-    private static string? ResolveDefaultFaceBundleFallbackPath(
+    private static ResolvedFaceBundle? ResolveDefaultFaceBundleFallback(
         string assetRoot,
         string normalizedAssetbundleName
     )
@@ -799,10 +918,13 @@ public sealed class CostumeRegistryExporter
         var fallbackName = string.IsNullOrWhiteSpace(directory)
             ? fallbackLeaf
             : $"{directory}/{fallbackLeaf}";
-        return ResolveExistingBundlePath(
+        var path = ResolveExistingBundlePath(
             ResolveAssetBaseDirectoryCandidates(assetRoot, "face"),
             $"{ToSystemPath(fallbackName)}.bundle"
         );
+        return path is not null
+            ? new ResolvedFaceBundle(fallbackName, path)
+            : null;
     }
 
     private static string? ResolveHeadOptionalBundlePath(
@@ -1065,6 +1187,49 @@ public sealed class CostumeRegistryExporter
         return $"{character.Figure.ToLowerInvariant()}.bundle";
     }
 
+    private static string ResolveFaceModelTypeBundleName(
+        string assetRoot,
+        string normalizedAssetbundleName,
+        GameCharacterMaster? character
+    )
+    {
+        var suffix = ResolveFaceModelTypeSuffix(character);
+        if (suffix is null)
+        {
+            return normalizedAssetbundleName;
+        }
+
+        var candidateName = $"{normalizedAssetbundleName}_{suffix}";
+        var candidatePath = ResolveExistingBundlePath(
+            ResolveAssetBaseDirectoryCandidates(assetRoot, "face"),
+            $"{ToSystemPath(candidateName)}.bundle"
+        );
+        return candidatePath is not null ? candidateName : normalizedAssetbundleName;
+    }
+
+    private static string? ResolveFaceModelTypeSuffix(GameCharacterMaster? character)
+    {
+        if (character?.FaceModelType is not { } value ||
+            value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        var raw = value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : value.GetRawText();
+        raw = raw?.Trim().Trim('"');
+        if (string.IsNullOrWhiteSpace(raw) ||
+            string.Equals(raw, "0", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(raw, "default", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(raw, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return raw.ToLowerInvariant();
+    }
+
     private static bool IsAccessoryHeadCostume(string? type)
     {
         return string.Equals(type, "head_only", StringComparison.OrdinalIgnoreCase);
@@ -1106,6 +1271,13 @@ public sealed class CostumeRegistryExporter
     {
         return assetbundleName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
     }
+
+    private sealed record PresetAssetBundleGroup(
+        IReadOnlyList<string> Names,
+        IReadOnlyList<string> Paths
+    );
+
+    private sealed record ResolvedFaceBundle(string AssetbundleName, string Path);
 
     private static T ReadMaster<T>(string masterDirectory, string fileName)
     {

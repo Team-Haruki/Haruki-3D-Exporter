@@ -203,7 +203,9 @@ public sealed record PjskSekaiRuntimeCostumeMetadata(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     [property: JsonPropertyName("accessoryColorAssetbundleName")] string? AccessoryColorAssetbundleName,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    [property: JsonPropertyName("accessoryColorVariationPath")] string? AccessoryColorVariationPath
+    [property: JsonPropertyName("accessoryColorVariationPath")] string? AccessoryColorVariationPath,
+    [property: JsonPropertyName("assetBundleNames")] IReadOnlyList<string> AssetBundleNames,
+    [property: JsonPropertyName("assetBundlePaths")] IReadOnlyList<string> AssetBundlePaths
 );
 
 public sealed record PjskSekaiRuntimeContainer(
@@ -252,6 +254,8 @@ public sealed record PjskSekaiRuntimeMaterialSlot(
     [property: JsonPropertyName("faceShadowTex")] string? FaceShadowTex,
     [property: JsonPropertyName("renderOrder")] int RenderOrder,
     [property: JsonPropertyName("shaderPipeline")] string ShaderPipeline,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [property: JsonPropertyName("isAccessory")] bool IsAccessory,
     [property: JsonPropertyName("lighting")] MaterialLightingSettings Lighting
 );
 

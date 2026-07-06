@@ -31,6 +31,7 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
                 FaceShadowTex: null,
                 RenderOrder: 0,
                 ShaderPipeline: plan.SekaiVrmProfile.SekaiRuntimeMaterialProfile.BodyPipeline,
+                IsAccessory: false,
                 Lighting: slot.Lighting
             ))
             .ToList();
@@ -50,6 +51,7 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
                 FaceShadowTex: RewriteCharacterTexturePath("head", slot.FaceShadowTex, characterTexturePathByName),
                 RenderOrder: GetHeadRenderOrder(slot.MaterialKind),
                 ShaderPipeline: ResolveHeadShaderPipeline(plan, slot.MaterialKind),
+                IsAccessory: false,
                 Lighting: slot.Lighting
             ))
             .ToList();
@@ -1249,7 +1251,9 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
             AccessoryHeadAssetbundleName: costume.AccessoryHeadAssetbundleName,
             AccessoryAttachNode: costume.AccessoryAttachNode,
             AccessoryColorAssetbundleName: costume.AccessoryColorAssetbundleName,
-            AccessoryColorVariationPath: costume.AccessoryColorVariationPath
+            AccessoryColorVariationPath: costume.AccessoryColorVariationPath,
+            AssetBundleNames: costume.AssetBundleNames,
+            AssetBundlePaths: costume.AssetBundlePaths
         );
     }
 
@@ -1332,6 +1336,7 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
                     FaceShadowTex: null,
                     RenderOrder: GetHeadRenderOrder("accessory"),
                     ShaderPipeline: plan.SekaiVrmProfile.SekaiRuntimeMaterialProfile.BodyPipeline,
+                    IsAccessory: true,
                     Lighting: BuildLightingSettings(material)
                 );
             }))
@@ -1351,7 +1356,12 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
                 FindFloatProperty(material, "_RimThreshold") ??
                 0.2f,
             ShadowTexWeight: FindFloatProperty(material, "_ShadowTexWeight") ?? 1f,
+            FadeMode: (int)(FindFloatProperty(material, "_FadeMode") ?? 0f),
+            HueSinAngle: FindFloatProperty(material, "_HueSinAngle") ?? 0f,
+            HueCosAngle: FindFloatProperty(material, "_HueCosAngle") ?? 1f,
             Saturation: FindFloatProperty(material, "_Saturation") ?? 0.5f,
+            Value: FindFloatProperty(material, "_Value") ?? 0.5f,
+            Contrast: FindFloatProperty(material, "_Contrast") ?? 0.5f,
             PartsAmbientColor: FindColorProperty(material, "_PartsAmbientColor") ?? "#ffffff",
             ReflectionBlendColor: FindColorProperty(material, "_ReflectionBlendColor") ?? "#ffffff",
             OutlineWidth: FindFloatProperty(material, "_OutlineWidth") ?? 0.001f,

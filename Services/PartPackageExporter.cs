@@ -784,6 +784,7 @@ public sealed class PartPackageExporter
                     FaceShadowTex: RewriteTexturePath(faceShadowTex, textures),
                     RenderOrder: ResolveRenderOrder(materialKind),
                     ShaderPipeline: partType == "body" ? "sekai_csh_toon" : "character_tint_with_weak_sdf",
+                    IsAccessory: partType == "head_optional",
                     Lighting: SekaiMaterialMetadata.BuildLightingSettings(material)
                 ));
             }
@@ -1259,7 +1260,8 @@ public sealed class PartPackageExporter
 
     private static string? SelectAccessoryRootName(BundleInventory inventory)
     {
-        return inventory.Roots.FirstOrDefault()?.Name;
+        return inventory.Roots.FirstOrDefault(root => string.Equals(root.Name, "optional", StringComparison.OrdinalIgnoreCase))?.Name
+            ?? inventory.Roots.FirstOrDefault()?.Name;
     }
 
     private static string? FirstPathSegment(string? path)

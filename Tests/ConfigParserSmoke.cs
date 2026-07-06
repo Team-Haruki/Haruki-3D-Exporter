@@ -421,7 +421,39 @@ WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModels.json"), new objec
         thumbnailAssetbundleName = "unused"
     }
 });
-WriteJsonFile(Path.Combine(registryMasterDir, "gameCharacters.json"), Array.Empty<object>());
+WriteJsonFile(Path.Combine(registryMasterDir, "gameCharacters.json"), new[]
+{
+    new
+    {
+        id = 23,
+        resourceId = 23,
+        gender = "male",
+        height = 1.7,
+        figure = "mens",
+        breastSize = "none",
+        modelName = "test",
+        unit = "light_sound",
+        supportUnitType = (string?)null,
+        faceModelType = "Special",
+        prefabType = "Default",
+        isHeelOffset = false
+    },
+    new
+    {
+        id = 2,
+        resourceId = 2,
+        gender = "female",
+        height = 1.6,
+        figure = "ladies",
+        breastSize = "m",
+        modelName = "test",
+        unit = "light_sound",
+        supportUnitType = (string?)null,
+        faceModelType = "0",
+        prefabType = "Default",
+        isHeelOffset = false
+    }
+});
 WriteJsonFile(Path.Combine(registryMasterDir, "cards.json"), Array.Empty<object>());
 WriteJsonFile(Path.Combine(registryMasterDir, "cardCostume3ds.json"), Array.Empty<object>());
 WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModelAvailablePatterns.json"), Array.Empty<object>());
@@ -476,17 +508,44 @@ var defaultHairFallback = Path.Combine(
     "02",
     "0001.bundle"
 );
+var faceModelTypeVariant = Path.Combine(
+    registryAssetRoot,
+    "live_pv",
+    "model",
+    "characterv2",
+    "face",
+    "02",
+    "0000_special.bundle"
+);
+var presetBody = Path.Combine(
+    registryAssetRoot,
+    "live_pv",
+    "model",
+    "characterv2",
+    "body",
+    "99",
+    "0081",
+    "mens.bundle"
+);
 Directory.CreateDirectory(Path.GetDirectoryName(legacyAccessory)!);
 Directory.CreateDirectory(Path.GetDirectoryName(legacyAccessoryColor)!);
 Directory.CreateDirectory(Path.GetDirectoryName(fallbackAccessory)!);
 Directory.CreateDirectory(Path.GetDirectoryName(fallbackAccessoryColor)!);
 Directory.CreateDirectory(Path.GetDirectoryName(defaultHairFallback)!);
+Directory.CreateDirectory(Path.GetDirectoryName(faceModelTypeVariant)!);
+Directory.CreateDirectory(Path.GetDirectoryName(presetBody)!);
 File.WriteAllBytes(legacyAccessory, new byte[] { 1 });
 File.WriteAllBytes(legacyAccessoryColor, new byte[] { 2 });
 File.WriteAllBytes(fallbackAccessory, new byte[] { 3 });
 File.WriteAllBytes(fallbackAccessoryColor, new byte[] { 4 });
 File.WriteAllBytes(defaultHairFallback, new byte[] { 5 });
+File.WriteAllBytes(faceModelTypeVariant, new byte[] { 6 });
+File.WriteAllBytes(presetBody, new byte[] { 7 });
 var registryExport = new CostumeRegistryExporter().ExportInMemory(registryMasterDir, registryAssetRoot);
+var presetEntry = registryExport.Character3dIndex.Entries.Single(entry => entry.Character3dId == 9001);
+Expect(presetEntry.AssetBundleNames.Contains("02/0000_special"), "preset index records existing faceModelType face variant");
+Expect(presetEntry.AssetBundlePaths.Contains("live_pv/model/characterv2/face/02/0000_special.bundle"), "preset index records actual faceModelType bundle path");
+Expect(presetEntry.AssetBundlePaths.Contains("live_pv/model/characterv2/body/99/0081/mens.bundle"), "preset index records actual body bundle path");
 var legacyAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001 && entry.CharacterId == 21);
 Expect(legacyAccessoryEntry.PartType == "head_optional", "head_only registry rows are exported as head_optional");
 Expect(legacyAccessoryEntry.BundlePath == legacyAccessory, "head_optional registry resolves legacy character base bundle");
@@ -576,6 +635,7 @@ Expect(partPackageExporterSource.Contains("ReadOptionalBool(axis, \"active\") ??
 Expect(partPackageExporterSource.Contains("ReadOptionalBool(axis, \"m_Enabled\") ??"), "part package exporter reads Unity enabled angle limit flags");
 Expect(partPackageExporterSource.Contains("                true,"), "part package exporter defaults present angle limits to active like full runtime output");
 Expect(partPackageExporterSource.Contains("AccessoryTransformAdjustments: accessoryTransformAdjustments"), "part package exporter writes head_optional accessory transform adjustments");
+Expect(partPackageExporterSource.Contains("root.Name, \"optional\""), "part package exporter prefers official head_optional prefab resource name");
 
 var partRuntimeModelsSource = File.ReadAllText(Path.Combine(repoRoot, "Models", "PartRuntimeModels.cs"));
 var springBoneExporterSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "SpringBoneExporter.cs"));
@@ -584,6 +644,10 @@ var costumeRegistryExporterSource = File.ReadAllText(Path.Combine(repoRoot, "Ser
 var pjskRuntimeModelsSource = File.ReadAllText(Path.Combine(repoRoot, "Models", "PjskSekaiRuntimeModels.cs"));
 var pjskRuntimeBuilderSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "PjskSekaiRuntimeExtensionBuilder.cs"));
 Expect(partRuntimeModelsSource.Contains("accessoryTransformAdjustments"), "part runtime mount exposes accessory transform adjustment map");
+Expect(pjskRuntimeModelsSource.Contains("JsonPropertyName(\"isAccessory\")"), "runtime material slots expose official IS_ACCESSORY_ID metadata");
+Expect(pjskRuntimeBuilderSource.Contains("IsAccessory: true"), "runtime builder marks accessory material slots with IS_ACCESSORY_ID metadata");
+Expect(pjskRuntimeBuilderSource.Contains("IsAccessory: false"), "runtime builder keeps body/head material slots non-accessory");
+Expect(partPackageExporterSource.Contains("IsAccessory: partType == \"head_optional\""), "part package exporter marks head_optional materials as accessories");
 Expect(springBoneExporterSource.Contains("CharacterAccessoryTransformController"), "spring bone exporter keeps accessory transform controller mono behaviours");
 Expect(springBoneExporterSource.Contains("CharacterAccessoryTransformData"), "spring bone exporter keeps accessory transform data mono behaviours");
 Expect(springBoneExporterSource.Contains("BuildAccessoryTransformAdjustments"), "spring bone exporter extracts accessory transform adjustments");

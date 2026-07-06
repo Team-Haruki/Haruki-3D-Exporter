@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace PjskBundle2Parts.Models;
@@ -11,7 +12,10 @@ public sealed record GameCharacterMaster(
     [property: JsonPropertyName("breastSize")] string BreastSize,
     [property: JsonPropertyName("modelName")] string ModelName,
     [property: JsonPropertyName("unit")] string? Unit,
-    [property: JsonPropertyName("supportUnitType")] string? SupportUnitType
+    [property: JsonPropertyName("supportUnitType")] string? SupportUnitType,
+    [property: JsonPropertyName("faceModelType")] JsonElement? FaceModelType,
+    [property: JsonPropertyName("prefabType")] JsonElement? PrefabType,
+    [property: JsonPropertyName("isHeelOffset")] bool? IsHeelOffset
 );
 
 public sealed record Character3dMaster(
@@ -97,6 +101,8 @@ public sealed record ResolvedCharacter3dCostume(
     string? AccessoryAttachNode,
     string? AccessoryColorAssetbundleName,
     string? AccessoryColorVariationPath,
+    IReadOnlyList<string> AssetBundleNames,
+    IReadOnlyList<string> AssetBundlePaths,
     int BodyCostume3dId,
     int HairCostume3dId,
     int HeadCostume3dId,
