@@ -428,6 +428,7 @@ public sealed class PartPackageExporter
             ColliderBindings: setup.ColliderBindings,
             ManagerColliderCaches: setup.ManagerColliderCaches,
             ActiveRootProfile: setup.ActiveRootProfile,
+            FUnit: springBone.FUnit,
             Warnings: springBone.Warnings.Concat(candidate.Warnings).Distinct(StringComparer.Ordinal).ToList()
         );
     }
@@ -538,6 +539,7 @@ public sealed class PartPackageExporter
                 ActiveRoots: activeRoots.Count == 0 ? new[] { defaultRoot } : activeRoots,
                 InactiveRoots: Array.Empty<string>()
             ),
+            FUnit: springBone.FUnit,
             ConstraintSetup: PjskSekaiRuntimeExtensionBuilder.BuildConstraintSetup(
                 "single_part_runtime_package",
                 new[] { springBone.PrefabGraph }
@@ -1202,9 +1204,25 @@ public sealed class PartPackageExporter
             SpringBonePivots: Array.Empty<SpringMonoBehaviourEntry>(),
             ExtraBones: Array.Empty<SpringExtraBoneEntry>(),
             AccessoryTransformAdjustments: Array.Empty<SpringAccessoryTransformAdjustment>(),
+            FUnit: EmptyFUnitSummary(),
             CharacterHair: null,
             CharacterEye: null,
             Warnings: Array.Empty<string>()
+        );
+    }
+
+    private static SpringFUnitSummary EmptyFUnitSummary()
+    {
+        return new SpringFUnitSummary(
+            Present: false,
+            ScriptCount: 0,
+            SpringManagerCount: 0,
+            SpringBoneCount: 0,
+            SphereColliderCount: 0,
+            CapsuleColliderCount: 0,
+            PanelColliderCount: 0,
+            DetectedScripts: Array.Empty<string>(),
+            Policy: "metadata_only; do not merge with UTJ/Sekai SpringBone runtime"
         );
     }
 

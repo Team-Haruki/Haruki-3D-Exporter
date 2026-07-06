@@ -64,11 +64,16 @@ public sealed class SpringBoneExporter
             .ToDictionary(renderer => renderer.m_PathID, renderer => ReadRendererEnabled(rendererRawByPathId, renderer.m_PathID));
         var allMonoBehaviours = objects
             .OfType<MonoBehaviour>()
-            .Select(mono => new SpringMonoRaw(
-                Mono: mono,
-                ScriptName: ResolveScriptName(mono),
-                Raw: ConvertToJsonObject(mono.ToType()) ?? new JsonObject()
-            ))
+            .Select(mono =>
+            {
+                var script = ResolveScriptIdentity(mono);
+                return new SpringMonoRaw(
+                    Mono: mono,
+                    ScriptName: script.Name,
+                    ScriptNamespace: script.Namespace,
+                    Raw: ConvertToJsonObject(mono.ToType()) ?? new JsonObject()
+                );
+            })
             .ToList();
         var managerReferencedBonePathIds = allMonoBehaviours
             .Where(entry => string.Equals(entry.ScriptName, "SpringManager", StringComparison.OrdinalIgnoreCase))
@@ -149,6 +154,7 @@ public sealed class SpringBoneExporter
             .Select(entry => BuildExtraBoneEntry(entry, objectRefsByPathId))
             .ToList();
         var accessoryTransformAdjustments = BuildAccessoryTransformAdjustments(allMonoBehaviours);
+        var fUnit = BuildFUnitSummary(allMonoBehaviours);
         var characterHair = monoBehaviours
             .Where(entry => string.Equals(entry.ScriptName, "SekaiCharacterHair", StringComparison.OrdinalIgnoreCase))
             .Select(entry => BuildCharacterHairEntry(entry, objectRefsByPathId))
@@ -190,6 +196,7 @@ public sealed class SpringBoneExporter
             SpringBonePivots: springBonePivots,
             ExtraBones: extraBones,
             AccessoryTransformAdjustments: accessoryTransformAdjustments,
+            FUnit: fUnit,
             CharacterHair: characterHair,
             CharacterEye: characterEye,
             Warnings: warnings
@@ -634,6 +641,38 @@ public sealed class SpringBoneExporter
         return result;
     }
 
+    private static SpringFUnitSummary BuildFUnitSummary(
+        IReadOnlyList<SpringMonoRaw> allMonoBehaviours
+    )
+    {
+        var entries = allMonoBehaviours
+            .Where(entry => string.Equals(entry.ScriptNamespace, "FUnit", StringComparison.Ordinal) ||
+                entry.ScriptNamespace.StartsWith("FUnit.", StringComparison.Ordinal))
+            .ToList();
+        var scriptNames = entries
+            .Select(entry => string.IsNullOrWhiteSpace(entry.ScriptNamespace)
+                ? entry.ScriptName
+                : $"{entry.ScriptNamespace}.{entry.ScriptName}")
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToList();
+        var countByName = entries
+            .GroupBy(entry => entry.ScriptName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+        var count = (string scriptName) => countByName.TryGetValue(scriptName, out var value) ? value : 0;
+        return new SpringFUnitSummary(
+            Present: entries.Count > 0,
+            ScriptCount: entries.Count,
+            SpringManagerCount: count("SpringManager"),
+            SpringBoneCount: count("SpringBone"),
+            SphereColliderCount: count("SpringSphereCollider"),
+            CapsuleColliderCount: count("SpringCapsuleCollider"),
+            PanelColliderCount: count("SpringPanelCollider"),
+            DetectedScripts: scriptNames,
+            Policy: "metadata_only; do not merge with UTJ/Sekai SpringBone runtime"
+        );
+    }
+
     private static void CollectAccessoryTransformAdjustments(
         JsonNode? node,
         string? faceId,
@@ -807,11 +846,48 @@ public sealed class SpringBoneExporter
         );
     }
 
+    private static SpringMonoScriptIdentity ResolveScriptIdentity(MonoBehaviour mono)
+    {
+        if (!mono.m_Script.TryGet(out MonoScript script))
+        {
+            return new SpringMonoScriptIdentity(
+                $"missing-script:{mono.m_Script.m_PathID}",
+                string.Empty
+            );
+        }
+        return new SpringMonoScriptIdentity(
+            ReadStringMember(script, "m_ClassName") ??
+                ReadStringMember(script, "className") ??
+                ReadStringMember(script, "ClassName") ??
+                script.m_Name,
+            ReadStringMember(script, "m_Namespace") ??
+                ReadStringMember(script, "namespace") ??
+                ReadStringMember(script, "Namespace") ??
+                string.Empty
+        );
+    }
+
+    private static string? ReadStringMember(object source, string memberName)
+    {
+        var type = source.GetType();
+        const System.Reflection.BindingFlags bindingFlags =
+            System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.Public |
+            System.Reflection.BindingFlags.NonPublic;
+        if (type.GetField(memberName, bindingFlags)?.GetValue(source) is string fieldValue)
+        {
+            return fieldValue;
+        }
+        if (type.GetProperty(memberName, bindingFlags)?.GetValue(source) is string propertyValue)
+        {
+            return propertyValue;
+        }
+        return null;
+    }
+
     private static string ResolveScriptName(MonoBehaviour mono)
     {
-        return mono.m_Script.TryGet(out MonoScript script)
-            ? script.m_Name
-            : $"missing-script:{mono.m_Script.m_PathID}";
+        return ResolveScriptIdentity(mono).Name;
     }
 
     private static SpringObjectRef? ResolveGameObject(PPtr<GameObject> pointer)
@@ -1462,6 +1538,12 @@ public sealed class SpringBoneExporter
     private sealed record SpringMonoRaw(
         MonoBehaviour Mono,
         string ScriptName,
+        string ScriptNamespace,
         JsonObject Raw
+    );
+
+    private sealed record SpringMonoScriptIdentity(
+        string Name,
+        string Namespace
     );
 }

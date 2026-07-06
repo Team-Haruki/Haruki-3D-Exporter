@@ -448,6 +448,7 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
                     .Where(root => !activeRoots.Contains(root, StringComparer.Ordinal))
                     .ToList()
             ),
+            FUnit: MergeFUnitSummaries(raw.Body.FUnit, raw.Head.FUnit),
             ConstraintSetup: BuildConstraintSetup(
                 "combined_body_head_runtime",
                 prefabGraphs
@@ -458,6 +459,26 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
             Colliders: colliders,
             ColliderBindings: bindings,
             Warnings: candidate.Warnings
+        );
+    }
+
+    private static SpringFUnitSummary MergeFUnitSummaries(params SpringFUnitSummary[] summaries)
+    {
+        var active = summaries.Where(summary => summary.Present).ToList();
+        return new SpringFUnitSummary(
+            Present: active.Count > 0,
+            ScriptCount: active.Sum(summary => summary.ScriptCount),
+            SpringManagerCount: active.Sum(summary => summary.SpringManagerCount),
+            SpringBoneCount: active.Sum(summary => summary.SpringBoneCount),
+            SphereColliderCount: active.Sum(summary => summary.SphereColliderCount),
+            CapsuleColliderCount: active.Sum(summary => summary.CapsuleColliderCount),
+            PanelColliderCount: active.Sum(summary => summary.PanelColliderCount),
+            DetectedScripts: active
+                .SelectMany(summary => summary.DetectedScripts)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(value => value, StringComparer.Ordinal)
+                .ToList(),
+            Policy: "metadata_only; do not merge with UTJ/Sekai SpringBone runtime"
         );
     }
 

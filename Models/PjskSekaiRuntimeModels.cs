@@ -296,6 +296,7 @@ public sealed record PjskSpringBoneRuntimeUnitySetup(
     [property: JsonPropertyName("setupPlan")] PjskSpringBoneSetupPlan SetupPlan,
     [property: JsonPropertyName("bindingDecisions")] IReadOnlyList<PjskSpringBoneBindingDecision> BindingDecisions,
     [property: JsonPropertyName("activeRootProfile")] PjskSpringBoneActiveRootProfile ActiveRootProfile,
+    [property: JsonPropertyName("funit")] SpringFUnitSummary FUnit,
     [property: JsonPropertyName("constraintSetup")] PjskUnityRuntimeConstraintSetup ConstraintSetup,
     [property: JsonPropertyName("managerColliderCaches")] IReadOnlyList<PjskSpringBoneRuntimeManagerColliderCache> ManagerColliderCaches,
     [property: JsonPropertyName("managers")] IReadOnlyList<PjskSpringBoneRuntimeManager> Managers,

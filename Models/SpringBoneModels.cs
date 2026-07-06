@@ -17,6 +17,7 @@ public sealed record SpringBoneExport(
     IReadOnlyList<SpringMonoBehaviourEntry> SpringBonePivots,
     IReadOnlyList<SpringExtraBoneEntry> ExtraBones,
     IReadOnlyList<SpringAccessoryTransformAdjustment> AccessoryTransformAdjustments,
+    SpringFUnitSummary FUnit,
     SpringCharacterHairEntry? CharacterHair,
     SpringCharacterEyeEntry? CharacterEye,
     IReadOnlyList<string> Warnings
@@ -221,6 +222,18 @@ public sealed record SpringAccessoryTransformAdjustment(
     SpringVector3 Position,
     SpringVector3 RotationEulerDegrees,
     SpringVector3 Scale
+);
+
+public sealed record SpringFUnitSummary(
+    [property: JsonPropertyName("present")] bool Present,
+    [property: JsonPropertyName("scriptCount")] int ScriptCount,
+    [property: JsonPropertyName("springManagerCount")] int SpringManagerCount,
+    [property: JsonPropertyName("springBoneCount")] int SpringBoneCount,
+    [property: JsonPropertyName("sphereColliderCount")] int SphereColliderCount,
+    [property: JsonPropertyName("capsuleColliderCount")] int CapsuleColliderCount,
+    [property: JsonPropertyName("panelColliderCount")] int PanelColliderCount,
+    [property: JsonPropertyName("detectedScripts")] IReadOnlyList<string> DetectedScripts,
+    [property: JsonPropertyName("policy")] string Policy
 );
 
 public sealed record SpringCharacterHairEntry(

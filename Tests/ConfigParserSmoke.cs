@@ -545,6 +545,12 @@ Expect(springBoneExporterSource.Contains("CharacterAccessoryTransformController"
 Expect(springBoneExporterSource.Contains("CharacterAccessoryTransformData"), "spring bone exporter keeps accessory transform data mono behaviours");
 Expect(springBoneExporterSource.Contains("BuildAccessoryTransformAdjustments"), "spring bone exporter extracts accessory transform adjustments");
 Expect(springBoneExporterSource.Contains("_faceIdAccessoryTransformDict"), "spring bone exporter reads official face-id accessory transform dictionary");
+Expect(partRuntimeModelsSource.Contains("JsonPropertyName(\"funit\")"), "part runtime spring payload exposes FUnit metadata separately");
+Expect(pjskRuntimeModelsSource.Contains("JsonPropertyName(\"funit\")"), "runtime unity setup exposes FUnit metadata separately");
+Expect(springBoneExporterSource.Contains("BuildFUnitSummary"), "spring bone exporter detects FUnit metadata");
+Expect(springBoneExporterSource.Contains("ScriptNamespace"), "spring bone exporter distinguishes FUnit by MonoScript namespace");
+Expect(springBoneExporterSource.Contains("metadata_only; do not merge with UTJ/Sekai SpringBone runtime"), "FUnit detection is explicitly metadata-only");
+Expect(!springBoneExporterSource.Contains("FUnit.SpringBone runtime"), "spring bone exporter does not route FUnit into the UTJ runtime path");
 Expect(pjskRuntimeModelsSource.Contains("faceRendererName"), "runtime body-head assembly exposes official face renderer predicate name");
 Expect(pjskRuntimeModelsSource.Contains("combineNodeAName"), "runtime body-head assembly exposes official combine node A");
 Expect(pjskRuntimeModelsSource.Contains("combineNodeBName"), "runtime body-head assembly exposes official combine node B");
