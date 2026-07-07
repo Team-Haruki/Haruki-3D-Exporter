@@ -272,11 +272,17 @@ public sealed class PartPackageExporter
         var runtimeSpringBone = BuildPartSpringBone(normalizedType, springBone);
         var nativeMeshes = ExportNativeMeshes(normalizedType, imported, runtimeSpringBone);
         var builtMaterialSlots = BuildMaterialSlots(normalizedType, inventory, textures, imported, nativeMeshes);
-        var nativeDeduplication = DeduplicateNativeMeshes(nativeMeshes, builtMaterialSlots.Slots);
+        var colorVariationSlots = ApplyColorVariationTextureOverrides(
+            normalizedType,
+            builtMaterialSlots.Slots,
+            overrideTextures,
+            textures
+        );
+        var nativeDeduplication = DeduplicateNativeMeshes(nativeMeshes, colorVariationSlots);
         nativeMeshes = nativeDeduplication.NativeMeshes;
         var materialSlots = FilterMaterialSlotsForNativeMeshes(
             normalizedType,
-            builtMaterialSlots.Slots,
+            colorVariationSlots,
             nativeMeshes
         );
         var textureRoles = BuildTextureRoles(materialSlots);
@@ -949,6 +955,75 @@ public sealed class PartPackageExporter
             AddTextureRole(roles, slot, "faceShadow", slot.FaceShadowTex);
         }
         return roles;
+    }
+
+    private static IReadOnlyList<PjskSekaiRuntimeMaterialSlot> ApplyColorVariationTextureOverrides(
+        string partType,
+        IReadOnlyList<PjskSekaiRuntimeMaterialSlot> slots,
+        IReadOnlyList<ImportedTexture> overrideTextures,
+        IReadOnlyDictionary<string, string> textures
+    )
+    {
+        if (overrideTextures.Count == 0 || slots.Count == 0)
+        {
+            return slots;
+        }
+
+        var overrideMain = FindOverrideTexturePath(overrideTextures, textures, "_C", "main", "diffuse");
+        var overrideShadow = FindOverrideTexturePath(overrideTextures, textures, "_S", "shadow");
+        var overrideValue = FindOverrideTexturePath(overrideTextures, textures, "_H", "_V", "value");
+        var overrideFaceShadow = FindOverrideTexturePath(overrideTextures, textures, "faceshadow", "face_shadow");
+
+        if (overrideMain is null && overrideShadow is null && overrideValue is null && overrideFaceShadow is null)
+        {
+            return slots;
+        }
+
+        return slots
+            .Select(slot => ShouldApplyColorVariationOverride(partType, slot)
+                ? slot with
+                {
+                    MainTex = overrideMain ?? slot.MainTex,
+                    ShadowTex = overrideShadow ?? slot.ShadowTex,
+                    ValueTex = overrideValue ?? slot.ValueTex,
+                    FaceShadowTex = overrideFaceShadow ?? slot.FaceShadowTex,
+                }
+                : slot)
+            .ToList();
+    }
+
+    private static bool ShouldApplyColorVariationOverride(string partType, PjskSekaiRuntimeMaterialSlot slot)
+    {
+        if (partType.Equals("head_optional", StringComparison.OrdinalIgnoreCase))
+        {
+            return slot.MaterialKind.Equals("accessory", StringComparison.OrdinalIgnoreCase);
+        }
+        return partType.Equals(slot.Part, StringComparison.OrdinalIgnoreCase) &&
+            !slot.MaterialKind.Equals("face", StringComparison.OrdinalIgnoreCase) &&
+            !slot.MaterialKind.Equals("hair", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? FindOverrideTexturePath(
+        IReadOnlyList<ImportedTexture> overrideTextures,
+        IReadOnlyDictionary<string, string> textures,
+        params string[] markers
+    )
+    {
+        var textureName = SelectTexture(
+            overrideTextures
+                .Select(texture => texture.Name)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            markers
+        );
+        if (string.IsNullOrWhiteSpace(textureName))
+        {
+            return null;
+        }
+        return textures.TryGetValue(textureName, out var path)
+            ? path
+            : textures.TryGetValue(Path.GetFileNameWithoutExtension(textureName), out var stemPath) ? stemPath : null;
     }
 
     private static object BuildManifest(
