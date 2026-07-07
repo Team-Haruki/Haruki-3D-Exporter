@@ -37,7 +37,7 @@ public sealed class PartPackageExporter
         string? manifestPath = null,
         int shardCount = 1,
         int shardIndex = 0,
-        string runtimeJsonOutput = RuntimeJsonWriter.Gzip
+        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
     )
     {
         var characterHeightMetersById = CharacterHeightResolver.LoadMetersByCharacterId(masterDirectory);
@@ -153,7 +153,7 @@ public sealed class PartPackageExporter
         int costume3dId,
         string partType,
         string? unit,
-        string runtimeJsonOutput = RuntimeJsonWriter.Gzip
+        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
     )
     {
         var characterHeightMetersById = CharacterHeightResolver.LoadMetersByCharacterId(masterDirectory);
@@ -179,7 +179,7 @@ public sealed class PartPackageExporter
         string assetRoot,
         string outputDirectory,
         IReadOnlyDictionary<string, float>? characterHeightMetersById = null,
-        string runtimeJsonOutput = RuntimeJsonWriter.Gzip
+        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
     )
     {
         var input = ResolveInput(entry);
@@ -1062,13 +1062,9 @@ public sealed class PartPackageExporter
             return false;
         }
 
-        var inputPath = RuntimeJsonWriter.NormalizeMode(runtimeJsonOutput) == RuntimeJsonWriter.Json
-            ? runtimePath
-            : RuntimeJsonWriter.GzipPath(runtimePath);
         try
         {
-            using var stream = OpenRuntimeJsonForRead(inputPath);
-            using var document = JsonDocument.Parse(stream);
+            using var document = RuntimeJsonWriter.ReadJsonDocument(runtimePath, runtimeJsonOutput);
             return document.RootElement.TryGetProperty("manifest", out var manifest) &&
                 manifest.TryGetProperty("characterHeightMeters", out var height) &&
                 height.ValueKind == JsonValueKind.Number &&

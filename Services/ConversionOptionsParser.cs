@@ -28,7 +28,7 @@ public static class ConversionOptionsParser
         "  --part-package-workers and --part-package-core-count are aliases for --part-package-process-concurrency\n" +
         "  --part-package-shard-count and --part-package-shard-index run one deterministic package shard\n" +
         "  --assetstudio-log-level controls AssetStudio logs: warning, info, or debug\n" +
-        "  --runtime-json-output controls runtime JSON files: gzip, json, or both\n" +
+        "  --runtime-json-output controls runtime JSON files: msgpack-br, gzip, json, or both\n" +
         "  --compact-textures deduplicates package textures by exact SHA-256 and rewrites runtime JSON paths\n" +
         "  --png-optimize controls lossless PNG optimization during compaction: oxipng or off\n" +
         "  --texture-compact-workers limits concurrent PNG optimizers; 0 = min(4, CPU count)\n" +
@@ -63,7 +63,7 @@ public static class ConversionOptionsParser
         var partPackageShardCount = 1;
         var partPackageShardIndex = 0;
         var assetStudioLogLevel = "warning";
-        var runtimeJsonOutput = RuntimeJsonWriter.Gzip;
+        var runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli;
         var compactTextures = false;
         var pngOptimize = "oxipng";
         var textureCompactWorkers = 0;
@@ -116,7 +116,7 @@ public static class ConversionOptionsParser
                     ? "warning"
                     : config.AssetStudioLogLevel!;
                 runtimeJsonOutput = string.IsNullOrWhiteSpace(config.RuntimeJsonOutput)
-                    ? RuntimeJsonWriter.Gzip
+                    ? RuntimeJsonWriter.MessagePackBrotli
                     : config.RuntimeJsonOutput!;
                 compactTextures = config.CompactTextures ?? false;
                 pngOptimize = string.IsNullOrWhiteSpace(config.PngOptimize)
@@ -408,7 +408,7 @@ public static class ConversionOptionsParser
 
         if (!RuntimeJsonWriter.IsValidMode(runtimeJsonOutput))
         {
-            return new ParseResult(false, null, "--runtime-json-output must be gzip, json, or both.");
+            return new ParseResult(false, null, "--runtime-json-output must be msgpack-br, gzip, json, or both.");
         }
 
         if (!IsValidPngOptimizeMode(pngOptimize))

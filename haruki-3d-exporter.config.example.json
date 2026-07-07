@@ -8,6 +8,7 @@
   "head": null,
   "motion": null,
   "headRoot": null,
+  "runtimeJsonOutput": "msgpack-br",
   "keepIntermediate": false,
   "emitCostumeRegistries": false,
   "emitPartPackages": false,

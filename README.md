@@ -86,7 +86,7 @@ By default the converter writes the runtime package and prunes intermediate/debu
 ```text
 character/character.vrm
 character/textures/**
-pjsk-sekai-runtime.extension.json
+pjsk-sekai-runtime.extension.msgpack.br
 motion/body_motion.glb                # when motion is resolved
 body.springbone.json
 head.springbone.json
@@ -123,7 +123,7 @@ This keeps older full export artifacts such as:
 
 ## Runtime Extension
 
-The final package contains `PJSK_sekai_runtime`, written both into `character/character.vrm` and as `pjsk-sekai-runtime.extension.json`.
+The final package contains `PJSK_sekai_runtime`, written into `character/character.vrm` and as `pjsk-sekai-runtime.extension.msgpack.br` by default. Use `--runtime-json-output gzip`, `json`, or `both` only for compatibility/debug output.
 
 It preserves PJSK-specific data that standard VRM cannot represent cleanly:
 
@@ -280,7 +280,7 @@ Build one runtime-loadable package with:
   --out <output-dir>
 ```
 
-This writes `parts/<partType>/<costume3dId>/<unit>/part-runtime.json` plus
+This writes `parts/<partType>/<costume3dId>/<unit>/part-runtime.msgpack.br` plus
 part-local textures. The package includes native meshes, material slots, texture
 roles, prefab graph metadata, and part-scoped SpringBone records.
 

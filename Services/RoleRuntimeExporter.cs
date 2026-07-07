@@ -41,7 +41,7 @@ public sealed class RoleRuntimeExporter
         string outputDirectory,
         IReadOnlyList<int> character3dIds,
         string? motionPath = null,
-        string runtimeJsonOutput = RuntimeJsonWriter.Gzip
+        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
     )
     {
         return ResolveExportCharacter3dIds(masterDirectory, character3dIds)
@@ -125,7 +125,7 @@ public sealed class RoleRuntimeExporter
         string outputDirectory,
         int character3dId,
         string? motionPath = null,
-        string runtimeJsonOutput = RuntimeJsonWriter.Gzip
+        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
     )
     {
         var resolvedCostume = character3dCostumeResolver.Resolve(

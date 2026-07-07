@@ -21,7 +21,7 @@ public sealed class CostumeRegistryExporter
         string masterDirectory,
         string assetRoot,
         string outputDirectory,
-        string runtimeJsonOutput = RuntimeJsonWriter.Gzip
+        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
     )
     {
         var export = ExportInMemory(masterDirectory, assetRoot);
@@ -268,7 +268,7 @@ public sealed class CostumeRegistryExporter
             }
         }
 
-        AddOfficialPresetRoleAliases(entries, character3ds);
+        AddOfficialPresetRoleAliases(entries, character3ds, characterById, assetRoot);
         return new PartRegistry(Version: 1, Source: source, Entries: entries);
     }
 
@@ -360,7 +360,9 @@ public sealed class CostumeRegistryExporter
 
     private static void AddOfficialPresetRoleAliases(
         List<PartRegistryEntry> entries,
-        IReadOnlyList<Character3dMaster> character3ds
+        IReadOnlyList<Character3dMaster> character3ds,
+        IReadOnlyDictionary<int, GameCharacterMaster> characterById,
+        string assetRoot
     )
     {
         if (character3ds.Count == 0 || entries.Count == 0)
@@ -378,9 +380,9 @@ public sealed class CostumeRegistryExporter
 
         foreach (var preset in character3ds.OrderBy(entry => entry.Id))
         {
-            AddOfficialPresetPartAlias(entriesByCostumeAndUnit, existing, aliases, preset, preset.BodyCostume3dId);
-            AddOfficialPresetPartAlias(entriesByCostumeAndUnit, existing, aliases, preset, preset.HeadCostume3dId);
-            AddOfficialPresetPartAlias(entriesByCostumeAndUnit, existing, aliases, preset, preset.HairCostume3dId);
+            AddOfficialPresetPartAlias(entriesByCostumeAndUnit, existing, aliases, preset, preset.BodyCostume3dId, characterById, assetRoot);
+            AddOfficialPresetPartAlias(entriesByCostumeAndUnit, existing, aliases, preset, preset.HeadCostume3dId, characterById, assetRoot);
+            AddOfficialPresetPartAlias(entriesByCostumeAndUnit, existing, aliases, preset, preset.HairCostume3dId, characterById, assetRoot);
         }
 
         entries.AddRange(aliases);
@@ -391,7 +393,9 @@ public sealed class CostumeRegistryExporter
         HashSet<string> existing,
         List<PartRegistryEntry> aliases,
         Character3dMaster preset,
-        int costume3dId
+        int costume3dId,
+        IReadOnlyDictionary<int, GameCharacterMaster> characterById,
+        string assetRoot
     )
     {
         var candidates = ResolveOfficialPresetPartCandidates(entriesByCostumeAndUnit, costume3dId, preset.Unit);
@@ -402,16 +406,69 @@ public sealed class CostumeRegistryExporter
                 continue;
             }
 
-            var alias = entry with
-            {
-                CharacterId = preset.CharacterId,
-                Unit = string.IsNullOrWhiteSpace(entry.Unit) ? preset.Unit : entry.Unit,
-            };
+            var alias = ResolveOfficialPresetAlias(entry, preset, characterById, assetRoot);
             if (existing.Add(PartRegistryRoleKey(alias)))
             {
                 aliases.Add(alias);
             }
         }
+    }
+
+    private static PartRegistryEntry ResolveOfficialPresetAlias(
+        PartRegistryEntry entry,
+        Character3dMaster preset,
+        IReadOnlyDictionary<int, GameCharacterMaster> characterById,
+        string assetRoot
+    )
+    {
+        var alias = entry with
+        {
+            CharacterId = preset.CharacterId,
+            Unit = string.IsNullOrWhiteSpace(entry.Unit) ? preset.Unit : entry.Unit,
+        };
+
+        if (!string.Equals(entry.PartType, "body", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(entry.ModelAssetbundleName))
+        {
+            return alias;
+        }
+
+        var warnings = new List<string>();
+        var bundlePath = ResolveBodyBundlePath(
+            entry.ModelAssetbundleName,
+            preset.CharacterId,
+            characterById,
+            assetRoot,
+            warnings
+        );
+        var colorPath = !string.IsNullOrWhiteSpace(entry.ColorAssetbundleName)
+            ? ResolveBodyColorVariationPath(
+                new Costume3dModelMaster(
+                    Costume3dId: entry.Costume3dId,
+                    Unit: entry.Unit,
+                    AssetbundleName: entry.ModelAssetbundleName,
+                    HeadCostume3dAssetbundleType: entry.HeadCostume3dAssetbundleType,
+                    ColorAssetbundleName: entry.ColorAssetbundleName,
+                    Part: entry.Part,
+                    ThumbnailAssetbundleName: null
+                ),
+                preset.CharacterId,
+                characterById,
+                assetRoot
+            )
+            : null;
+        var sourceIdentity = BuildSourceIdentity(entry.PartType, bundlePath, colorPath, assetRoot);
+        return alias with
+        {
+            BundlePath = bundlePath,
+            ColorVariationBundlePath = colorPath,
+            BaseSourceKey = sourceIdentity?.BaseSourceKey,
+            SourceKey = sourceIdentity?.SourceKey,
+            SourcePackagePath = sourceIdentity?.PackagePath,
+            PackagePath = sourceIdentity?.PackagePath ?? alias.PackagePath,
+            Status = bundlePath is null ? "missing" : "planned",
+            Warnings = warnings.Distinct().ToList(),
+        };
     }
 
     private static IReadOnlyList<PartRegistryEntry> ResolveOfficialPresetPartCandidates(

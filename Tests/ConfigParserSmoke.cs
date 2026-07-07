@@ -227,6 +227,32 @@ RuntimeJsonWriter.Write(writerPath, new { version = "both" }, new JsonSerializer
 Expect(File.Exists(writerPath), "both runtime JSON mode writes plain JSON");
 Expect(File.Exists(writerPath + ".gz"), "both runtime JSON mode writes gzip file");
 
+File.Delete(writerPath);
+File.Delete(writerPath + ".gz");
+RuntimeJsonWriter.Write(
+    writerPath,
+    new
+    {
+        version = "msgpack",
+        value = 7,
+        nested = new { ok = true },
+        items = new object?[] { "a", 2, null }
+    },
+    new JsonSerializerOptions(),
+    RuntimeJsonWriter.MessagePackBrotli
+);
+var writerMessagePackPath = RuntimeJsonWriter.MessagePackBrotliPath(writerPath);
+Expect(!File.Exists(writerPath), "msgpack-br runtime JSON mode does not write plain JSON");
+Expect(!File.Exists(writerPath + ".gz"), "msgpack-br runtime JSON mode does not write gzip");
+Expect(File.Exists(writerMessagePackPath), "msgpack-br runtime JSON mode writes MessagePack Brotli file");
+using (var document = RuntimeJsonWriter.ReadJsonDocument(writerPath, RuntimeJsonWriter.MessagePackBrotli))
+{
+    Expect(document.RootElement.GetProperty("version").GetString() == "msgpack", "msgpack-br runtime JSON can be decoded and parsed");
+    Expect(document.RootElement.GetProperty("nested").GetProperty("ok").GetBoolean(), "msgpack-br runtime JSON preserves nested objects");
+    Expect(document.RootElement.GetProperty("items").GetArrayLength() == 3, "msgpack-br runtime JSON preserves arrays");
+}
+Expect(RuntimeJsonWriter.PrimaryPath(writerPath, RuntimeJsonWriter.MessagePackBrotli) == writerMessagePackPath, "msgpack-br primary path points at .msgpack.br");
+
 var compactDir = Path.Combine(tempDir, "compact");
 var packageA = Path.Combine(compactDir, "parts", "_sources", "body", "a");
 var packageB = Path.Combine(compactDir, "parts", "_sources", "head", "b");

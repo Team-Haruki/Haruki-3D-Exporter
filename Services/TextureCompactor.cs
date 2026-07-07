@@ -289,11 +289,7 @@ public sealed class TextureCompactor
 
     private static JsonObject ReadRuntimeJson(string runtimeJsonPath)
     {
-        using Stream stream = File.Exists(RuntimeJsonWriter.GzipPath(runtimeJsonPath))
-            ? new GZipStream(File.OpenRead(RuntimeJsonWriter.GzipPath(runtimeJsonPath)), CompressionMode.Decompress)
-            : File.OpenRead(runtimeJsonPath);
-        return JsonNode.Parse(stream)?.AsObject()
-            ?? throw new InvalidOperationException($"Runtime JSON is empty: {runtimeJsonPath}");
+        return RuntimeJsonWriter.ReadJsonObject(runtimeJsonPath);
     }
 
     private static bool TryRewriteTexturePath(
