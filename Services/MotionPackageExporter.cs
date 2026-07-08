@@ -59,7 +59,8 @@ public sealed class MotionPackageExporter
     public MotionExportResult Export(
         string? motionPath,
         string outputDirectory,
-        IImported? bodyModel = null
+        IImported? bodyModel = null,
+        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
     )
     {
         if (string.IsNullOrWhiteSpace(motionPath))
@@ -72,7 +73,7 @@ public sealed class MotionPackageExporter
 
         if (Directory.Exists(normalized))
         {
-            return ExportFromFolder(normalized, outputDirectory, bodyModel);
+            return ExportFromFolder(normalized, outputDirectory, bodyModel, runtimeJsonOutput);
         }
 
         if (!File.Exists(normalized))
@@ -85,7 +86,7 @@ public sealed class MotionPackageExporter
             throw new InvalidOperationException("Direct motion bundle export requires the body model hierarchy.");
         }
 
-        return ExportFromBundle(normalized, outputDirectory, bodyModel);
+        return ExportFromBundle(normalized, outputDirectory, bodyModel, runtimeJsonOutput);
     }
 
     public string ExportFaceMotion(
@@ -128,7 +129,8 @@ public sealed class MotionPackageExporter
     private static MotionExportResult ExportFromFolder(
         string motionFolder,
         string outputDirectory,
-        IImported? bodyModel
+        IImported? bodyModel,
+        string runtimeJsonOutput
     )
     {
         var unityMotionJson = FindFile(motionFolder, "unity-motion.json");
@@ -140,7 +142,12 @@ public sealed class MotionPackageExporter
         if (unityMotionJson is not null)
         {
             unityMotionOutput = Path.Combine(outputDirectory, "unity-motion.json");
-            File.Copy(unityMotionJson, unityMotionOutput, overwrite: true);
+            var runtime = JsonSerializer.Deserialize<JsonNode>(
+                File.ReadAllText(unityMotionJson),
+                JsonOptions
+            ) ?? throw new InvalidDataException($"Unity motion runtime is empty: {unityMotionJson}");
+            RuntimeJsonWriter.Write(unityMotionOutput, runtime, JsonOptions, runtimeJsonOutput);
+            unityMotionOutput = RuntimeJsonWriter.PrimaryPath(unityMotionOutput, runtimeJsonOutput);
         }
         else
         {
@@ -156,7 +163,8 @@ public sealed class MotionPackageExporter
                     decodedClips,
                     motionFolder,
                     outputDirectory,
-                    bodyModel
+                    bodyModel,
+                    runtimeJsonOutput
                 );
 
                 return new MotionExportResult(
@@ -194,12 +202,13 @@ public sealed class MotionPackageExporter
     private static MotionExportResult ExportFromBundle(
         string bundlePath,
         string outputDirectory,
-        IImported bodyModel
+        IImported bodyModel,
+        string runtimeJsonOutput
     )
     {
         var decodedClips = DecodeUnityClipsFromBundle(bundlePath);
         (var unityMotionOutput, var bodyMotionBindings, var faceMotion, var lightMotion) =
-            ExportDecodedClips(decodedClips, bundlePath, outputDirectory, bodyModel);
+            ExportDecodedClips(decodedClips, bundlePath, outputDirectory, bodyModel, runtimeJsonOutput);
 
         return new MotionExportResult(
             SourcePath: bundlePath,
@@ -219,7 +228,8 @@ public sealed class MotionPackageExporter
         IReadOnlyList<DecodedUnityClip> decodedClips,
         string sourcePath,
         string outputDirectory,
-        IImported bodyModel
+        IImported bodyModel,
+        string runtimeJsonOutput
     )
     {
         var bodyClips = decodedClips
@@ -233,8 +243,10 @@ public sealed class MotionPackageExporter
             bodyMotionBindings = WriteUnityBodyMotionRuntime(
                 bodyClips,
                 bodyModel.RootFrame,
-                unityMotionOutput
+                unityMotionOutput,
+                runtimeJsonOutput
             );
+            unityMotionOutput = RuntimeJsonWriter.PrimaryPath(unityMotionOutput, runtimeJsonOutput);
         }
 
         var faceClips = decodedClips
@@ -578,7 +590,8 @@ public sealed class MotionPackageExporter
     private static PjskBodyMotionBindingSet WriteUnityBodyMotionRuntime(
         IReadOnlyList<DecodedUnityClip> clips,
         ImportedFrame rootFrame,
-        string outputUnityJsonPath
+        string outputUnityJsonPath,
+        string runtimeJsonOutput
     )
     {
         var crcToBinding = BuildCrcToBodyMotionBinding(rootFrame);
@@ -592,7 +605,7 @@ public sealed class MotionPackageExporter
             throw new InvalidDataException("Motion bundle did not produce any bindable body animation tracks.");
         }
 
-        WriteUnityMotionRuntimeJson(bakedClips, outputUnityJsonPath);
+        WriteUnityMotionRuntimeJson(bakedClips, outputUnityJsonPath, runtimeJsonOutput);
         var usedPathCrcs = bakedClips
             .SelectMany(clip => clip.Tracks)
             .Select(track => track.PathCrc)
@@ -622,7 +635,8 @@ public sealed class MotionPackageExporter
 
     private static void WriteUnityMotionRuntimeJson(
         IReadOnlyList<BakedAnimationClip> clips,
-        string outputPath
+        string outputPath,
+        string runtimeJsonOutput
     )
     {
         var runtime = new PjskUnityMotionRuntime(
@@ -657,10 +671,11 @@ public sealed class MotionPackageExporter
                 ))
                 .ToList()
         );
-        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
-        File.WriteAllText(
+        RuntimeJsonWriter.Write(
             outputPath,
-            JsonSerializer.Serialize(runtime, new JsonSerializerOptions { WriteIndented = true })
+            runtime,
+            new JsonSerializerOptions { WriteIndented = true },
+            runtimeJsonOutput
         );
     }
 

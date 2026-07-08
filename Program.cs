@@ -310,7 +310,8 @@ plan = plan with
 var motionExport = motionPackageExporter.Export(
     motionPath,
     Path.Combine(options.OutputDirectory, "motion"),
-    importedBody
+    importedBody,
+    options.RuntimeJsonOutput
 );
 if (motionExport.UnityMotionJsonPath is not null)
 {

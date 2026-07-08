@@ -164,7 +164,8 @@ public sealed class RoleRuntimeExporter
         var motionExport = motionPackageExporter.Export(
             resolvedMotionPath,
             motionDirectory,
-            importedBody
+            importedBody,
+            runtimeJsonOutput
         );
         var runtimeBuild = runtimeExtensionBuilder.Build(
             plan,
