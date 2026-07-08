@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Security.Cryptography;
+using System.IO.Compression;
 using System.Text;
 using PjskBundle2Parts.Models;
 
@@ -7,6 +8,8 @@ namespace PjskBundle2Parts.Services;
 
 public sealed class CostumeRegistryExporter
 {
+    private const int ScopedRegistryMaxDegreeOfParallelism = 16;
+
     private static readonly JsonSerializerOptions ReadJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -47,45 +50,45 @@ public sealed class CostumeRegistryExporter
         string runtimeJsonOutput
     )
     {
-        var roles = export.PartRegistry.Entries
-            .Select(entry => (entry.CharacterId, entry.Unit))
-            .Concat(export.Character3dIndex.Entries.Select(entry => (entry.CharacterId, entry.Unit)))
+        var partEntriesByRole = export.PartRegistry.Entries
+            .GroupBy(entry => (entry.CharacterId, UnitKey(entry.Unit)))
+            .ToDictionary(group => group.Key, group => group.ToList());
+        var characterEntriesByRole = export.Character3dIndex.Entries
+            .GroupBy(entry => (entry.CharacterId, UnitKey(entry.Unit)))
+            .ToDictionary(group => group.Key, group => group.ToList());
+
+        var roles = partEntriesByRole.Keys
+            .Concat(characterEntriesByRole.Keys)
             .Distinct()
             .OrderBy(entry => entry.CharacterId)
-            .ThenBy(entry => entry.Unit ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(entry => entry.Item2, StringComparer.Ordinal)
             .ToList();
 
-        foreach (var role in roles)
+        Parallel.ForEach(roles, CreateScopedRegistryParallelOptions(), role =>
         {
             var roleDirectory = Path.Combine(
                 outputDirectory,
                 "parts",
                 "by-role",
                 role.CharacterId.ToString(),
-                RuntimePathUnitSegment(role.Unit)
+                RuntimePathUnitSegment(role.Item2)
             );
+            partEntriesByRole.TryGetValue(role, out var partEntries);
+            characterEntriesByRole.TryGetValue(role, out var characterEntries);
             var partRegistry = new PartRegistry(
                 Version: export.PartRegistry.Version,
                 Source: export.PartRegistry.Source,
-                Entries: export.PartRegistry.Entries
-                    .Where(entry =>
-                        entry.CharacterId == role.CharacterId &&
-                        string.Equals(entry.Unit ?? string.Empty, role.Unit ?? string.Empty, StringComparison.Ordinal))
-                    .ToList()
+                Entries: partEntries ?? new List<PartRegistryEntry>()
             );
             var characterIndex = new Character3dIndex(
                 Version: export.Character3dIndex.Version,
                 Source: export.Character3dIndex.Source,
-                Entries: export.Character3dIndex.Entries
-                    .Where(entry =>
-                        entry.CharacterId == role.CharacterId &&
-                        string.Equals(entry.Unit ?? string.Empty, role.Unit ?? string.Empty, StringComparison.Ordinal))
-                    .ToList()
+                Entries: characterEntries ?? new List<Character3dIndexEntry>()
             );
 
-            WriteJson(Path.Combine(roleDirectory, "part-registry.json"), partRegistry, runtimeJsonOutput);
-            WriteJson(Path.Combine(roleDirectory, "character3d-index.json"), characterIndex, runtimeJsonOutput);
-        }
+            WriteScopedJson(Path.Combine(roleDirectory, "part-registry.json"), partRegistry, runtimeJsonOutput);
+            WriteScopedJson(Path.Combine(roleDirectory, "character3d-index.json"), characterIndex, runtimeJsonOutput);
+        });
     }
 
     private static void WriteScopedHeadHairCompatibilityIndexes(
@@ -94,27 +97,35 @@ public sealed class CostumeRegistryExporter
         string runtimeJsonOutput
     )
     {
-        var units = export.HeadHairCompatibility.Rules
-            .Select(rule => rule.Unit)
-            .Distinct()
-            .OrderBy(unit => unit ?? string.Empty, StringComparer.Ordinal)
+        var rulesByUnit = export.HeadHairCompatibility.Rules
+            .GroupBy(rule => UnitKey(rule.Unit))
+            .ToDictionary(group => group.Key, group => group.ToList());
+        var units = rulesByUnit.Keys
+            .OrderBy(unit => unit, StringComparer.Ordinal)
             .ToList();
 
-        foreach (var unit in units)
+        Parallel.ForEach(units, CreateScopedRegistryParallelOptions(), unit =>
         {
+            rulesByUnit.TryGetValue(unit, out var rules);
             var compatibility = new HeadHairCompatibilityRegistry(
                 Version: export.HeadHairCompatibility.Version,
                 Source: export.HeadHairCompatibility.Source,
-                Rules: export.HeadHairCompatibility.Rules
-                    .Where(rule => string.Equals(rule.Unit ?? string.Empty, unit ?? string.Empty, StringComparison.Ordinal))
-                    .ToList()
+                Rules: rules ?? new List<HeadHairCompatibilityRule>()
             );
-            WriteJson(
+            WriteScopedJson(
                 Path.Combine(outputDirectory, "parts", "compat", "by-unit", RuntimePathUnitSegment(unit), "head-hair-compatibility.json"),
                 compatibility,
                 runtimeJsonOutput
             );
-        }
+        });
+    }
+
+    private static ParallelOptions CreateScopedRegistryParallelOptions()
+    {
+        return new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Math.Min(ScopedRegistryMaxDegreeOfParallelism, Math.Max(1, Environment.ProcessorCount)),
+        };
     }
 
     public CostumeRegistryExport ExportInMemory(string masterDirectory, string assetRoot)
@@ -1352,6 +1363,11 @@ public sealed class CostumeRegistryExporter
     private static void WriteJson<T>(string path, T value, string runtimeJsonOutput)
     {
         RuntimeJsonWriter.Write(path, value, WriteJsonOptions, runtimeJsonOutput);
+    }
+
+    private static void WriteScopedJson<T>(string path, T value, string runtimeJsonOutput)
+    {
+        RuntimeJsonWriter.Write(path, value, WriteJsonOptions, runtimeJsonOutput, CompressionLevel.Fastest);
     }
 
     private static void PrintSummary(CostumeRegistryExport export, string outputDirectory)

@@ -45,7 +45,13 @@ public static class RuntimeJsonWriter
         };
     }
 
-    public static void Write<T>(string jsonPath, T value, JsonSerializerOptions options, string mode)
+    public static void Write<T>(
+        string jsonPath,
+        T value,
+        JsonSerializerOptions options,
+        string mode,
+        CompressionLevel? brotliCompressionLevel = null
+    )
     {
         var normalizedMode = NormalizeMode(mode);
         var parent = Path.GetDirectoryName(jsonPath);
@@ -67,7 +73,7 @@ public static class RuntimeJsonWriter
         }
         if (normalizedMode == MessagePackBrotli)
         {
-            WriteMessagePackBrotli(jsonPath, bytes);
+            WriteMessagePackBrotli(jsonPath, bytes, brotliCompressionLevel ?? CompressionLevel.SmallestSize);
         }
     }
 
@@ -123,13 +129,13 @@ public static class RuntimeJsonWriter
         return File.ReadAllBytes(path);
     }
 
-    private static void WriteMessagePackBrotli(string jsonPath, byte[] jsonBytes)
+    private static void WriteMessagePackBrotli(string jsonPath, byte[] jsonBytes, CompressionLevel compressionLevel)
     {
         using var document = JsonDocument.Parse(jsonBytes);
         using var packed = new MemoryStream();
         WriteMessagePackValue(packed, document.RootElement);
         using var compressed = new MemoryStream();
-        using (var brotli = new BrotliStream(compressed, CompressionLevel.SmallestSize, leaveOpen: true))
+        using (var brotli = new BrotliStream(compressed, compressionLevel, leaveOpen: true))
         {
             brotli.Write(packed.ToArray());
         }
