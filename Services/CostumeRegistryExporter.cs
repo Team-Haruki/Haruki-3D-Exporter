@@ -1362,12 +1362,12 @@ public sealed class CostumeRegistryExporter
 
     private static void WriteJson<T>(string path, T value, string runtimeJsonOutput)
     {
-        RuntimeJsonWriter.Write(path, value, WriteJsonOptions, runtimeJsonOutput);
+        RuntimeJsonWriter.Write(path, value, WriteJsonOptions, runtimeJsonOutput, CompressionLevel.Fastest);
     }
 
     private static void WriteScopedJson<T>(string path, T value, string runtimeJsonOutput)
     {
-        RuntimeJsonWriter.Write(path, value, WriteJsonOptions, runtimeJsonOutput, CompressionLevel.Fastest);
+        WriteJson(path, value, runtimeJsonOutput);
     }
 
     private static void PrintSummary(CostumeRegistryExport export, string outputDirectory)
