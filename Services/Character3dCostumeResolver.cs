@@ -66,9 +66,12 @@ public sealed class Character3dCostumeResolver
         var useHeadAsMain = completeHeadPath is not null;
         var mainHeadPath = useHeadAsMain ? completeHeadPath! : hairPath;
         var mainHeadAssetbundleName = useHeadAsMain ? completeHeadBundle!.AssetbundleName : hairBundle.AssetbundleName;
-        var mainHeadColorVariationPath = (useHeadAsMain ? head.ColorAssetbundleName : hair.ColorAssetbundleName) is not null
-            ? mainHeadPath
-            : null;
+        var mainHeadModel = useHeadAsMain ? head : hair;
+        var mainHeadColorVariationPath = ResolveFaceColorVariationPath(
+            normalizedAssetRoot,
+            mainHeadModel.AssetbundleName,
+            mainHeadModel.ColorAssetbundleName
+        );
         var mainHeadType = useHeadAsMain ? headType : hairType;
         var mainHeadMode = useHeadAsMain ? "complete_head" : "base_hair";
         // Same-group n/letter/unsuffixed face bundles are complete head alternatives, not attachable
@@ -392,6 +395,34 @@ public sealed class Character3dCostumeResolver
                 baseDirectory,
                 ToSystemPath(normalizedName),
                 bodyType,
+                $"{colorAssetbundleName}.bundle"
+            );
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ResolveFaceColorVariationPath(
+        string assetRoot,
+        string? assetbundleName,
+        string? colorAssetbundleName
+    )
+    {
+        if (string.IsNullOrWhiteSpace(assetbundleName) || string.IsNullOrWhiteSpace(colorAssetbundleName))
+        {
+            return null;
+        }
+
+        var normalizedName = assetbundleName.Replace('\\', '/').Trim('/');
+        foreach (var baseDirectory in ResolveColorVariationBaseDirectoryCandidates(assetRoot, "face"))
+        {
+            var candidate = Path.Combine(
+                baseDirectory,
+                ToSystemPath(normalizedName),
                 $"{colorAssetbundleName}.bundle"
             );
             if (File.Exists(candidate))

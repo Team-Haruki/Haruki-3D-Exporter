@@ -998,9 +998,12 @@ public sealed class PartPackageExporter
         {
             return slot.MaterialKind.Equals("accessory", StringComparison.OrdinalIgnoreCase);
         }
+        if (partType is "head" or "hair")
+        {
+            return slot.MaterialKind.Equals("hair", StringComparison.OrdinalIgnoreCase);
+        }
         return partType.Equals(slot.Part, StringComparison.OrdinalIgnoreCase) &&
-            !slot.MaterialKind.Equals("face", StringComparison.OrdinalIgnoreCase) &&
-            !slot.MaterialKind.Equals("hair", StringComparison.OrdinalIgnoreCase);
+            !slot.MaterialKind.Equals("face", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? FindOverrideTexturePath(
@@ -1694,7 +1697,13 @@ public sealed class PartPackageExportManifest
 
     public static void Merge(string manifestPath, IEnumerable<string> shardManifestPaths)
     {
-        var merged = new Dictionary<string, PartPackageInputStamp>(StringComparer.Ordinal);
+        var baseline = File.Exists(manifestPath)
+            ? JsonSerializer.Deserialize<Dictionary<string, PartPackageInputStamp>>(
+                File.ReadAllText(manifestPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+            ) ?? new Dictionary<string, PartPackageInputStamp>(StringComparer.Ordinal)
+            : new Dictionary<string, PartPackageInputStamp>(StringComparer.Ordinal);
+        var merged = new Dictionary<string, PartPackageInputStamp>(baseline, StringComparer.Ordinal);
         foreach (var shardManifestPath in shardManifestPaths.Where(File.Exists))
         {
             var packages = JsonSerializer.Deserialize<Dictionary<string, PartPackageInputStamp>>(
@@ -1703,7 +1712,10 @@ public sealed class PartPackageExportManifest
             ) ?? new Dictionary<string, PartPackageInputStamp>(StringComparer.Ordinal);
             foreach (var pair in packages)
             {
-                merged[pair.Key] = pair.Value;
+                if (!baseline.TryGetValue(pair.Key, out var previous) || previous != pair.Value)
+                {
+                    merged[pair.Key] = pair.Value;
+                }
             }
         }
 

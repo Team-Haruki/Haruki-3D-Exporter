@@ -143,6 +143,7 @@ if (options.EmitPartPackages)
             if (failed > 0)
             {
                 Console.Error.WriteLine($"Skipped {failed} part runtime package(s); see part-export-error.json files in the output tree.");
+                return 2;
             }
             RunTextureCompactionIfEnabled(options);
         }
@@ -286,6 +287,10 @@ IReadOnlyList<ImportedTexture> bodyOverrideTextures =
     resolvedCharacter3dCostume?.BodyColorVariationPath is not null
         ? modelFactory.CreateImportedTextures(resolvedCharacter3dCostume.BodyColorVariationPath)
         : Array.Empty<ImportedTexture>();
+IReadOnlyList<ImportedTexture> headOverrideTextures =
+    resolvedCharacter3dCostume?.MainHeadColorVariationPath is not null
+        ? modelFactory.CreateImportedTextures(resolvedCharacter3dCostume.MainHeadColorVariationPath)
+        : Array.Empty<ImportedTexture>();
 IReadOnlyList<ImportedTexture> accessoryOverrideTextures =
     resolvedCharacter3dCostume?.AccessoryColorVariationPath is not null
         ? modelFactory.CreateImportedTextures(resolvedCharacter3dCostume.AccessoryColorVariationPath)
@@ -298,6 +303,7 @@ var characterTexturePathByName = unityRuntimeTextureExporter.ExportCharacterText
     importedHead,
     importedAccessory,
     bodyOverrideTextures: bodyOverrideTextures,
+    headOverrideTextures: headOverrideTextures,
     accessoryOverrideTextures: accessoryOverrideTextures
 );
 var updatedBodyManifest = UpdateBodyManifestForUnityRuntime(plan.BodyManifestTemplate);
@@ -1014,9 +1020,10 @@ static int RunPartPackageWorkers(ConversionOptions options)
         .ToList();
     var processes = new List<Process>();
 
-    if (File.Exists(manifestPath))
+    foreach (var shardManifestPath in shardManifestPaths)
     {
-        foreach (var shardManifestPath in shardManifestPaths.Where(path => !File.Exists(path)))
+        File.Delete(shardManifestPath);
+        if (File.Exists(manifestPath))
         {
             File.Copy(manifestPath, shardManifestPath);
         }

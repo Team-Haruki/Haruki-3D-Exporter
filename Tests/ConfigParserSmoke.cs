@@ -572,6 +572,19 @@ File.WriteAllBytes(defaultHairFallback, new byte[] { 5 });
 File.WriteAllBytes(faceModelTypeVariant, new byte[] { 6 });
 File.WriteAllBytes(presetBody, new byte[] { 7 });
 var registryExport = new CostumeRegistryExporter().ExportInMemory(registryMasterDir, registryAssetRoot);
+Expect(
+    registryExport.Character3dIndex.Entries.All(entry => entry.RoleRuntimePath.EndsWith(".msgpack.br", StringComparison.Ordinal)),
+    "default character registry points at MessagePack Brotli role runtimes"
+);
+var gzipRegistryExport = new CostumeRegistryExporter().ExportInMemory(
+    registryMasterDir,
+    registryAssetRoot,
+    RuntimeJsonWriter.Gzip
+);
+Expect(
+    gzipRegistryExport.Character3dIndex.Entries.All(entry => entry.RoleRuntimePath.EndsWith(".json.gz", StringComparison.Ordinal)),
+    "gzip character registry points at gzip role runtimes"
+);
 var presetEntry = registryExport.Character3dIndex.Entries.Single(entry => entry.Character3dId == 9001);
 Expect(presetEntry.AssetBundleNames.Contains("02/0000_special"), "preset index records existing faceModelType face variant");
 Expect(presetEntry.AssetBundlePaths.Contains("live_pv/model/characterv2/face/02/0000_special.bundle"), "preset index records actual faceModelType bundle path");
@@ -621,6 +634,7 @@ var bundleDependencyResolverSource = File.ReadAllText(Path.Combine(repoRoot, "Se
 var materialIdentityLookupSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "MaterialIdentityLookup.cs"));
 var bundleInputResolverSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "BundleInputResolver.cs"));
 var sekaiBundleDecryptorSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "SekaiBundleDecryptor.cs"));
+var character3dCostumeResolverSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "Character3dCostumeResolver.cs"));
 Expect(partPackageExporterSource.Contains("name.Contains(\"eyelash\")"), "part package exporter classifies eyelash separately");
 Expect(partPackageExporterSource.Contains("return \"eyelash\""), "part package exporter returns eyelash material kind");
 Expect(partPackageExporterSource.Contains("name.Contains(\"eyebrow\")"), "part package exporter classifies eyebrow separately");
@@ -689,6 +703,22 @@ Expect(springBoneExporterSource.Contains("string.Equals(entry.ScriptName, \"Extr
 Expect(!springBoneExporterSource.Contains("StartsWith(\"EX_\""), "spring bone exporter does not infer ExtraBone records from EX_* transform names");
 Expect(partRuntimeModelsSource.Contains("JsonPropertyName(\"extraBones\")"), "part runtime spring payload exposes ExtraBone records");
 Expect(partPackageExporterSource.Contains("ExtraBones: springBone.ExtraBones"), "part package exporter preserves ExtraBone records for custom composition");
+Expect(partPackageExporterSource.Contains("partType is \"head\" or \"hair\""), "head and hair color variations target hair materials");
+Expect(character3dCostumeResolverSource.Contains("ResolveFaceColorVariationPath"), "character resolver resolves real face color variation bundles");
+Expect(programSource.Contains("headOverrideTextures: headOverrideTextures"), "direct character export applies head color variation textures");
+var failedPartGuard = programSource.IndexOf("if (failed > 0)", StringComparison.Ordinal);
+var failedPartExit = failedPartGuard < 0
+    ? -1
+    : programSource.IndexOf("return 2;", failedPartGuard, StringComparison.Ordinal);
+var failedPartCompaction = failedPartGuard < 0
+    ? -1
+    : programSource.IndexOf("RunTextureCompactionIfEnabled(options);", failedPartGuard, StringComparison.Ordinal);
+Expect(
+    failedPartGuard >= 0 && failedPartExit > failedPartGuard && failedPartExit < failedPartCompaction,
+    "part package failures exit nonzero before texture compaction"
+);
+Expect(programSource.Contains("File.Delete(shardManifestPath);"), "part worker orchestration clears stale shard manifests");
+Expect(partPackageExporterSource.Contains("previous != pair.Value"), "manifest merge ignores unchanged baseline stamps from other shards");
 Expect(pjskRuntimeBuilderSource.Contains("SpringManager.FindSpringBones(true) ownership is authoritative"), "runtime builder documents hierarchy-based SpringManager ownership");
 Expect(!pjskRuntimeBuilderSource.Contains("SpringManager.springBones references remain authoritative"), "runtime builder does not treat serialized springBones as authoritative");
 Expect(

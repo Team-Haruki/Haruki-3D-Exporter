@@ -27,7 +27,7 @@ public sealed class CostumeRegistryExporter
         string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
     )
     {
-        var export = ExportInMemory(masterDirectory, assetRoot);
+        var export = ExportInMemory(masterDirectory, assetRoot, runtimeJsonOutput);
         var normalizedOutputDirectory = Path.GetFullPath(outputDirectory);
 
         Directory.CreateDirectory(normalizedOutputDirectory);
@@ -128,7 +128,11 @@ public sealed class CostumeRegistryExporter
         };
     }
 
-    public CostumeRegistryExport ExportInMemory(string masterDirectory, string assetRoot)
+    public CostumeRegistryExport ExportInMemory(
+        string masterDirectory,
+        string assetRoot,
+        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
+    )
     {
         var normalizedMasterDirectory = Path.GetFullPath(masterDirectory);
         var normalizedAssetRoot = Path.GetFullPath(assetRoot);
@@ -180,7 +184,8 @@ public sealed class CostumeRegistryExporter
                 modelsByCostumeId,
                 characterById,
                 normalizedAssetRoot,
-                source
+                source,
+                runtimeJsonOutput
             ),
             PartRegistry: partRegistry,
             HeadHairCompatibility: BuildHeadHairCompatibility(
@@ -207,7 +212,8 @@ public sealed class CostumeRegistryExporter
         IReadOnlyDictionary<int, IReadOnlyList<Costume3dModelMaster>> modelsByCostumeId,
         IReadOnlyDictionary<int, GameCharacterMaster> characterById,
         string assetRoot,
-        IReadOnlyDictionary<string, string> source
+        IReadOnlyDictionary<string, string> source,
+        string runtimeJsonOutput
     )
     {
         var entries = character3ds
@@ -231,7 +237,7 @@ public sealed class CostumeRegistryExporter
                     AssetBundleNames: assetBundles.Names,
                     AssetBundlePaths: assetBundles.Paths,
                     OutputPath: $"presets/{entry.Id}/",
-                    RoleRuntimePath: BuildRoleRuntimePath(entry.CharacterId, entry.Unit),
+                    RoleRuntimePath: BuildRoleRuntimePath(entry.CharacterId, entry.Unit, runtimeJsonOutput),
                     Status: warnings.Count == 0 ? "available" : "partial",
                     Warnings: warnings
                 );
@@ -809,9 +815,12 @@ public sealed class CostumeRegistryExporter
         return $"parts/{NormalizePackagePartType(partType)}/{costume3dId}/{unit ?? "default"}/";
     }
 
-    private static string BuildRoleRuntimePath(int characterId, string? unit)
+    private static string BuildRoleRuntimePath(int characterId, string? unit, string runtimeJsonOutput)
     {
-        return $"roles/{characterId}/{RuntimePathUnitSegment(unit)}/role-runtime.json";
+        return RuntimeJsonWriter.PrimaryPath(
+            $"roles/{characterId}/{RuntimePathUnitSegment(unit)}/role-runtime.json",
+            runtimeJsonOutput
+        );
     }
 
     private static string RuntimePathUnitSegment(string? unit)
