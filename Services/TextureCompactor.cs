@@ -103,10 +103,16 @@ public sealed class TextureCompactor
         {
             return Array.Empty<string>();
         }
-        return Directory.EnumerateFiles(sourcesRoot, "part-runtime.json*", SearchOption.AllDirectories)
-            .Select(path => path.EndsWith(".gz", StringComparison.OrdinalIgnoreCase)
+        return Directory.EnumerateFiles(sourcesRoot, "part-runtime.*", SearchOption.AllDirectories)
+            .Where(path =>
+                path.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ||
+                path.EndsWith(".json.gz", StringComparison.OrdinalIgnoreCase) ||
+                path.EndsWith(".msgpack.br", StringComparison.OrdinalIgnoreCase))
+            .Select(path => path.EndsWith(".json.gz", StringComparison.OrdinalIgnoreCase)
                 ? path[..^3]
-                : path)
+                : path.EndsWith(".msgpack.br", StringComparison.OrdinalIgnoreCase)
+                    ? path[..^".msgpack.br".Length] + ".json"
+                    : path)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToList();

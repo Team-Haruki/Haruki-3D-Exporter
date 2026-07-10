@@ -285,6 +285,33 @@ Expect(rewrittenA["materialSlots"]![0]!["mainTex"]!.GetValue<string>() == textur
 Expect(rewrittenA["textureRoles"]![0]!["uri"]!.GetValue<string>() == textureA, "texture compactor rewrites texture role URI");
 Expect(File.Exists(Path.Combine(compactDir, textureA.TrimStart('/').Replace('/', Path.DirectorySeparatorChar))), "texture compactor writes store texture");
 
+var compactMessagePackDir = Path.Combine(tempDir, "compact-msgpack");
+var messagePackPackage = Path.Combine(compactMessagePackDir, "parts", "_sources", "body", "a");
+WriteRuntimePackage(
+    messagePackPackage,
+    "textures/body/a.png",
+    new byte[] { 1, 2, 3, 4 },
+    RuntimeJsonWriter.MessagePackBrotli
+);
+var compactMessagePackReport = new TextureCompactor().Compact(
+    compactMessagePackDir,
+    RuntimeJsonWriter.MessagePackBrotli,
+    "off",
+    1
+);
+Expect(compactMessagePackReport.RewrittenReferenceCount == 3, "texture compactor rewrites MessagePack runtime references");
+Expect(!File.Exists(Path.Combine(messagePackPackage, "textures", "body", "a.png")), "MessagePack compaction removes replaced source texture");
+var rewrittenMessagePack = ReadRuntimePackage(
+    Path.Combine(messagePackPackage, "part-runtime.json"),
+    RuntimeJsonWriter.MessagePackBrotli
+);
+var messagePackTexture = rewrittenMessagePack["characterTextures"]!["main"]!.GetValue<string>();
+Expect(messagePackTexture.StartsWith("/_texture_store/sha256/"), "MessagePack runtime points at compacted texture store");
+Expect(
+    File.Exists(Path.Combine(compactMessagePackDir, messagePackTexture.TrimStart('/').Replace('/', Path.DirectorySeparatorChar))),
+    "MessagePack compacted texture exists"
+);
+
 var registryMasterDir = Path.Combine(tempDir, "registry-master");
 var registryAssetRoot = Path.Combine(tempDir, "registry-assets");
 Directory.CreateDirectory(registryMasterDir);
@@ -834,7 +861,12 @@ static string FindRepoRoot()
     throw new DirectoryNotFoundException("Could not locate Haruki-3D-Exporter repo root.");
 }
 
-static void WriteRuntimePackage(string packageDirectory, string texturePath, byte[] textureBytes)
+static void WriteRuntimePackage(
+    string packageDirectory,
+    string texturePath,
+    byte[] textureBytes,
+    string runtimeJsonOutput = RuntimeJsonWriter.Gzip
+)
 {
     var textureFile = Path.Combine(packageDirectory, texturePath.Replace('/', Path.DirectorySeparatorChar));
     Directory.CreateDirectory(Path.GetDirectoryName(textureFile)!);
@@ -873,7 +905,7 @@ static void WriteRuntimePackage(string packageDirectory, string texturePath, byt
             }
         },
         new JsonSerializerOptions(),
-        RuntimeJsonWriter.Gzip
+        runtimeJsonOutput
     );
 }
 
@@ -883,8 +915,11 @@ static void WriteJsonFile(string path, object payload)
     File.WriteAllText(path, JsonSerializer.Serialize(payload));
 }
 
-static JsonObject ReadRuntimePackage(string runtimeJsonPath)
+static JsonObject ReadRuntimePackage(
+    string runtimeJsonPath,
+    string runtimeJsonOutput = RuntimeJsonWriter.Gzip
+)
 {
-    using var stream = new GZipStream(File.OpenRead(runtimeJsonPath + ".gz"), CompressionMode.Decompress);
-    return JsonNode.Parse(stream)!.AsObject();
+    using var document = RuntimeJsonWriter.ReadJsonDocument(runtimeJsonPath, runtimeJsonOutput);
+    return JsonNode.Parse(document.RootElement.GetRawText())!.AsObject();
 }
