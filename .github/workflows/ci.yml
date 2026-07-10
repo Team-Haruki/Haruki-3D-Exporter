@@ -44,11 +44,11 @@ jobs:
       - name: Build exporter
         run: dotnet build -p:AssetStudioRoot="${ASSETSTUDIO_ROOT}"
 
-      - name: Run exporter smoke tests
-        run: HARUKI_EXPORTER_CONFIG_TEST=true dotnet run --project Haruki-3D-Exporter.csproj
-
       - name: Run masterdata audit tests
         run: node --test scripts/test-costume-masterdata-audit.mjs
 
       - name: Run face motion export tests
         run: node --test scripts/test-face-motion-export.mjs
+
+      - name: Run exporter smoke tests
+        run: HARUKI_EXPORTER_CONFIG_TEST=true dotnet run --project Haruki-3D-Exporter.csproj
