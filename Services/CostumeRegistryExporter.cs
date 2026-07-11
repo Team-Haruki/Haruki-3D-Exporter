@@ -171,6 +171,8 @@ public sealed class CostumeRegistryExporter
         var partRegistry = BuildPartRegistry(
             costume3ds,
             character3ds,
+            availablePatterns,
+            costumeById,
             modelsByCostumeId,
             characterById,
             normalizedAssetRoot,
@@ -250,6 +252,8 @@ public sealed class CostumeRegistryExporter
     private static PartRegistry BuildPartRegistry(
         IReadOnlyList<Costume3dMaster> costume3ds,
         IReadOnlyList<Character3dMaster> character3ds,
+        IReadOnlyList<Costume3dModelPatternMaster> availablePatterns,
+        IReadOnlyDictionary<int, Costume3dMaster> costumeById,
         IReadOnlyDictionary<int, IReadOnlyList<Costume3dModelMaster>> modelsByCostumeId,
         IReadOnlyDictionary<int, GameCharacterMaster> characterById,
         string assetRoot,
@@ -286,6 +290,7 @@ public sealed class CostumeRegistryExporter
         }
 
         AddOfficialPresetRoleAliases(entries, character3ds, characterById, assetRoot);
+        AddCompatibleHeadRoleAliases(entries, availablePatterns, costumeById);
         return new PartRegistry(Version: 1, Source: source, Entries: entries);
     }
 
@@ -400,6 +405,43 @@ public sealed class CostumeRegistryExporter
             AddOfficialPresetPartAlias(entriesByCostumeAndUnit, existing, aliases, preset, preset.BodyCostume3dId, characterById, assetRoot);
             AddOfficialPresetPartAlias(entriesByCostumeAndUnit, existing, aliases, preset, preset.HeadCostume3dId, characterById, assetRoot);
             AddOfficialPresetPartAlias(entriesByCostumeAndUnit, existing, aliases, preset, preset.HairCostume3dId, characterById, assetRoot);
+        }
+
+        entries.AddRange(aliases);
+    }
+
+    private static void AddCompatibleHeadRoleAliases(
+        List<PartRegistryEntry> entries,
+        IReadOnlyList<Costume3dModelPatternMaster> availablePatterns,
+        IReadOnlyDictionary<int, Costume3dMaster> costumeById
+    )
+    {
+        var entriesByCostumeAndUnit = entries
+            .GroupBy(entry => (entry.Costume3dId, UnitKey(entry.Unit)))
+            .ToDictionary(group => group.Key, group => group.ToList());
+        var existing = entries.Select(PartRegistryRoleKey).ToHashSet(StringComparer.Ordinal);
+        var aliases = new List<PartRegistryEntry>();
+
+        foreach (var pattern in availablePatterns)
+        {
+            if (!costumeById.TryGetValue(pattern.HeadCostume3dId, out var head) ||
+                !costumeById.TryGetValue(pattern.HairCostume3dId, out var hair) ||
+                head.CharacterId == hair.CharacterId)
+            {
+                continue;
+            }
+
+            foreach (var entry in ResolveOfficialPresetPartCandidates(
+                         entriesByCostumeAndUnit,
+                         pattern.HeadCostume3dId,
+                         pattern.Unit))
+            {
+                var alias = entry with { CharacterId = hair.CharacterId, Unit = pattern.Unit };
+                if (existing.Add(PartRegistryRoleKey(alias)))
+                {
+                    aliases.Add(alias);
+                }
+            }
         }
 
         entries.AddRange(aliases);
@@ -1309,15 +1351,15 @@ public sealed class CostumeRegistryExporter
 
     private static bool IsAccessoryHeadCostume(string? type)
     {
-        return string.Equals(type, "head_only", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(type, "head_only", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(type, "head_all", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(type, "head_front", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(type, "head_back", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsCompleteHeadCostume(string? type)
     {
-        return string.Equals(type, "head_and_hair", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(type, "head_all", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(type, "head_front", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(type, "head_back", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(type, "head_and_hair", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? RequireModelAssetbundleName(Costume3dModelMaster model, List<string> warnings)

@@ -585,12 +585,12 @@ public sealed class Character3dCostumeResolver
 
     private static bool IsCompleteHeadCostume(string type)
     {
-        return type is "head_and_hair" or "head_all" or "head_front" or "head_back";
+        return type is "head_and_hair";
     }
 
     private static bool IsAccessoryHeadCostume(string type)
     {
-        return type is "head_only";
+        return type is "head_only" or "head_all" or "head_front" or "head_back";
     }
 
     private static string ClassifyFaceBundleName(string? assetbundleName)
