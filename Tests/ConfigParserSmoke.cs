@@ -660,7 +660,11 @@ var presetEntry = registryExport.Character3dIndex.Entries.Single(entry => entry.
 Expect(presetEntry.AssetBundleNames.Contains("02/0000_special"), "preset index records existing faceModelType face variant");
 Expect(presetEntry.AssetBundlePaths.Contains("live_pv/model/characterv2/face/02/0000_special.bundle"), "preset index records actual faceModelType bundle path");
 Expect(presetEntry.AssetBundlePaths.Contains("live_pv/model/characterv2/body/99/0081/mens.bundle"), "preset index records actual body bundle path");
+var outfitBodyEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 13000 && entry.CharacterId == 21);
+Expect(outfitBodyEntry.OutfitId == 13, "body registry derives stable outfit id from costume group family");
 var legacyAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001 && entry.CharacterId == 21);
+Expect(legacyAccessoryEntry.OutfitId == 0, "non-body registry rows do not expose an outfit id");
+Expect(legacyAccessoryEntry.AccessoryId == 11, "head_optional registry derives stable accessory id from costume group family");
 Expect(legacyAccessoryEntry.PartType == "head_optional", "head_only registry rows are exported as head_optional");
 Expect(legacyAccessoryEntry.BundlePath == legacyAccessory, "head_optional registry resolves legacy character base bundle");
 Expect(legacyAccessoryEntry.ColorVariationBundlePath == legacyAccessoryColor, "head_optional registry resolves legacy character color variation bundle");

@@ -729,6 +729,8 @@ public sealed class CostumeRegistryExporter
             ColorId: costume.ColorId,
             ColorName: costume.ColorName,
             Costume3dGroupId: costume.Costume3dGroupId,
+            OutfitId: ResolveOutfitId(costume),
+            AccessoryId: ResolveAccessoryId(costume),
             CostumeAssetbundleName: costume.AssetbundleName,
             ModelAssetbundleName: model?.AssetbundleName,
             ColorAssetbundleName: model?.ColorAssetbundleName,
@@ -744,6 +746,22 @@ public sealed class CostumeRegistryExporter
             Status: status,
             Warnings: warnings.Distinct().ToList()
         );
+    }
+
+    private static int ResolveOutfitId(Costume3dMaster costume)
+    {
+        return string.Equals(costume.PartType, "body", StringComparison.OrdinalIgnoreCase) &&
+               costume.Costume3dGroupId >= 1000
+            ? costume.Costume3dGroupId / 1000
+            : 0;
+    }
+
+    private static int ResolveAccessoryId(Costume3dMaster costume)
+    {
+        return string.Equals(costume.PartType, "head", StringComparison.OrdinalIgnoreCase) &&
+               costume.Costume3dGroupId >= 1000
+            ? costume.Costume3dGroupId / 1000
+            : 0;
     }
 
     private static PartSourceMap BuildPartSourceMap(

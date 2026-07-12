@@ -47,6 +47,8 @@ public sealed record PartRegistryEntry(
     [property: JsonPropertyName("colorId")] int ColorId,
     [property: JsonPropertyName("colorName")] string? ColorName,
     [property: JsonPropertyName("costume3dGroupId")] int Costume3dGroupId,
+    [property: JsonPropertyName("outfitId")] int OutfitId,
+    [property: JsonPropertyName("accessoryId")] int AccessoryId,
     [property: JsonPropertyName("costumeAssetbundleName")] string? CostumeAssetbundleName,
     [property: JsonPropertyName("modelAssetbundleName")] string? ModelAssetbundleName,
     [property: JsonPropertyName("colorAssetbundleName")] string? ColorAssetbundleName,
