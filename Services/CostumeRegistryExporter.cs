@@ -289,9 +289,105 @@ public sealed class CostumeRegistryExporter
             }
         }
 
-        AddOfficialPresetRoleAliases(entries, character3ds, characterById, assetRoot);
         AddCompatibleHeadRoleAliases(entries, availablePatterns, costumeById);
-        return new PartRegistry(Version: 1, Source: source, Entries: entries);
+        AddOfficialPresetRoleAliases(entries, character3ds, characterById, assetRoot);
+        AssignAccessoryIds(entries);
+        return new PartRegistry(Version: 2, Source: source, Entries: entries);
+    }
+
+    private static void AssignAccessoryIds(List<PartRegistryEntry> entries)
+    {
+        static bool IsAccessory(PartRegistryEntry entry) =>
+            entry.Costume3dGroupId >= 1000 &&
+            (entry.PartType == "head" || entry.PartType == "head_optional") &&
+            !string.IsNullOrWhiteSpace(entry.BaseSourceKey);
+        static (int GroupId, string Unit, string PartType) Family(PartRegistryEntry entry) =>
+            (entry.Costume3dGroupId, UnitKey(entry.Unit), entry.PartType);
+        static (int GroupId, string PartType) GroupSlot(PartRegistryEntry entry) =>
+            (entry.Costume3dGroupId, entry.PartType);
+
+        var baseEntries = entries
+            .Where(entry => entry.ColorId == 1 && IsAccessory(entry))
+            .ToList();
+        var accessoryIdBySource = baseEntries
+            .GroupBy(entry => entry.BaseSourceKey!, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Min(entry => entry.Costume3dGroupId),
+                StringComparer.Ordinal
+            );
+
+        var duplicateId = accessoryIdBySource
+            .GroupBy(pair => pair.Value)
+            .FirstOrDefault(group => group.Select(pair => pair.Key).Distinct(StringComparer.Ordinal).Skip(1).Any());
+        if (duplicateId is not null)
+        {
+            throw new InvalidDataException(
+                $"Accessory ID {duplicateId.Key} resolves to multiple base sources: " +
+                string.Join(", ", duplicateId.Select(pair => pair.Key).OrderBy(key => key, StringComparer.Ordinal))
+            );
+        }
+
+        var ambiguousFamily = baseEntries
+            .GroupBy(Family)
+            .FirstOrDefault(group => group.Select(entry => entry.BaseSourceKey!).Distinct(StringComparer.Ordinal).Skip(1).Any());
+        if (ambiguousFamily is not null)
+        {
+            throw new InvalidDataException(
+                $"Accessory family {ambiguousFamily.Key} resolves to multiple base sources; refusing to choose one"
+            );
+        }
+        var baseSourceByFamily = baseEntries
+            .GroupBy(Family)
+            .ToDictionary(
+                group => group.Key,
+                group => group.First().BaseSourceKey!
+            );
+        var baseSourceByGroupSlot = baseEntries
+            .GroupBy(GroupSlot)
+            .Select(group => new
+            {
+                group.Key,
+                Sources = group.Select(entry => entry.BaseSourceKey!).Distinct(StringComparer.Ordinal).ToList(),
+            })
+            .Where(group => group.Sources.Count == 1)
+            .ToDictionary(group => group.Key, group => group.Sources[0]);
+
+        for (var index = 0; index < entries.Count; index++)
+        {
+            var entry = entries[index];
+            var accessoryId = 0;
+            if (IsAccessory(entry))
+            {
+                var candidateSources = new HashSet<string>(StringComparer.Ordinal);
+                if (accessoryIdBySource.ContainsKey(entry.BaseSourceKey!))
+                {
+                    candidateSources.Add(entry.BaseSourceKey!);
+                }
+                if (baseSourceByFamily.TryGetValue(Family(entry), out var familySourceKey))
+                {
+                    candidateSources.Add(familySourceKey);
+                }
+                if (baseSourceByGroupSlot.TryGetValue(GroupSlot(entry), out var groupSourceKey))
+                {
+                    candidateSources.Add(groupSourceKey);
+                }
+                if (candidateSources.Count == 0)
+                {
+                    throw new InvalidDataException(
+                        $"Accessory {entry.Costume3dId}/{UnitKey(entry.Unit)}/color{entry.ColorId} has no original-color source"
+                    );
+                }
+                if (candidateSources.Count > 1)
+                {
+                    throw new InvalidDataException(
+                        $"Accessory {entry.Costume3dId}/{UnitKey(entry.Unit)}/color{entry.ColorId} resolves to multiple original-color sources; refusing to choose one"
+                    );
+                }
+                accessoryId = accessoryIdBySource[candidateSources.Single()];
+            }
+            entries[index] = entry with { AccessoryId = accessoryId };
+        }
     }
 
     private static PresetAssetBundleGroup ResolvePresetAssetBundleGroup(
@@ -419,20 +515,23 @@ public sealed class CostumeRegistryExporter
         var entriesByCostumeAndUnit = entries
             .GroupBy(entry => (entry.Costume3dId, UnitKey(entry.Unit)))
             .ToDictionary(group => group.Key, group => group.ToList());
+        var entriesByCostume = entries
+            .GroupBy(entry => entry.Costume3dId)
+            .ToDictionary(group => group.Key, group => group.ToList());
         var existing = entries.Select(PartRegistryRoleKey).ToHashSet(StringComparer.Ordinal);
         var aliases = new List<PartRegistryEntry>();
 
         foreach (var pattern in availablePatterns)
         {
-            if (!costumeById.TryGetValue(pattern.HeadCostume3dId, out var head) ||
-                !costumeById.TryGetValue(pattern.HairCostume3dId, out var hair) ||
-                head.CharacterId == hair.CharacterId)
+            if (!costumeById.ContainsKey(pattern.HeadCostume3dId) ||
+                !costumeById.TryGetValue(pattern.HairCostume3dId, out var hair))
             {
                 continue;
             }
 
-            foreach (var entry in ResolveOfficialPresetPartCandidates(
+            foreach (var entry in ResolveCompatibleHeadCandidates(
                          entriesByCostumeAndUnit,
+                         entriesByCostume,
                          pattern.HeadCostume3dId,
                          pattern.Unit))
             {
@@ -445,6 +544,33 @@ public sealed class CostumeRegistryExporter
         }
 
         entries.AddRange(aliases);
+    }
+
+    private static IReadOnlyList<PartRegistryEntry> ResolveCompatibleHeadCandidates(
+        IReadOnlyDictionary<(int Costume3dId, string Unit), List<PartRegistryEntry>> entriesByCostumeAndUnit,
+        IReadOnlyDictionary<int, List<PartRegistryEntry>> entriesByCostume,
+        int costume3dId,
+        string? unit
+    )
+    {
+        var exact = ResolveOfficialPresetPartCandidates(entriesByCostumeAndUnit, costume3dId, unit);
+        if (exact.Count > 0 || !entriesByCostume.TryGetValue(costume3dId, out var candidates))
+        {
+            return exact;
+        }
+
+        var units = candidates
+            .Select(entry => UnitKey(entry.Unit))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (units.Count != 1)
+        {
+            throw new InvalidDataException(
+                $"Compatible head {costume3dId} for unit {UnitKey(unit)} has multiple model units: " +
+                string.Join(", ", units.OrderBy(value => value, StringComparer.Ordinal))
+            );
+        }
+        return candidates;
     }
 
     private static void AddOfficialPresetPartAlias(
@@ -730,7 +856,7 @@ public sealed class CostumeRegistryExporter
             ColorName: costume.ColorName,
             Costume3dGroupId: costume.Costume3dGroupId,
             OutfitId: ResolveOutfitId(costume),
-            AccessoryId: ResolveAccessoryId(costume),
+            AccessoryId: 0,
             CostumeAssetbundleName: costume.AssetbundleName,
             ModelAssetbundleName: model?.AssetbundleName,
             ColorAssetbundleName: model?.ColorAssetbundleName,
@@ -751,14 +877,6 @@ public sealed class CostumeRegistryExporter
     private static int ResolveOutfitId(Costume3dMaster costume)
     {
         return string.Equals(costume.PartType, "body", StringComparison.OrdinalIgnoreCase) &&
-               costume.Costume3dGroupId >= 1000
-            ? costume.Costume3dGroupId / 1000
-            : 0;
-    }
-
-    private static int ResolveAccessoryId(Costume3dMaster costume)
-    {
-        return string.Equals(costume.PartType, "head", StringComparison.OrdinalIgnoreCase) &&
                costume.Costume3dGroupId >= 1000
             ? costume.Costume3dGroupId / 1000
             : 0;

@@ -402,6 +402,20 @@ WriteJsonFile(Path.Combine(registryMasterDir, "costume3ds.json"), new[]
     },
     new
     {
+        id = 203,
+        costume3dGroupId = 203,
+        partType = "hair",
+        characterId = 21,
+        colorId = 1,
+        colorName = "default",
+        name = "same-character target hair",
+        costume3dType = "normal",
+        costume3dRarity = "rarity_1",
+        assetbundleName = "unused",
+        howToObtain = "default"
+    },
+    new
+    {
         id = 12000,
         costume3dGroupId = 12000,
         partType = "head",
@@ -427,6 +441,62 @@ WriteJsonFile(Path.Combine(registryMasterDir, "costume3ds.json"), new[]
         costume3dRarity = "rarity_4",
         assetbundleName = "unused",
         howToObtain = "test"
+    },
+    new
+    {
+        id = 797001,
+        costume3dGroupId = 797001,
+        partType = "head",
+        characterId = 1,
+        colorId = 1,
+        colorName = "original",
+        name = "shared accessory source",
+        costume3dType = "normal",
+        costume3dRarity = "rarity_4",
+        assetbundleName = "cos0797_head",
+        howToObtain = "card"
+    },
+    new
+    {
+        id = 797009,
+        costume3dGroupId = 797002,
+        partType = "head",
+        characterId = 2,
+        colorId = 1,
+        colorName = "original",
+        name = "exclusive accessory",
+        costume3dType = "normal",
+        costume3dRarity = "rarity_4",
+        assetbundleName = "cos0797_unique_head",
+        howToObtain = "card"
+    },
+    new
+    {
+        id = 797011,
+        costume3dGroupId = 797002,
+        partType = "head",
+        characterId = 2,
+        colorId = 2,
+        colorName = "another 1",
+        name = "exclusive accessory",
+        costume3dType = "normal",
+        costume3dRarity = "rarity_4",
+        assetbundleName = "cos0797_unique_head_01",
+        howToObtain = "card"
+    },
+    new
+    {
+        id = 797161,
+        costume3dGroupId = 797021,
+        partType = "head",
+        characterId = 2,
+        colorId = 1,
+        colorName = "original",
+        name = "shared accessory",
+        costume3dType = "normal",
+        costume3dRarity = "rarity_4",
+        assetbundleName = "cos0797_head",
+        howToObtain = "card"
     }
 });
 WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModels.json"), new object[]
@@ -500,6 +570,56 @@ WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModels.json"), new objec
         colorAssetbundleName = (string?)null,
         part = "a05",
         thumbnailAssetbundleName = "unused"
+    },
+    new
+    {
+        costume3dId = 797001,
+        unit = "light_sound",
+        assetbundleName = "0924/a03",
+        headCostume3dAssetbundleType = "head_only",
+        colorAssetbundleName = (string?)null,
+        part = "a03",
+        thumbnailAssetbundleName = "cos0797_head"
+    },
+    new
+    {
+        costume3dId = 797009,
+        unit = "light_sound",
+        assetbundleName = "02/0924",
+        headCostume3dAssetbundleType = "head_and_hair",
+        colorAssetbundleName = (string?)null,
+        part = (string?)null,
+        thumbnailAssetbundleName = "cos0797_unique_head"
+    },
+    new
+    {
+        costume3dId = 797009,
+        unit = "idol",
+        assetbundleName = "0924/a03",
+        headCostume3dAssetbundleType = "head_only",
+        colorAssetbundleName = (string?)null,
+        part = "a03",
+        thumbnailAssetbundleName = "cos0797_head"
+    },
+    new
+    {
+        costume3dId = 797011,
+        unit = "light_sound",
+        assetbundleName = "02/0924a",
+        headCostume3dAssetbundleType = "head_and_hair",
+        colorAssetbundleName = "01",
+        part = (string?)null,
+        thumbnailAssetbundleName = "cos0797_unique_head_01"
+    },
+    new
+    {
+        costume3dId = 797161,
+        unit = "light_sound",
+        assetbundleName = "0924/a03",
+        headCostume3dAssetbundleType = "head_only",
+        colorAssetbundleName = (string?)null,
+        part = "a03",
+        thumbnailAssetbundleName = "cos0797_head"
     }
 });
 WriteJsonFile(Path.Combine(registryMasterDir, "gameCharacters.json"), new[]
@@ -544,6 +664,41 @@ WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModelAvailablePatterns.j
         headCostume3dId = 11001,
         hairCostume3dId = 202,
         unit = "light_sound",
+        isDefault = false
+    },
+    new
+    {
+        headCostume3dId = 11009,
+        hairCostume3dId = 202,
+        unit = "idol",
+        isDefault = false
+    },
+    new
+    {
+        headCostume3dId = 11001,
+        hairCostume3dId = 202,
+        unit = "idol",
+        isDefault = false
+    },
+    new
+    {
+        headCostume3dId = 11009,
+        hairCostume3dId = 203,
+        unit = "idol",
+        isDefault = false
+    },
+    new
+    {
+        headCostume3dId = 11001,
+        hairCostume3dId = 203,
+        unit = "idol",
+        isDefault = false
+    },
+    new
+    {
+        headCostume3dId = 11001,
+        hairCostume3dId = 202,
+        unit = "piapro",
         isDefault = false
     }
 });
@@ -598,6 +753,33 @@ var splitAccessory = Path.Combine(
     "0083",
     "a05.bundle"
 );
+var sharedAccessory = Path.Combine(
+    registryAssetRoot,
+    "live_pv",
+    "model",
+    "characterv2",
+    "head_optional",
+    "0924",
+    "a03.bundle"
+);
+var exclusiveAccessory = Path.Combine(
+    registryAssetRoot,
+    "live_pv",
+    "model",
+    "characterv2",
+    "face",
+    "02",
+    "0924.bundle"
+);
+var exclusiveAccessoryColor = Path.Combine(
+    registryAssetRoot,
+    "live_pv",
+    "model",
+    "characterv2",
+    "face",
+    "02",
+    "0924a.bundle"
+);
 var defaultHairFallback = Path.Combine(
     registryAssetRoot,
     "live_pv",
@@ -631,6 +813,9 @@ Directory.CreateDirectory(Path.GetDirectoryName(legacyAccessoryColor)!);
 Directory.CreateDirectory(Path.GetDirectoryName(fallbackAccessory)!);
 Directory.CreateDirectory(Path.GetDirectoryName(fallbackAccessoryColor)!);
 Directory.CreateDirectory(Path.GetDirectoryName(splitAccessory)!);
+Directory.CreateDirectory(Path.GetDirectoryName(sharedAccessory)!);
+Directory.CreateDirectory(Path.GetDirectoryName(exclusiveAccessory)!);
+Directory.CreateDirectory(Path.GetDirectoryName(exclusiveAccessoryColor)!);
 Directory.CreateDirectory(Path.GetDirectoryName(defaultHairFallback)!);
 Directory.CreateDirectory(Path.GetDirectoryName(faceModelTypeVariant)!);
 Directory.CreateDirectory(Path.GetDirectoryName(presetBody)!);
@@ -639,6 +824,9 @@ File.WriteAllBytes(legacyAccessoryColor, new byte[] { 2 });
 File.WriteAllBytes(fallbackAccessory, new byte[] { 3 });
 File.WriteAllBytes(fallbackAccessoryColor, new byte[] { 4 });
 File.WriteAllBytes(splitAccessory, new byte[] { 8 });
+File.WriteAllBytes(sharedAccessory, new byte[] { 9 });
+File.WriteAllBytes(exclusiveAccessory, new byte[] { 10 });
+File.WriteAllBytes(exclusiveAccessoryColor, new byte[] { 11 });
 File.WriteAllBytes(defaultHairFallback, new byte[] { 5 });
 File.WriteAllBytes(faceModelTypeVariant, new byte[] { 6 });
 File.WriteAllBytes(presetBody, new byte[] { 7 });
@@ -656,20 +844,21 @@ Expect(
     gzipRegistryExport.Character3dIndex.Entries.All(entry => entry.RoleRuntimePath.EndsWith(".json.gz", StringComparison.Ordinal)),
     "gzip character registry points at gzip role runtimes"
 );
+Expect(registryExport.PartRegistry.Version == 2, "part registry marks source-based accessory identity schema");
 var presetEntry = registryExport.Character3dIndex.Entries.Single(entry => entry.Character3dId == 9001);
 Expect(presetEntry.AssetBundleNames.Contains("02/0000_special"), "preset index records existing faceModelType face variant");
 Expect(presetEntry.AssetBundlePaths.Contains("live_pv/model/characterv2/face/02/0000_special.bundle"), "preset index records actual faceModelType bundle path");
 Expect(presetEntry.AssetBundlePaths.Contains("live_pv/model/characterv2/body/99/0081/mens.bundle"), "preset index records actual body bundle path");
 var outfitBodyEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 13000 && entry.CharacterId == 21);
 Expect(outfitBodyEntry.OutfitId == 13, "body registry derives stable outfit id from costume group family");
-var legacyAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001 && entry.CharacterId == 21);
+var legacyAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001 && entry.CharacterId == 21 && entry.Unit == "light_sound");
 Expect(legacyAccessoryEntry.OutfitId == 0, "non-body registry rows do not expose an outfit id");
-Expect(legacyAccessoryEntry.AccessoryId == 11, "head_optional registry derives stable accessory id from costume group family");
+Expect(legacyAccessoryEntry.AccessoryId == 11000, "head_optional color inherits its original-color source accessory id");
 Expect(legacyAccessoryEntry.PartType == "head_optional", "head_only registry rows are exported as head_optional");
 Expect(legacyAccessoryEntry.BundlePath == legacyAccessory, "head_optional registry resolves legacy character base bundle");
 Expect(legacyAccessoryEntry.ColorVariationBundlePath == legacyAccessoryColor, "head_optional registry resolves legacy character color variation bundle");
 Expect(legacyAccessoryEntry.PackagePath.StartsWith("parts/_sources/head_optional/"), "head_optional registry writes shared source package path");
-var fallbackAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11009);
+var fallbackAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11009 && entry.CharacterId == 21 && entry.Unit == "light_sound");
 Expect(fallbackAccessoryEntry.Status == "planned", "head_optional fallback accessory is planned");
 Expect(fallbackAccessoryEntry.BundlePath == fallbackAccessory, "head_optional registry resolves costume assetbundleName fallback");
 Expect(fallbackAccessoryEntry.ColorVariationBundlePath == fallbackAccessoryColor, "head_optional registry resolves fallback color variation");
@@ -692,12 +881,40 @@ Expect(missingHeadEntry.Warnings.Any(warning => warning.Contains("face bundle no
 var splitAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 12001);
 Expect(splitAccessoryEntry.PartType == "head_optional", "head_all registry rows are exported as head_optional");
 Expect(splitAccessoryEntry.BundlePath == splitAccessory, "head_all registry resolves its optional accessory bundle");
+var canonicalSharedAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 797001);
+var exclusiveAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 797009 && entry.Unit == "light_sound");
+var sameRawSharedAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 797009 && entry.Unit == "idol");
+var exclusiveAccessoryColorEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 797011 && entry.Unit == "light_sound");
+var sharedAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 797161 && entry.CharacterId == 2);
+Expect(canonicalSharedAccessoryEntry.AccessoryId == 797001, "shared accessory uses its smallest original-color costume group id");
+Expect(sharedAccessoryEntry.AccessoryId == 797001, "shared accessory aliases keep the canonical source accessory id");
+Expect(sameRawSharedAccessoryEntry.PartType == "head_optional", "the shared-unit model resolves the same raw costume as head_optional");
+Expect(sameRawSharedAccessoryEntry.AccessoryId == 797001, "the same raw costume follows its resolved shared source");
+Expect(exclusiveAccessoryEntry.PartType == "head", "the exclusive-unit model resolves the same raw costume as a complete head");
+Expect(exclusiveAccessoryEntry.AccessoryId == 797002, "character-exclusive head uses its original-color costume group id");
+Expect(exclusiveAccessoryColorEntry.BaseSourceKey != exclusiveAccessoryEntry.BaseSourceKey, "exclusive color fixture uses a distinct resolved base source");
+Expect(exclusiveAccessoryColorEntry.AccessoryId == 797002, "character-exclusive head colors inherit the original-color accessory id");
+Expect(sameRawSharedAccessoryEntry.BaseSourceKey == canonicalSharedAccessoryEntry.BaseSourceKey, "shared unit entries reuse the shared base source");
+Expect(exclusiveAccessoryEntry.BaseSourceKey != sameRawSharedAccessoryEntry.BaseSourceKey, "different units of the same raw costume retain distinct resolved sources");
+Expect(exclusiveAccessoryEntry.AccessoryId != sharedAccessoryEntry.AccessoryId, "exclusive and shared heads remain separate accessories");
 var roleHeadOptionalAlias = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001 && entry.CharacterId == 23);
 Expect(roleHeadOptionalAlias.PartType == "head_optional", "official cross-role head_only preset aliases as head_optional");
 Expect(roleHeadOptionalAlias.Unit == "light_sound", "official cross-role alias keeps model unit");
 Expect(roleHeadOptionalAlias.PackagePath == legacyAccessoryEntry.PackagePath, "official cross-role alias reuses source package path");
-var compatibleHeadAlias = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001 && entry.CharacterId == 2);
+Expect(roleHeadOptionalAlias.AccessoryId == 11000, "official alias receives the canonical accessory id");
+var compatibleHeadAlias = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001 && entry.CharacterId == 2 && entry.Unit == "light_sound");
 Expect(compatibleHeadAlias.PackagePath == legacyAccessoryEntry.PackagePath, "available cross-role head/hair pair reuses the accessory source package");
+Expect(compatibleHeadAlias.AccessoryId == 11000, "compatible alias receives the canonical accessory id");
+var crossUnitCompatibleBase = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11009 && entry.CharacterId == 2 && entry.Unit == "idol");
+var crossUnitCompatibleColor = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001 && entry.CharacterId == 2 && entry.Unit == "idol");
+Expect(crossUnitCompatibleBase.AccessoryId == 11000, "cross-character cross-unit alias receives the canonical accessory id");
+Expect(crossUnitCompatibleColor.AccessoryId == 11000, "cross-character cross-unit color inherits the canonical accessory id");
+var sameCharacterCrossUnitBase = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11009 && entry.CharacterId == 21 && entry.Unit == "idol");
+var sameCharacterCrossUnitColor = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001 && entry.CharacterId == 21 && entry.Unit == "idol");
+Expect(sameCharacterCrossUnitBase.AccessoryId == 11000, "same-character cross-unit alias is retained");
+Expect(sameCharacterCrossUnitColor.AccessoryId == 11000, "same-character cross-unit color inherits the canonical accessory id");
+var directSourceColorAlias = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001 && entry.CharacterId == 2 && entry.Unit == "piapro");
+Expect(directSourceColorAlias.AccessoryId == 11000, "color-only cross-unit alias inherits its original source accessory id");
 var roleHairAlias = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 202 && entry.CharacterId == 23);
 Expect(roleHairAlias.Unit == "light_sound", "official cross-role alias promotes default-unit rows into the preset role unit");
 Expect(roleHairAlias.PackagePath == defaultHairEntry.PackagePath, "official cross-role hair alias reuses source package path");
