@@ -293,11 +293,17 @@ roles, prefab graph metadata, and part-scoped SpringBone records.
 Pass `--shared-content-store <directory>` after `--compact-textures` to place
 exact texture and `part-runtime.msgpack.br` bytes in a cross-region SHA-256 CAS.
 Region paths stay unchanged and are hard-linked to immutable CAS objects, so
-the output and shared store must be on the same filesystem.
+the output and shared store must be on the same filesystem. The first run is an
+explicit full migration. Later runs use `content-addressed-store-state.json` to
+skip files that are still protected CAS links; only newly exported or replaced
+files are hashed and relinked.
 
-In `msgpack-br` mode, large mesh and Unity-motion numeric arrays use runtime
-extension type `42`: float data is little-endian float32 and mesh indexes are
-little-endian uint16/uint32. Older ordinary MessagePack arrays remain valid.
+In `msgpack-br` mode, large arrays on the explicit native-mesh and Unity-motion
+schemas use runtime extension type `42`: float data is little-endian float32 and
+mesh indexes are little-endian uint16/uint32. Unrelated arrays with the same
+property names remain ordinary MessagePack arrays. Older ordinary arrays remain
+valid. Deploy an Engine version with extension-42 support before exporting or
+serving packages produced by this version.
 
 Viewer custom mode must merge the active part SpringBone records, rebind current
 body colliders, and reset simulation whenever body/head/hair/accessory selection

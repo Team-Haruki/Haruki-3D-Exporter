@@ -1022,9 +1022,9 @@ static int RunPartPackageWorkers(ConversionOptions options)
         .ToList();
     var processes = new List<Process>();
 
+    DeleteManifestShards(manifestPath);
     foreach (var shardManifestPath in shardManifestPaths)
     {
-        File.Delete(shardManifestPath);
         if (File.Exists(manifestPath))
         {
             File.Copy(manifestPath, shardManifestPath);
@@ -1069,14 +1069,29 @@ static int RunPartPackageWorkers(ConversionOptions options)
     }
 
     PartPackageExportManifest.Merge(manifestPath, shardManifestPaths);
-    foreach (var shardManifestPath in shardManifestPaths)
-    {
-        File.Delete(shardManifestPath);
-    }
+    DeleteManifestShards(manifestPath);
     Console.WriteLine($"Merged {workers} part package manifest shard(s): {manifestPath}");
     RunTextureCompactionIfEnabled(options);
     RunContentAddressedStoreIfEnabled(options);
     return 0;
+}
+
+static void DeleteManifestShards(string manifestPath)
+{
+    var directory = Path.GetDirectoryName(Path.GetFullPath(manifestPath))!;
+    if (!Directory.Exists(directory))
+    {
+        return;
+    }
+
+    var prefix = Path.GetFileName(manifestPath) + ".shard-";
+    foreach (var path in Directory.EnumerateFiles(directory))
+    {
+        if (Path.GetFileName(path).StartsWith(prefix, StringComparison.Ordinal))
+        {
+            File.Delete(path);
+        }
+    }
 }
 
 static int RunRoleRuntimeWorkers(ConversionOptions options)
@@ -1176,7 +1191,8 @@ static void RunContentAddressedStoreIfEnabled(ConversionOptions options)
     Console.WriteLine(
         $"Shared content CAS: textures={report.TextureFileCount}, " +
         $"part-runtimes={report.PartRuntimeFileCount}, new={report.NewContentCount}, " +
-        $"reused={report.ReusedContentCount}, reused-bytes={report.ReusedBytes}"
+        $"reused={report.ReusedContentCount}, unchanged={report.UnchangedFileCount}, " +
+        $"reused-bytes={report.ReusedBytes}"
     );
 }
 

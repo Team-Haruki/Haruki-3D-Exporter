@@ -146,7 +146,13 @@ public sealed class MotionPackageExporter
                 File.ReadAllText(unityMotionJson),
                 JsonOptions
             ) ?? throw new InvalidDataException($"Unity motion runtime is empty: {unityMotionJson}");
-            RuntimeJsonWriter.Write(unityMotionOutput, runtime, JsonOptions, runtimeJsonOutput);
+            RuntimeJsonWriter.Write(
+                unityMotionOutput,
+                runtime,
+                JsonOptions,
+                runtimeJsonOutput,
+                binaryArraySchema: RuntimeBinaryArraySchema.UnityMotion
+            );
             unityMotionOutput = RuntimeJsonWriter.PrimaryPath(unityMotionOutput, runtimeJsonOutput);
         }
         else
@@ -675,7 +681,8 @@ public sealed class MotionPackageExporter
             outputPath,
             runtime,
             new JsonSerializerOptions { WriteIndented = true },
-            runtimeJsonOutput
+            runtimeJsonOutput,
+            binaryArraySchema: RuntimeBinaryArraySchema.UnityMotion
         );
     }
 

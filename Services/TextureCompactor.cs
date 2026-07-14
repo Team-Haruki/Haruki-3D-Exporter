@@ -289,7 +289,13 @@ public sealed class TextureCompactor
                 }
             }
         }
-        RuntimeJsonWriter.Write(runtimeJsonPath, node, JsonOptions, runtimeJsonOutput);
+        RuntimeJsonWriter.Write(
+            runtimeJsonPath,
+            node,
+            JsonOptions,
+            runtimeJsonOutput,
+            binaryArraySchema: RuntimeBinaryArraySchema.PartRuntime
+        );
         return rewritten;
     }
 

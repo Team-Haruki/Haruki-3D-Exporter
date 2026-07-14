@@ -1614,7 +1614,13 @@ public sealed class PartPackageExporter
 
     private static void WriteJson<T>(string path, T value, string runtimeJsonOutput)
     {
-        RuntimeJsonWriter.Write(path, value, WriteJsonOptions, runtimeJsonOutput);
+        RuntimeJsonWriter.Write(
+            path,
+            value,
+            WriteJsonOptions,
+            runtimeJsonOutput,
+            binaryArraySchema: RuntimeBinaryArraySchema.PartRuntime
+        );
     }
 
     private static long? ReadPathId(System.Text.Json.Nodes.JsonNode? node)

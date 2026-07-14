@@ -263,26 +263,78 @@ RuntimeJsonWriter.Write(
     binaryWriterPath,
     new
     {
-        positions = binaryPositions,
-        indices = binaryIndices,
-        skinIndices = Enumerable.Range(0, 20).ToArray(),
+        nativeMeshes = new
+        {
+            meshes = new[]
+            {
+                new
+                {
+                    positions = binaryPositions,
+                    skinIndices = Enumerable.Range(0, 20).ToArray(),
+                    submeshes = new[] { new { indices = binaryIndices } }
+                }
+            }
+        },
         gravityDir = new[] { 0f, -1f, 0f }
     },
     new JsonSerializerOptions(),
-    RuntimeJsonWriter.MessagePackBrotli
+    RuntimeJsonWriter.MessagePackBrotli,
+    binaryArraySchema: RuntimeBinaryArraySchema.PartRuntime
 );
 var binaryMessagePack = ReadBrotliBytes(RuntimeJsonWriter.MessagePackBrotliPath(binaryWriterPath));
 Expect(ContainsRuntimeBinaryExtension(binaryMessagePack), "runtime mesh arrays are emitted as MessagePack binary extensions");
 using (var document = RuntimeJsonWriter.ReadJsonDocument(binaryWriterPath, RuntimeJsonWriter.MessagePackBrotli))
 {
-    var positions = document.RootElement.GetProperty("positions").EnumerateArray().Select(item => item.GetSingle()).ToArray();
-    var indices = document.RootElement.GetProperty("indices").EnumerateArray().Select(item => item.GetInt32()).ToArray();
-    var skinIndices = document.RootElement.GetProperty("skinIndices").EnumerateArray().Select(item => item.GetInt32()).ToArray();
+    var mesh = document.RootElement.GetProperty("nativeMeshes").GetProperty("meshes")[0];
+    var positions = mesh.GetProperty("positions").EnumerateArray().Select(item => item.GetSingle()).ToArray();
+    var indices = mesh.GetProperty("submeshes")[0].GetProperty("indices").EnumerateArray().Select(item => item.GetInt32()).ToArray();
+    var skinIndices = mesh.GetProperty("skinIndices").EnumerateArray().Select(item => item.GetInt32()).ToArray();
     Expect(positions.SequenceEqual(binaryPositions), "binary float32 arrays round-trip exact source float values");
     Expect(indices.SequenceEqual(binaryIndices), "binary index arrays round-trip exact integer values");
     Expect(skinIndices.SequenceEqual(Enumerable.Range(0, 20)), "binary uint16 arrays round-trip exact integer values");
     Expect(document.RootElement.GetProperty("gravityDir").GetArrayLength() == 3, "small semantic vectors remain ordinary arrays");
 }
+
+var genericValuesPath = Path.Combine(writerDir, "generic-values.json");
+RuntimeJsonWriter.Write(
+    genericValuesPath,
+    new { values = Enumerable.Range(0, 20).Select(index => (double)index).ToArray() },
+    new JsonSerializerOptions(),
+    RuntimeJsonWriter.MessagePackBrotli
+);
+Expect(
+    !ContainsRuntimeBinaryExtension(ReadBrotliBytes(RuntimeJsonWriter.MessagePackBrotliPath(genericValuesPath))),
+    "generic JSON properties are not binary-encoded by name alone"
+);
+
+var motionValuesPath = Path.Combine(writerDir, "motion-values.json");
+RuntimeJsonWriter.Write(
+    motionValuesPath,
+    new
+    {
+        clips = new[]
+        {
+            new
+            {
+                tracks = new[]
+                {
+                    new
+                    {
+                        times = Enumerable.Range(0, 20).Select(index => index / 60f).ToArray(),
+                        values = Enumerable.Range(0, 20).Select(index => index / 10f).ToArray()
+                    }
+                }
+            }
+        }
+    },
+    new JsonSerializerOptions(),
+    RuntimeJsonWriter.MessagePackBrotli,
+    binaryArraySchema: RuntimeBinaryArraySchema.UnityMotion
+);
+Expect(
+    ContainsRuntimeBinaryExtension(ReadBrotliBytes(RuntimeJsonWriter.MessagePackBrotliPath(motionValuesPath))),
+    "Unity motion track arrays are binary-encoded under the explicit motion schema"
+);
 
 var compactDir = Path.Combine(tempDir, "compact");
 var packageA = Path.Combine(compactDir, "parts", "_sources", "body", "a");
@@ -350,11 +402,21 @@ WriteCasFixture(casRegionA);
 WriteCasFixture(casRegionB);
 var firstCasReport = new ContentAddressedStore().Compact(casRegionA, sharedCas);
 var secondCasReport = new ContentAddressedStore().Compact(casRegionB, sharedCas);
+var unchangedCasReport = new ContentAddressedStore().Compact(casRegionB, sharedCas);
 Expect(firstCasReport.TextureFileCount == 1, "shared CAS scans compacted textures");
 Expect(firstCasReport.PartRuntimeFileCount == 1, "shared CAS scans part runtime packages");
 Expect(firstCasReport.NewContentCount == 2, "first region seeds exact content in the shared CAS");
 Expect(secondCasReport.ReusedContentCount == 2, "second region reuses exact texture and part runtime bytes");
 Expect(secondCasReport.ReusedBytes > 0, "shared CAS reports bytes reused across regions");
+Expect(unchangedCasReport.UnchangedFileCount == 2, "repeated CAS runs skip unchanged files without hashing or relinking");
+if (!OperatingSystem.IsWindows())
+{
+    var canonicalModes = File.GetUnixFileMode(CasPartRuntimePath(casRegionA));
+    Expect(
+        (canonicalModes & (UnixFileMode.UserWrite | UnixFileMode.GroupWrite | UnixFileMode.OtherWrite)) == 0,
+        "CAS-linked content is read-only to prevent in-place mutation of shared inodes"
+    );
+}
 Expect(File.ReadAllBytes(CasTexturePath(casRegionA)).SequenceEqual(File.ReadAllBytes(CasTexturePath(casRegionB))), "CAS-linked textures preserve exact bytes");
 Expect(File.ReadAllBytes(CasPartRuntimePath(casRegionA)).SequenceEqual(File.ReadAllBytes(CasPartRuntimePath(casRegionB))), "CAS-linked part runtimes preserve exact bytes");
 var regionAPartBytes = File.ReadAllBytes(CasPartRuntimePath(casRegionA));
@@ -1127,11 +1189,11 @@ Expect(
     failedPartGuard >= 0 && failedPartExit > failedPartGuard && failedPartExit < failedPartCompaction,
     "part package failures exit nonzero before texture compaction"
 );
-Expect(programSource.Contains("File.Delete(shardManifestPath);"), "part worker orchestration clears stale shard manifests");
+Expect(programSource.Contains("DeleteManifestShards(manifestPath);"), "part worker orchestration clears every historical shard manifest");
 var manifestMerge = programSource.IndexOf("PartPackageExportManifest.Merge(manifestPath, shardManifestPaths);", StringComparison.Ordinal);
 var mergedManifestShardCleanup = manifestMerge < 0
     ? -1
-    : programSource.IndexOf("foreach (var shardManifestPath in shardManifestPaths)", manifestMerge, StringComparison.Ordinal);
+    : programSource.IndexOf("DeleteManifestShards(manifestPath);", manifestMerge, StringComparison.Ordinal);
 Expect(
     manifestMerge >= 0 && mergedManifestShardCleanup > manifestMerge,
     "part worker orchestration deletes manifest shards only after a successful merge"

@@ -6,6 +6,13 @@ using System.Text.Json.Nodes;
 
 namespace PjskBundle2Parts.Services;
 
+public enum RuntimeBinaryArraySchema
+{
+    None,
+    PartRuntime,
+    UnityMotion,
+}
+
 public static class RuntimeJsonWriter
 {
     public const byte BinaryArrayExtensionType = 42;
@@ -51,7 +58,8 @@ public static class RuntimeJsonWriter
         T value,
         JsonSerializerOptions options,
         string mode,
-        CompressionLevel? brotliCompressionLevel = null
+        CompressionLevel? brotliCompressionLevel = null,
+        RuntimeBinaryArraySchema binaryArraySchema = RuntimeBinaryArraySchema.None
     )
     {
         var normalizedMode = NormalizeMode(mode);
@@ -77,7 +85,12 @@ public static class RuntimeJsonWriter
         }
         if (normalizedMode == MessagePackBrotli)
         {
-            WriteMessagePackBrotli(jsonPath, bytes, brotliCompressionLevel ?? CompressionLevel.SmallestSize);
+            WriteMessagePackBrotli(
+                jsonPath,
+                bytes,
+                brotliCompressionLevel ?? CompressionLevel.SmallestSize,
+                binaryArraySchema
+            );
         }
     }
 
@@ -133,11 +146,16 @@ public static class RuntimeJsonWriter
         return File.ReadAllBytes(path);
     }
 
-    private static void WriteMessagePackBrotli(string jsonPath, byte[] jsonBytes, CompressionLevel compressionLevel)
+    private static void WriteMessagePackBrotli(
+        string jsonPath,
+        byte[] jsonBytes,
+        CompressionLevel compressionLevel,
+        RuntimeBinaryArraySchema binaryArraySchema
+    )
     {
         using var document = JsonDocument.Parse(jsonBytes);
         using var packed = new MemoryStream();
-        WriteMessagePackValue(packed, document.RootElement);
+        WriteMessagePackValue(packed, document.RootElement, binaryArraySchema, string.Empty);
         using var compressed = new MemoryStream();
         using (var brotli = new BrotliStream(compressed, compressionLevel, leaveOpen: true))
         {
@@ -176,28 +194,38 @@ public static class RuntimeJsonWriter
         return json.ToArray();
     }
 
-    private static readonly HashSet<string> Float32ArrayProperties = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> PartRuntimeFloat32ArrayPaths = new(StringComparer.Ordinal)
     {
-        "positions",
-        "normals",
-        "colors",
-        "uv0",
-        "uv1",
-        "skinWeights",
-        "boneInverseBindMatrices",
-        "positionDeltas",
-        "normalDeltas",
-        "times",
-        "values",
+        "nativeMeshes.meshes.positions",
+        "nativeMeshes.meshes.normals",
+        "nativeMeshes.meshes.colors",
+        "nativeMeshes.meshes.uv0",
+        "nativeMeshes.meshes.uv1",
+        "nativeMeshes.meshes.skinWeights",
+        "nativeMeshes.meshes.boneInverseBindMatrices",
+        "nativeMeshes.meshes.morphTargets.positionDeltas",
+        "nativeMeshes.meshes.morphTargets.normalDeltas",
     };
 
-    private static readonly HashSet<string> UnsignedIndexArrayProperties = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> PartRuntimeUnsignedIndexArrayPaths = new(StringComparer.Ordinal)
     {
-        "indices",
-        "skinIndices",
+        "nativeMeshes.meshes.skinIndices",
+        "nativeMeshes.meshes.submeshes.indices",
+        "nativeMeshes.meshes.morphTargets.indices",
     };
 
-    private static void WriteMessagePackValue(Stream stream, JsonElement value, string? propertyName = null)
+    private static readonly HashSet<string> UnityMotionFloat32ArrayPaths = new(StringComparer.Ordinal)
+    {
+        "clips.tracks.times",
+        "clips.tracks.values",
+    };
+
+    private static void WriteMessagePackValue(
+        Stream stream,
+        JsonElement value,
+        RuntimeBinaryArraySchema binaryArraySchema,
+        string path
+    )
     {
         switch (value.ValueKind)
         {
@@ -207,11 +235,12 @@ public static class RuntimeJsonWriter
                 foreach (var property in properties)
                 {
                     WriteString(stream, property.Name);
-                    WriteMessagePackValue(stream, property.Value, property.Name);
+                    var childPath = path.Length == 0 ? property.Name : $"{path}.{property.Name}";
+                    WriteMessagePackValue(stream, property.Value, binaryArraySchema, childPath);
                 }
                 break;
             case JsonValueKind.Array:
-                if (TryWriteBinaryArray(stream, value, propertyName))
+                if (TryWriteBinaryArray(stream, value, binaryArraySchema, path))
                 {
                     break;
                 }
@@ -219,7 +248,7 @@ public static class RuntimeJsonWriter
                 WriteArrayHeader(stream, items.Length);
                 foreach (var item in items)
                 {
-                    WriteMessagePackValue(stream, item);
+                    WriteMessagePackValue(stream, item, binaryArraySchema, path);
                 }
                 break;
             case JsonValueKind.String:
@@ -243,15 +272,21 @@ public static class RuntimeJsonWriter
         }
     }
 
-    private static bool TryWriteBinaryArray(Stream stream, JsonElement value, string? propertyName)
+    private static bool TryWriteBinaryArray(
+        Stream stream,
+        JsonElement value,
+        RuntimeBinaryArraySchema binaryArraySchema,
+        string path
+    )
     {
-        if (propertyName is null)
-        {
-            return false;
-        }
-
         var items = value.EnumerateArray().ToArray();
-        if (Float32ArrayProperties.Contains(propertyName) && items.Length >= 8)
+        var isFloat32Array = binaryArraySchema switch
+        {
+            RuntimeBinaryArraySchema.PartRuntime => PartRuntimeFloat32ArrayPaths.Contains(path),
+            RuntimeBinaryArraySchema.UnityMotion => UnityMotionFloat32ArrayPaths.Contains(path),
+            _ => false,
+        };
+        if (isFloat32Array && items.Length >= 8)
         {
             var payload = new byte[1 + items.Length * sizeof(float)];
             payload[0] = 1;
@@ -275,7 +310,9 @@ public static class RuntimeJsonWriter
             return true;
         }
 
-        if (!UnsignedIndexArrayProperties.Contains(propertyName) || items.Length < 16)
+        if (binaryArraySchema != RuntimeBinaryArraySchema.PartRuntime ||
+            !PartRuntimeUnsignedIndexArrayPaths.Contains(path) ||
+            items.Length < 16)
         {
             return false;
         }

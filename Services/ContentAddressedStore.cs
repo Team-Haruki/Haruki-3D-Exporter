@@ -7,6 +7,8 @@ namespace PjskBundle2Parts.Services;
 
 public sealed class ContentAddressedStore
 {
+    private const string StateFileName = "content-addressed-store-state.json";
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -20,8 +22,11 @@ public sealed class ContentAddressedStore
 
         var textures = EnumerateTextures(outputDirectory).ToList();
         var partRuntimes = EnumeratePartRuntimes(outputDirectory).ToList();
+        var previousState = LoadState(outputDirectory);
+        var nextState = new Dictionary<string, ContentAddressedStoreStateEntry>(StringComparer.Ordinal);
         var newContentCount = 0;
         var reusedContentCount = 0;
+        var unchangedFileCount = 0;
         long reusedBytes = 0;
 
         foreach (var file in textures)
@@ -39,7 +44,14 @@ public sealed class ContentAddressedStore
             PartRuntimeFileCount: partRuntimes.Count,
             NewContentCount: newContentCount,
             ReusedContentCount: reusedContentCount,
+            UnchangedFileCount: unchangedFileCount,
             ReusedBytes: reusedBytes
+        );
+        RuntimeJsonWriter.Write(
+            Path.Combine(outputDirectory, StateFileName),
+            nextState,
+            JsonOptions,
+            RuntimeJsonWriter.Json
         );
         RuntimeJsonWriter.Write(
             Path.Combine(outputDirectory, "content-addressed-store-report.json"),
@@ -51,14 +63,42 @@ public sealed class ContentAddressedStore
 
         void CompactFile(string sourcePath, string storeRoot)
         {
-            var size = new FileInfo(sourcePath).Length;
+            var relativePath = Path.GetRelativePath(outputDirectory, sourcePath)
+                .Replace(Path.DirectorySeparatorChar, '/');
+            var sourceInfo = new FileInfo(sourcePath);
+            var previousStorePath = previousState.TryGetValue(relativePath, out var previous)
+                ? Path.Combine(storeRoot, previous.Hash[..2], previous.Hash + previous.Extension)
+                : null;
+            if (previous is not null &&
+                previous.Length == sourceInfo.Length &&
+                previous.LastWriteUtcTicks == sourceInfo.LastWriteTimeUtc.Ticks &&
+                IsReadOnly(sourcePath) &&
+                previousStorePath is not null &&
+                File.Exists(previousStorePath) &&
+                new FileInfo(previousStorePath).Length == previous.Length &&
+                IsReadOnly(previousStorePath))
+            {
+                nextState[relativePath] = previous;
+                unchangedFileCount += 1;
+                return;
+            }
+
+            var size = sourceInfo.Length;
             var hash = ComputeSha256Hex(sourcePath);
             var extension = sourcePath.EndsWith(".msgpack.br", StringComparison.OrdinalIgnoreCase)
                 ? ".msgpack.br"
                 : Path.GetExtension(sourcePath).ToLowerInvariant();
             var storePath = Path.Combine(storeRoot, hash[..2], hash + extension);
             var created = EnsureCanonical(sourcePath, storePath, hash);
+            ProtectCanonical(storePath);
             ReplaceWithHardLink(sourcePath, storePath);
+            var linkedInfo = new FileInfo(sourcePath);
+            nextState[relativePath] = new ContentAddressedStoreStateEntry(
+                Length: linkedInfo.Length,
+                LastWriteUtcTicks: linkedInfo.LastWriteTimeUtc.Ticks,
+                Hash: hash,
+                Extension: extension
+            );
             if (created)
             {
                 newContentCount += 1;
@@ -69,6 +109,47 @@ public sealed class ContentAddressedStore
                 reusedBytes += size;
             }
         }
+    }
+
+    private static Dictionary<string, ContentAddressedStoreStateEntry> LoadState(string outputDirectory)
+    {
+        var path = Path.Combine(outputDirectory, StateFileName);
+        if (!File.Exists(path))
+        {
+            return new Dictionary<string, ContentAddressedStoreStateEntry>(StringComparer.Ordinal);
+        }
+
+        return JsonSerializer.Deserialize<Dictionary<string, ContentAddressedStoreStateEntry>>(
+            File.ReadAllText(path),
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+        ) is { } state
+            ? new Dictionary<string, ContentAddressedStoreStateEntry>(state, StringComparer.Ordinal)
+            : new Dictionary<string, ContentAddressedStoreStateEntry>(StringComparer.Ordinal);
+    }
+
+    private static bool IsReadOnly(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return (File.GetAttributes(path) & FileAttributes.ReadOnly) != 0;
+        }
+
+        var mode = File.GetUnixFileMode(path);
+        return (mode & (UnixFileMode.UserWrite | UnixFileMode.GroupWrite | UnixFileMode.OtherWrite)) == 0;
+    }
+
+    private static void ProtectCanonical(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            File.SetAttributes(path, File.GetAttributes(path) | FileAttributes.ReadOnly);
+            return;
+        }
+
+        File.SetUnixFileMode(
+            path,
+            UnixFileMode.UserRead | UnixFileMode.GroupRead | UnixFileMode.OtherRead
+        );
     }
 
     private static IEnumerable<string> EnumerateTextures(string outputDirectory)
@@ -176,5 +257,13 @@ public sealed record ContentAddressedStoreReport(
     int PartRuntimeFileCount,
     int NewContentCount,
     int ReusedContentCount,
+    int UnchangedFileCount,
     long ReusedBytes
+);
+
+public sealed record ContentAddressedStoreStateEntry(
+    long Length,
+    long LastWriteUtcTicks,
+    string Hash,
+    string Extension
 );
