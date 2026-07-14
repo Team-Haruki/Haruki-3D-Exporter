@@ -1,5 +1,7 @@
 using AssetStudio;
 using PjskBundle2Parts.Models;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
 using Object = AssetStudio.Object;
 
 namespace PjskBundle2Parts.Services;
@@ -87,9 +89,13 @@ public sealed class AssetStudioImportedModelFactory
             typeof(List<AnimationClip>),
             typeof(bool),
         });
-        return noTextureConstructor is null
-            ? new ModelConverter(preferredRoot, ImageFormat.Png)
-            : (IImported)noTextureConstructor.Invoke(new object?[]
+        if (noTextureConstructor is null)
+        {
+            var legacyImported = new ModelConverter(preferredRoot, ImageFormat.Png);
+            NormalizeTextureOrientation(legacyImported.TextureList);
+            return legacyImported;
+        }
+        return (IImported)noTextureConstructor.Invoke(new object?[]
             {
                 preferredRoot,
                 ImageFormat.Png,
@@ -121,5 +127,17 @@ public sealed class AssetStudioImportedModelFactory
             .DistinctBy(texture => texture.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
         return textures;
+    }
+
+    private static void NormalizeTextureOrientation(IReadOnlyList<ImportedTexture> textures)
+    {
+        foreach (var texture in textures)
+        {
+            using var image = Image.Load(texture.Data);
+            image.Mutate(x => x.Flip(FlipMode.Vertical));
+            using var stream = new MemoryStream();
+            image.SaveAsPng(stream);
+            texture.Data = stream.ToArray();
+        }
     }
 }
