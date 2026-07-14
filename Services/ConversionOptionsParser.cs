@@ -30,6 +30,7 @@ public static class ConversionOptionsParser
         "  --assetstudio-log-level controls AssetStudio logs: warning, info, or debug\n" +
         "  --runtime-json-output controls runtime JSON files: msgpack-br, gzip, json, or both\n" +
         "  --compact-textures deduplicates package textures by exact SHA-256 and rewrites runtime JSON paths\n" +
+        "  --shared-content-store hard-links exact texture and part-runtime bytes into a shared cross-region CAS\n" +
         "  --png-optimize controls lossless PNG optimization during compaction: oxipng or off\n" +
         "  --texture-compact-workers limits concurrent PNG optimizers; 0 = min(4, CPU count)\n" +
         "  --export-face-motion writes face_motion.json from a costume_setting bundle or decoded AnimationClip JSON without Python helpers\n" +
@@ -65,6 +66,7 @@ public static class ConversionOptionsParser
         var assetStudioLogLevel = "warning";
         var runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli;
         var compactTextures = false;
+        string? sharedContentStore = null;
         var pngOptimize = "oxipng";
         var textureCompactWorkers = 0;
 
@@ -119,6 +121,7 @@ public static class ConversionOptionsParser
                     ? RuntimeJsonWriter.MessagePackBrotli
                     : config.RuntimeJsonOutput!;
                 compactTextures = config.CompactTextures ?? false;
+                sharedContentStore = config.SharedContentStore;
                 pngOptimize = string.IsNullOrWhiteSpace(config.PngOptimize)
                     ? "oxipng"
                     : config.PngOptimize!;
@@ -297,6 +300,12 @@ public static class ConversionOptionsParser
                 continue;
             }
 
+            if (arg is "--shared-content-store")
+            {
+                sharedContentStore = ReadValue(args, ref i, arg);
+                continue;
+            }
+
             if (arg is "--png-optimize")
             {
                 pngOptimize = ReadValue(args, ref i, arg);
@@ -463,6 +472,7 @@ public static class ConversionOptionsParser
                 assetStudioLogLevel.Trim().ToLowerInvariant(),
                 RuntimeJsonWriter.NormalizeMode(runtimeJsonOutput),
                 compactTextures,
+                string.IsNullOrWhiteSpace(sharedContentStore) ? null : sharedContentStore,
                 NormalizePngOptimizeMode(pngOptimize),
                 textureCompactWorkers
             ),

@@ -120,6 +120,7 @@ if (options.EmitPartPackages)
                 Console.WriteLine($"Warnings: {result.Warnings.Count}");
             }
             RunTextureCompactionIfEnabled(options);
+            RunContentAddressedStoreIfEnabled(options);
         }
         else
         {
@@ -146,6 +147,7 @@ if (options.EmitPartPackages)
                 return 2;
             }
             RunTextureCompactionIfEnabled(options);
+            RunContentAddressedStoreIfEnabled(options);
         }
         return 0;
     }
@@ -1067,8 +1069,13 @@ static int RunPartPackageWorkers(ConversionOptions options)
     }
 
     PartPackageExportManifest.Merge(manifestPath, shardManifestPaths);
+    foreach (var shardManifestPath in shardManifestPaths)
+    {
+        File.Delete(shardManifestPath);
+    }
     Console.WriteLine($"Merged {workers} part package manifest shard(s): {manifestPath}");
     RunTextureCompactionIfEnabled(options);
+    RunContentAddressedStoreIfEnabled(options);
     return 0;
 }
 
@@ -1152,6 +1159,24 @@ static void RunTextureCompactionIfEnabled(ConversionOptions options)
         "Compacted textures: " +
         $"{report.TextureFileCount} file(s), {report.UniqueHashCount} unique hash(es), " +
         $"saved {report.SavedBytes} byte(s), rewrote {report.RewrittenReferenceCount} reference(s)."
+    );
+}
+
+static void RunContentAddressedStoreIfEnabled(ConversionOptions options)
+{
+    if (string.IsNullOrWhiteSpace(options.SharedContentStore))
+    {
+        return;
+    }
+
+    var report = new ContentAddressedStore().Compact(
+        options.OutputDirectory,
+        options.SharedContentStore
+    );
+    Console.WriteLine(
+        $"Shared content CAS: textures={report.TextureFileCount}, " +
+        $"part-runtimes={report.PartRuntimeFileCount}, new={report.NewContentCount}, " +
+        $"reused={report.ReusedContentCount}, reused-bytes={report.ReusedBytes}"
     );
 }
 

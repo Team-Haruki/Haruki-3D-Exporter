@@ -9,6 +9,7 @@ namespace PjskBundle2Parts.Services;
 public sealed class CostumeRegistryExporter
 {
     private const int ScopedRegistryMaxDegreeOfParallelism = 16;
+    private const int CompactRegistrySchemaVersion = 1;
 
     private static readonly JsonSerializerOptions ReadJsonOptions = new()
     {
@@ -34,14 +35,71 @@ public sealed class CostumeRegistryExporter
         Directory.CreateDirectory(Path.Combine(normalizedOutputDirectory, "parts"));
         WriteJson(Path.Combine(normalizedOutputDirectory, "character3d-index.json"), export.Character3dIndex, runtimeJsonOutput);
         WriteJson(Path.Combine(normalizedOutputDirectory, "parts", "part-registry.json"), export.PartRegistry, runtimeJsonOutput);
+        WriteCompactPartRegistry(normalizedOutputDirectory, export.PartRegistry);
         WriteJson(Path.Combine(normalizedOutputDirectory, "parts", "part-source-map.json"), export.PartSourceMap, runtimeJsonOutput);
         WriteJson(Path.Combine(normalizedOutputDirectory, "parts", "head-hair-compatibility.json"), export.HeadHairCompatibility, runtimeJsonOutput);
+        WriteCompactHeadHairCompatibility(normalizedOutputDirectory, export.HeadHairCompatibility);
         WriteJson(Path.Combine(normalizedOutputDirectory, "parts", "card-costume-unlocks.json"), export.CardCostumeUnlocks, runtimeJsonOutput);
         WriteScopedPartRegistryIndexes(normalizedOutputDirectory, export, runtimeJsonOutput);
         WriteScopedHeadHairCompatibilityIndexes(normalizedOutputDirectory, export, runtimeJsonOutput);
 
         PrintSummary(export, normalizedOutputDirectory);
         return export;
+    }
+
+    private static void WriteCompactPartRegistry(string outputDirectory, PartRegistry registry)
+    {
+        var rows = registry.Entries
+            .Select(entry => new object?[]
+            {
+                entry.Costume3dId,
+                entry.PartType,
+                entry.CharacterId,
+                entry.Unit,
+                entry.ColorId,
+                entry.Costume3dGroupId,
+                entry.OutfitId,
+                entry.AccessoryId,
+                entry.BaseSourceKey,
+                entry.BundlePath,
+                entry.ColorVariationBundlePath,
+                entry.HeadCostume3dAssetbundleType,
+                entry.PackagePath,
+                entry.Status,
+                entry.Warnings,
+            })
+            .ToList();
+        RuntimeJsonWriter.Write(
+            Path.Combine(outputDirectory, "parts", "part-registry-compact.json"),
+            new object?[] { CompactRegistrySchemaVersion, registry.Version, rows },
+            WriteJsonOptions,
+            RuntimeJsonWriter.MessagePackBrotli,
+            CompressionLevel.Fastest
+        );
+    }
+
+    private static void WriteCompactHeadHairCompatibility(
+        string outputDirectory,
+        HeadHairCompatibilityRegistry compatibility
+    )
+    {
+        var rows = compatibility.Rules
+            .Select(rule => new object?[]
+            {
+                rule.Unit,
+                rule.HeadCostume3dId,
+                rule.HairCostume3dId,
+                rule.State,
+                rule.IsDefault,
+            })
+            .ToList();
+        RuntimeJsonWriter.Write(
+            Path.Combine(outputDirectory, "parts", "head-hair-compatibility-compact.json"),
+            new object?[] { CompactRegistrySchemaVersion, rows },
+            WriteJsonOptions,
+            RuntimeJsonWriter.MessagePackBrotli,
+            CompressionLevel.Fastest
+        );
     }
 
     private static void WriteScopedPartRegistryIndexes(
@@ -110,7 +168,9 @@ public sealed class CostumeRegistryExporter
             var compatibility = new HeadHairCompatibilityRegistry(
                 Version: export.HeadHairCompatibility.Version,
                 Source: export.HeadHairCompatibility.Source,
-                Rules: rules ?? new List<HeadHairCompatibilityRule>()
+                Rules: (rules ?? new List<HeadHairCompatibilityRule>())
+                    .Where(rule => rule.State == "not_available")
+                    .ToList()
             );
             WriteScopedJson(
                 Path.Combine(outputDirectory, "parts", "compat", "by-unit", RuntimePathUnitSegment(unit), "head-hair-compatibility.json"),

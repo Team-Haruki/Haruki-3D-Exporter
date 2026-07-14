@@ -26,6 +26,7 @@ public sealed record ConversionOptions(
     string AssetStudioLogLevel,
     string RuntimeJsonOutput,
     bool CompactTextures,
+    string? SharedContentStore,
     string PngOptimizeMode,
     int TextureCompactWorkers
 );

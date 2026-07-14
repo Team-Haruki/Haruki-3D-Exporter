@@ -25,6 +25,7 @@ File.WriteAllText(configPath, JsonSerializer.Serialize(new
     assetStudioLogLevel = "info",
     runtimeJsonOutput = "both",
     compactTextures = true,
+    sharedContentStore = "/data/shared-cas-from-config",
     pngOptimize = "off",
     textureCompactWorkers = 2,
     keepIntermediate = true
@@ -36,7 +37,8 @@ var parsed = ConversionOptionsParser.Parse(new[]
     "--out", "/data/out-from-cli",
     "--part-type", "head_optional",
     "--role-character3d-id", "9",
-    "--manifest", "/data/manifest-from-cli.json"
+    "--manifest", "/data/manifest-from-cli.json",
+    "--shared-content-store", "/data/shared-cas-from-cli"
 });
 
 if (!parsed.IsSuccess || parsed.Options is null)
@@ -64,6 +66,7 @@ Expect(options.PartPackageShardIndex == 0, "part package shard index defaults to
 Expect(options.AssetStudioLogLevel == "info", "assetstudio log level comes from config");
 Expect(options.RuntimeJsonOutput == "both", "runtime JSON output comes from config");
 Expect(options.CompactTextures, "texture compaction comes from config");
+Expect(options.SharedContentStore == "/data/shared-cas-from-cli", "CLI shared content store overrides config");
 Expect(options.PngOptimizeMode == "off", "PNG optimization mode comes from config");
 Expect(options.TextureCompactWorkers == 2, "texture compaction worker count comes from config");
 
@@ -253,6 +256,34 @@ using (var document = RuntimeJsonWriter.ReadJsonDocument(writerPath, RuntimeJson
 }
 Expect(RuntimeJsonWriter.PrimaryPath(writerPath, RuntimeJsonWriter.MessagePackBrotli) == writerMessagePackPath, "msgpack-br primary path points at .msgpack.br");
 
+var binaryWriterPath = Path.Combine(writerDir, "binary-arrays.json");
+var binaryPositions = Enumerable.Range(0, 12).Select(index => index / 10f).ToArray();
+var binaryIndices = Enumerable.Range(0, 20).Select(index => index == 19 ? 70_000 : index * 2).ToArray();
+RuntimeJsonWriter.Write(
+    binaryWriterPath,
+    new
+    {
+        positions = binaryPositions,
+        indices = binaryIndices,
+        skinIndices = Enumerable.Range(0, 20).ToArray(),
+        gravityDir = new[] { 0f, -1f, 0f }
+    },
+    new JsonSerializerOptions(),
+    RuntimeJsonWriter.MessagePackBrotli
+);
+var binaryMessagePack = ReadBrotliBytes(RuntimeJsonWriter.MessagePackBrotliPath(binaryWriterPath));
+Expect(ContainsRuntimeBinaryExtension(binaryMessagePack), "runtime mesh arrays are emitted as MessagePack binary extensions");
+using (var document = RuntimeJsonWriter.ReadJsonDocument(binaryWriterPath, RuntimeJsonWriter.MessagePackBrotli))
+{
+    var positions = document.RootElement.GetProperty("positions").EnumerateArray().Select(item => item.GetSingle()).ToArray();
+    var indices = document.RootElement.GetProperty("indices").EnumerateArray().Select(item => item.GetInt32()).ToArray();
+    var skinIndices = document.RootElement.GetProperty("skinIndices").EnumerateArray().Select(item => item.GetInt32()).ToArray();
+    Expect(positions.SequenceEqual(binaryPositions), "binary float32 arrays round-trip exact source float values");
+    Expect(indices.SequenceEqual(binaryIndices), "binary index arrays round-trip exact integer values");
+    Expect(skinIndices.SequenceEqual(Enumerable.Range(0, 20)), "binary uint16 arrays round-trip exact integer values");
+    Expect(document.RootElement.GetProperty("gravityDir").GetArrayLength() == 3, "small semantic vectors remain ordinary arrays");
+}
+
 var compactDir = Path.Combine(tempDir, "compact");
 var packageA = Path.Combine(compactDir, "parts", "_sources", "body", "a");
 var packageB = Path.Combine(compactDir, "parts", "_sources", "head", "b");
@@ -311,6 +342,36 @@ Expect(
     File.Exists(Path.Combine(compactMessagePackDir, messagePackTexture.TrimStart('/').Replace('/', Path.DirectorySeparatorChar))),
     "MessagePack compacted texture exists"
 );
+
+var sharedCas = Path.Combine(tempDir, "shared-cas");
+var casRegionA = Path.Combine(tempDir, "cas-region-a");
+var casRegionB = Path.Combine(tempDir, "cas-region-b");
+WriteCasFixture(casRegionA);
+WriteCasFixture(casRegionB);
+var firstCasReport = new ContentAddressedStore().Compact(casRegionA, sharedCas);
+var secondCasReport = new ContentAddressedStore().Compact(casRegionB, sharedCas);
+Expect(firstCasReport.TextureFileCount == 1, "shared CAS scans compacted textures");
+Expect(firstCasReport.PartRuntimeFileCount == 1, "shared CAS scans part runtime packages");
+Expect(firstCasReport.NewContentCount == 2, "first region seeds exact content in the shared CAS");
+Expect(secondCasReport.ReusedContentCount == 2, "second region reuses exact texture and part runtime bytes");
+Expect(secondCasReport.ReusedBytes > 0, "shared CAS reports bytes reused across regions");
+Expect(File.ReadAllBytes(CasTexturePath(casRegionA)).SequenceEqual(File.ReadAllBytes(CasTexturePath(casRegionB))), "CAS-linked textures preserve exact bytes");
+Expect(File.ReadAllBytes(CasPartRuntimePath(casRegionA)).SequenceEqual(File.ReadAllBytes(CasPartRuntimePath(casRegionB))), "CAS-linked part runtimes preserve exact bytes");
+var regionAPartBytes = File.ReadAllBytes(CasPartRuntimePath(casRegionA));
+RuntimeJsonWriter.Write(
+    Path.Combine(casRegionB, "parts", "_sources", "body", "source", "part-runtime.json"),
+    new { version = "changed", positions = new[] { 3f, 4f, 5f } },
+    new JsonSerializerOptions(),
+    RuntimeJsonWriter.MessagePackBrotli
+);
+Expect(File.ReadAllBytes(CasPartRuntimePath(casRegionA)).SequenceEqual(regionAPartBytes), "atomic runtime writes do not mutate another region's CAS link");
+using (var changedRuntime = RuntimeJsonWriter.ReadJsonDocument(
+    Path.Combine(casRegionB, "parts", "_sources", "body", "source", "part-runtime.json"),
+    RuntimeJsonWriter.MessagePackBrotli
+))
+{
+    Expect(changedRuntime.RootElement.GetProperty("version").GetString() == "changed", "atomic runtime writes replace only the requested region path");
+}
 
 var registryMasterDir = Path.Combine(tempDir, "registry-master");
 var registryAssetRoot = Path.Combine(tempDir, "registry-assets");
@@ -702,7 +763,16 @@ WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModelAvailablePatterns.j
         isDefault = false
     }
 });
-WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModelNotAvailablePatterns.json"), Array.Empty<object>());
+WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModelNotAvailablePatterns.json"), new[]
+{
+    new
+    {
+        headCostume3dId = 999001,
+        hairCostume3dId = 999002,
+        unit = "light_sound",
+        isDefault = false
+    }
+});
 WriteJsonFile(Path.Combine(registryMasterDir, "costume3dModelDefaultHairs.json"), Array.Empty<object>());
 var legacyAccessory = Path.Combine(
     registryAssetRoot,
@@ -831,6 +901,49 @@ File.WriteAllBytes(defaultHairFallback, new byte[] { 5 });
 File.WriteAllBytes(faceModelTypeVariant, new byte[] { 6 });
 File.WriteAllBytes(presetBody, new byte[] { 7 });
 var registryExport = new CostumeRegistryExporter().ExportInMemory(registryMasterDir, registryAssetRoot);
+var registryOutput = Path.Combine(tempDir, "registry-output");
+new CostumeRegistryExporter().Export(
+    registryMasterDir,
+    registryAssetRoot,
+    registryOutput,
+    RuntimeJsonWriter.Json
+);
+using (var scopedCompatibility = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(
+    registryOutput,
+    "parts",
+    "compat",
+    "by-unit",
+    "light_sound",
+    "head-hair-compatibility.json"
+))))
+{
+    var scopedRules = scopedCompatibility.RootElement.GetProperty("rules").EnumerateArray().ToArray();
+    Expect(scopedRules.Length == 1, "scoped head-hair compatibility omits positive and default rules");
+    Expect(scopedRules[0].GetProperty("state").GetString() == "not_available", "scoped head-hair compatibility keeps deny rules");
+}
+using (var compactRegistry = RuntimeJsonWriter.ReadJsonDocument(
+    Path.Combine(registryOutput, "parts", "part-registry-compact.json"),
+    RuntimeJsonWriter.MessagePackBrotli
+))
+{
+    var root = compactRegistry.RootElement;
+    Expect(root.ValueKind == JsonValueKind.Array && root.GetArrayLength() == 3, "compact part registry uses a versioned array envelope");
+    var rootItems = root.EnumerateArray().ToArray();
+    Expect(rootItems[0].GetInt32() == 1, "compact part registry schema version is stable");
+    Expect(rootItems[1].GetInt32() == registryExport.PartRegistry.Version, "compact part registry keeps the source registry version");
+    var firstRow = rootItems[2].EnumerateArray().First();
+    Expect(firstRow.ValueKind == JsonValueKind.Array && firstRow.GetArrayLength() == 15, "compact part registry rows omit repeated field names");
+}
+using (var compactCompatibility = RuntimeJsonWriter.ReadJsonDocument(
+    Path.Combine(registryOutput, "parts", "head-hair-compatibility-compact.json"),
+    RuntimeJsonWriter.MessagePackBrotli
+))
+{
+    var rootItems = compactCompatibility.RootElement.EnumerateArray().ToArray();
+    Expect(rootItems.Length == 2 && rootItems[0].GetInt32() == 1, "compact compatibility uses a versioned array envelope");
+    var firstRow = rootItems[1].EnumerateArray().First();
+    Expect(firstRow.ValueKind == JsonValueKind.Array && firstRow.GetArrayLength() == 5, "compact compatibility rows omit unused metadata and repeated field names");
+}
 Expect(
     registryExport.Character3dIndex.Entries.All(entry => entry.RoleRuntimePath.EndsWith(".msgpack.br", StringComparison.Ordinal)),
     "default character registry points at MessagePack Brotli role runtimes"
@@ -1015,6 +1128,14 @@ Expect(
     "part package failures exit nonzero before texture compaction"
 );
 Expect(programSource.Contains("File.Delete(shardManifestPath);"), "part worker orchestration clears stale shard manifests");
+var manifestMerge = programSource.IndexOf("PartPackageExportManifest.Merge(manifestPath, shardManifestPaths);", StringComparison.Ordinal);
+var mergedManifestShardCleanup = manifestMerge < 0
+    ? -1
+    : programSource.IndexOf("foreach (var shardManifestPath in shardManifestPaths)", manifestMerge, StringComparison.Ordinal);
+Expect(
+    manifestMerge >= 0 && mergedManifestShardCleanup > manifestMerge,
+    "part worker orchestration deletes manifest shards only after a successful merge"
+);
 Expect(partPackageExporterSource.Contains("previous != pair.Value"), "manifest merge ignores unchanged baseline stamps from other shards");
 Expect(pjskRuntimeBuilderSource.Contains("SpringManager.FindSpringBones(true) ownership is authoritative"), "runtime builder documents hierarchy-based SpringManager ownership");
 Expect(!pjskRuntimeBuilderSource.Contains("SpringManager.springBones references remain authoritative"), "runtime builder does not treat serialized springBones as authoritative");
@@ -1179,6 +1300,25 @@ static void WriteRuntimePackage(
     );
 }
 
+static string CasTexturePath(string outputDirectory) =>
+    Path.Combine(outputDirectory, "_texture_store", "sha256", "aa", "texture.png");
+
+static string CasPartRuntimePath(string outputDirectory) =>
+    Path.Combine(outputDirectory, "parts", "_sources", "body", "source", "part-runtime.msgpack.br");
+
+static void WriteCasFixture(string outputDirectory)
+{
+    var texturePath = CasTexturePath(outputDirectory);
+    Directory.CreateDirectory(Path.GetDirectoryName(texturePath)!);
+    File.WriteAllBytes(texturePath, new byte[] { 1, 3, 3, 7 });
+    RuntimeJsonWriter.Write(
+        Path.Combine(outputDirectory, "parts", "_sources", "body", "source", "part-runtime.json"),
+        new { version = "cas", positions = new[] { 0f, 1f, 2f } },
+        new JsonSerializerOptions(),
+        RuntimeJsonWriter.MessagePackBrotli
+    );
+}
+
 static void WriteJsonFile(string path, object payload)
 {
     Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -1192,4 +1332,33 @@ static JsonObject ReadRuntimePackage(
 {
     using var document = RuntimeJsonWriter.ReadJsonDocument(runtimeJsonPath, runtimeJsonOutput);
     return JsonNode.Parse(document.RootElement.GetRawText())!.AsObject();
+}
+
+static byte[] ReadBrotliBytes(string path)
+{
+    using var input = File.OpenRead(path);
+    using var brotli = new BrotliStream(input, CompressionMode.Decompress);
+    using var output = new MemoryStream();
+    brotli.CopyTo(output);
+    return output.ToArray();
+}
+
+static bool ContainsRuntimeBinaryExtension(byte[] messagePack)
+{
+    for (var index = 0; index + 2 < messagePack.Length; index += 1)
+    {
+        if (messagePack[index] == 0xc7 && messagePack[index + 2] == RuntimeJsonWriter.BinaryArrayExtensionType)
+        {
+            return true;
+        }
+        if (index + 3 < messagePack.Length && messagePack[index] == 0xc8 && messagePack[index + 3] == RuntimeJsonWriter.BinaryArrayExtensionType)
+        {
+            return true;
+        }
+        if (index + 5 < messagePack.Length && messagePack[index] == 0xc9 && messagePack[index + 5] == RuntimeJsonWriter.BinaryArrayExtensionType)
+        {
+            return true;
+        }
+    }
+    return false;
 }

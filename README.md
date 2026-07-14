@@ -251,7 +251,13 @@ This writes:
 
 - `character3d-index.json` for official preset packages keyed by `character3ds.id`
 - `parts/part-registry.json` for body, hair, and head/head_optional rows
+- `parts/part-registry-compact.msgpack.br` as the field-name-free global
+  registry consumed by Cloud
 - `parts/head-hair-compatibility.json` for custom-mode head/hair rules
+- `parts/head-hair-compatibility-compact.msgpack.br` as the field-name-free
+  compatibility registry consumed by Cloud
+- `parts/compat/by-unit/*/head-hair-compatibility.json` as a runtime-sized
+  per-unit deny list; the full registry above remains available for audits
 - `parts/card-costume-unlocks.json` for card unlock/source metadata
 
 Registry generation does not scan the bundle mirror for every row. Part entries
@@ -283,6 +289,15 @@ Build one runtime-loadable package with:
 This writes `parts/<partType>/<costume3dId>/<unit>/part-runtime.msgpack.br` plus
 part-local textures. The package includes native meshes, material slots, texture
 roles, prefab graph metadata, and part-scoped SpringBone records.
+
+Pass `--shared-content-store <directory>` after `--compact-textures` to place
+exact texture and `part-runtime.msgpack.br` bytes in a cross-region SHA-256 CAS.
+Region paths stay unchanged and are hard-linked to immutable CAS objects, so
+the output and shared store must be on the same filesystem.
+
+In `msgpack-br` mode, large mesh and Unity-motion numeric arrays use runtime
+extension type `42`: float data is little-endian float32 and mesh indexes are
+little-endian uint16/uint32. Older ordinary MessagePack arrays remain valid.
 
 Viewer custom mode must merge the active part SpringBone records, rebind current
 body colliders, and reset simulation whenever body/head/hair/accessory selection
