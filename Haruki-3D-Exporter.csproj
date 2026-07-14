@@ -12,7 +12,7 @@
     <EnableDefaultCompileItems Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'">false</EnableDefaultCompileItems>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' != 'true'">
     <PackageReference Include="K4os.Compression.LZ4" Version="1.3.8" />
     <PackageReference Include="SharpGLTF.Toolkit" Version="1.0.6" />
     <PackageReference Include="ZstdSharp.Port" Version="0.8.6" />
@@ -23,6 +23,8 @@
     <Compile Include="Services/BundleDependencyResolver.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/MaterialIdentityLookup.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/RuntimeJsonWriter.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
+    <Compile Include="Services/RuntimeTextureStore.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
+    <Compile Include="Services/PartPackageWorkClaims.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/SekaiMaterialMetadata.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/TextureCompactor.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/ContentAddressedStore.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />

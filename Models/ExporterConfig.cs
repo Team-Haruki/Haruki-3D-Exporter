@@ -25,10 +25,13 @@ public sealed record ExporterConfig(
     int? PartPackageCoreCount,
     int? PartPackageShardCount,
     int? PartPackageShardIndex,
+    string? PartPackageClaimDirectory,
     string? AssetStudioLogLevel,
     string? RuntimeJsonOutput,
     bool? CompactTextures,
+    bool? OptimizeTextureStore,
     string? SharedContentStore,
+    string? CompiledContentStore,
     string? PngOptimize,
     int? TextureCompactWorkers,
     string? AssetStudioRoot

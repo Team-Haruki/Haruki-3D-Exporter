@@ -14,6 +14,74 @@ public sealed class TextureCompactor
         WriteIndented = false
     };
 
+    public TextureStoreOptimizationReport OptimizeStore(
+        string outputDirectory,
+        string pngOptimizeMode,
+        int workers
+    )
+    {
+        var root = Path.Combine(Path.GetFullPath(outputDirectory), "_texture_store", "sha256");
+        var files = Directory.Exists(root)
+            ? Directory.EnumerateFiles(root, "*.png", SearchOption.AllDirectories).ToList()
+            : new List<string>();
+        var mode = NormalizePngOptimizeMode(pngOptimizeMode);
+        var workerCount = ResolveWorkerCount(workers);
+        var results = new ConcurrentBag<(long Before, long After, bool Changed)>();
+        var errors = new ConcurrentBag<Exception>();
+        Parallel.ForEach(files, new ParallelOptions { MaxDegreeOfParallelism = workerCount }, path =>
+        {
+            try
+            {
+                var before = new FileInfo(path).Length;
+                if (mode != "oxipng")
+                {
+                    results.Add((before, before, false));
+                    return;
+                }
+                var temporaryPath = path + $".{Guid.NewGuid():N}.optimize.png";
+                try
+                {
+                    File.Copy(path, temporaryPath);
+                    RunOxipng(temporaryPath);
+                    var after = new FileInfo(temporaryPath).Length;
+                    if (after < before)
+                    {
+                        File.Move(temporaryPath, path, overwrite: true);
+                        results.Add((before, after, true));
+                    }
+                    else
+                    {
+                        results.Add((before, before, false));
+                    }
+                }
+                finally
+                {
+                    File.Delete(temporaryPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                errors.Add(ex);
+            }
+        });
+        ThrowIfAny(errors, "Texture store optimization failed");
+        var report = new TextureStoreOptimizationReport(
+            Version: 1,
+            TextureFileCount: files.Count,
+            OptimizedFileCount: results.Count(result => result.Changed),
+            OriginalBytes: results.Sum(result => result.Before),
+            StoredBytes: results.Sum(result => result.After),
+            SavedBytes: results.Sum(result => result.Before - result.After),
+            PngOptimizeMode: mode,
+            WorkerCount: workerCount
+        );
+        File.WriteAllBytes(
+            Path.Combine(outputDirectory, "texture-store-optimization-report.json"),
+            JsonSerializer.SerializeToUtf8Bytes(report, JsonOptions)
+        );
+        return report;
+    }
+
     public TextureCompactionReport Compact(
         string outputDirectory,
         string runtimeJsonOutput,
@@ -604,4 +672,15 @@ public sealed record TextureCompactionGroupReport(
     long OriginalBytes,
     long StoredBytes,
     string RuntimePath
+);
+
+public sealed record TextureStoreOptimizationReport(
+    int Version,
+    int TextureFileCount,
+    int OptimizedFileCount,
+    long OriginalBytes,
+    long StoredBytes,
+    long SavedBytes,
+    string PngOptimizeMode,
+    int WorkerCount
 );

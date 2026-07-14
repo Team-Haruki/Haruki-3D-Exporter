@@ -10,6 +10,19 @@ public enum BundleLoadDependencyMode
 
 public static class BundleDependencyResolver
 {
+    public static string ResolveLoadFamilyKey(
+        ResolvedBundleInput input,
+        BundleLoadDependencyMode mode = BundleLoadDependencyMode.Default
+    )
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(input.ResolvedBundlePath)) ?? string.Empty;
+        if (mode == BundleLoadDependencyMode.FullDirectory || input.PartKind == BundlePartKind.Body)
+        {
+            return directory;
+        }
+        return Path.Combine(directory, ResolveFamilyStem(GetBundleStem(input.ResolvedBundlePath)));
+    }
+
     public static IReadOnlyList<string> ResolveLoadBundlePaths(
         ResolvedBundleInput input,
         BundleLoadDependencyMode mode = BundleLoadDependencyMode.Default
@@ -56,7 +69,7 @@ public static class BundleDependencyResolver
             .ToList();
     }
 
-    private static string ResolveFamilyStem(string bundleStem)
+    internal static string ResolveFamilyStem(string bundleStem)
     {
         var digitCount = 0;
         while (digitCount < bundleStem.Length && char.IsDigit(bundleStem[digitCount]))

@@ -1,7 +1,5 @@
 using AssetStudio;
 using PjskBundle2Parts.Models;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Processing;
 using Object = AssetStudio.Object;
 
 namespace PjskBundle2Parts.Services;
@@ -82,10 +80,22 @@ public sealed class AssetStudioImportedModelFactory
                 $"Root GameObject '{preferredRootName}' was not found in {input.ResolvedBundlePath}. Available roots: {string.Join(", ", rootGameObjects.Select(gameObject => gameObject.m_Name))}"
             );
 
-        var imported = new ModelConverter(preferredRoot, ImageFormat.Png);
-        // AssetStudio's ModelConverter flips exported texture bytes vertically.
-        NormalizeTextureOrientation(imported.TextureList);
-        return imported;
+        var noTextureConstructor = typeof(ModelConverter).GetConstructor(new[]
+        {
+            typeof(GameObject),
+            typeof(ImageFormat),
+            typeof(List<AnimationClip>),
+            typeof(bool),
+        });
+        return noTextureConstructor is null
+            ? new ModelConverter(preferredRoot, ImageFormat.Png)
+            : (IImported)noTextureConstructor.Invoke(new object?[]
+            {
+                preferredRoot,
+                ImageFormat.Png,
+                null,
+                false,
+            });
     }
 
     public IReadOnlyList<ImportedTexture> CreateImportedTextures(string bundlePath)
@@ -101,7 +111,7 @@ public sealed class AssetStudioImportedModelFactory
             .OfType<Texture2D>()
             .Select(texture =>
             {
-                using var stream = texture.ConvertToStream(ImageFormat.Png, true);
+                using var stream = texture.ConvertToStream(ImageFormat.Png, false);
                 return stream is null
                     ? null
                     : new ImportedTexture(stream, $"{texture.m_Name}.png");
@@ -110,19 +120,6 @@ public sealed class AssetStudioImportedModelFactory
             .Select(texture => texture!)
             .DistinctBy(texture => texture.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        NormalizeTextureOrientation(textures);
         return textures;
-    }
-
-    private static void NormalizeTextureOrientation(IReadOnlyList<ImportedTexture> textures)
-    {
-        foreach (var texture in textures)
-        {
-            using var image = Image.Load(texture.Data);
-            image.Mutate(x => x.Flip(FlipMode.Vertical));
-            using var stream = new MemoryStream();
-            image.SaveAsPng(stream);
-            texture.Data = stream.ToArray();
-        }
     }
 }

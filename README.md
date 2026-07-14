@@ -286,17 +286,38 @@ Build one runtime-loadable package with:
   --out <output-dir>
 ```
 
-This writes `parts/<partType>/<costume3dId>/<unit>/part-runtime.msgpack.br` plus
-part-local textures. The package includes native meshes, material slots, texture
-roles, prefab graph metadata, and part-scoped SpringBone records.
+This writes a light
+`parts/<partType>/<costume3dId>/<unit>/part-runtime.msgpack.br` delta. Heavy
+native meshes, SpringBone data, and morph bindings shared by color variants are
+written once under `parts/_cores/<partType>/<hash>/part-runtime-core.msgpack.br`.
+Textures are written directly to the output's exact SHA-256 store under
+`_texture_store/sha256`; packages refer to those immutable files instead of
+building and later deleting duplicate part-local texture trees.
 
-Pass `--shared-content-store <directory>` after `--compact-textures` to place
-exact texture and `part-runtime.msgpack.br` bytes in a cross-region SHA-256 CAS.
+Pass `--shared-content-store <directory>` to place exact texture and
+`part-runtime*.msgpack.br` bytes in a cross-region SHA-256 CAS.
 Region paths stay unchanged and are hard-linked to immutable CAS objects, so
 the output and shared store must be on the same filesystem. The first run is an
 explicit full migration. Later runs use `content-addressed-store-state.json` to
 skip files that are still protected CAS links; only newly exported or replaced
 files are hashed and relinked.
+
+Pass `--compiled-content-store <directory>` together with the shared content
+store to reuse already compiled core/delta objects across sequential region
+exports when their resolved input bundles are byte-identical. Restored deltas
+are patched with the current region's identity and manifest fields. The shared
+content store is the authoritative source for the cached texture hashes.
+
+Texture lossless optimization is deliberately separate from package export.
+After publishing an output, run the exporter with only `--out`,
+`--optimize-texture-store`, and the desired `--png-optimize`/worker options.
+The optimizer works on temporary files and atomically replaces a texture only
+when the result is smaller, so exports do not wait for oxipng.
+
+`msgpack-br` uses direct object-to-MessagePack serialization and Brotli quality
+6. It avoids the former JSON UTF-8 and DOM intermediate while retaining a good
+size/speed balance. JSON and gzip modes remain available for diagnostics and
+compatibility.
 
 In `msgpack-br` mode, large arrays on the explicit native-mesh and Unity-motion
 schemas use runtime extension type `42`: float data is little-endian float32 and

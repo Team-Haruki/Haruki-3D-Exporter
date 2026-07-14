@@ -10,6 +10,8 @@
   "headRoot": null,
   "runtimeJsonOutput": "msgpack-br",
   "sharedContentStore": null,
+  "compiledContentStore": null,
+  "optimizeTextureStore": false,
   "keepIntermediate": false,
   "emitCostumeRegistries": false,
   "emitPartPackages": false,

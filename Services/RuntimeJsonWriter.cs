@@ -1,8 +1,12 @@
 using System.Buffers.Binary;
+using System.Collections;
+using System.Collections.Concurrent;
 using System.IO.Compression;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 namespace PjskBundle2Parts.Services;
 
@@ -16,6 +20,7 @@ public enum RuntimeBinaryArraySchema
 public static class RuntimeJsonWriter
 {
     public const byte BinaryArrayExtensionType = 42;
+    public const int DefaultBrotliQuality = 6;
     public const string MessagePackBrotli = "msgpack-br";
     public const string Gzip = "gzip";
     public const string Json = "json";
@@ -69,13 +74,15 @@ public static class RuntimeJsonWriter
             Directory.CreateDirectory(parent);
         }
 
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(value, options);
+        byte[]? bytes = null;
         if (normalizedMode is Json or Both)
         {
+            bytes ??= JsonSerializer.SerializeToUtf8Bytes(value, options);
             WriteAllBytesAtomic(jsonPath, bytes);
         }
         if (normalizedMode is Gzip or Both)
         {
+            bytes ??= JsonSerializer.SerializeToUtf8Bytes(value, options);
             using var compressed = new MemoryStream();
             using (var gzip = new GZipStream(compressed, CompressionLevel.Optimal, leaveOpen: true))
             {
@@ -87,8 +94,11 @@ public static class RuntimeJsonWriter
         {
             WriteMessagePackBrotli(
                 jsonPath,
-                bytes,
-                brotliCompressionLevel ?? CompressionLevel.SmallestSize,
+                value,
+                options,
+                brotliCompressionLevel is null
+                    ? DefaultBrotliQuality
+                    : BrotliQuality(brotliCompressionLevel.Value),
                 binaryArraySchema
             );
         }
@@ -146,22 +156,34 @@ public static class RuntimeJsonWriter
         return File.ReadAllBytes(path);
     }
 
-    private static void WriteMessagePackBrotli(
+    private static void WriteMessagePackBrotli<T>(
         string jsonPath,
-        byte[] jsonBytes,
-        CompressionLevel compressionLevel,
+        T value,
+        JsonSerializerOptions options,
+        int quality,
         RuntimeBinaryArraySchema binaryArraySchema
     )
     {
-        using var document = JsonDocument.Parse(jsonBytes);
         using var packed = new MemoryStream();
-        WriteMessagePackValue(packed, document.RootElement, binaryArraySchema, string.Empty);
-        using var compressed = new MemoryStream();
-        using (var brotli = new BrotliStream(compressed, compressionLevel, leaveOpen: true))
+        WriteMessagePackObject(packed, value, options, binaryArraySchema, string.Empty);
+        var input = packed.GetBuffer().AsSpan(0, checked((int)packed.Length));
+        var compressed = new byte[BrotliEncoder.GetMaxCompressedLength(input.Length)];
+        if (!BrotliEncoder.TryCompress(input, compressed, out var bytesWritten, quality, window: 22))
         {
-            brotli.Write(packed.ToArray());
+            throw new InvalidOperationException("Brotli failed to compress runtime MessagePack.");
         }
-        WriteAllBytesAtomic(MessagePackBrotliPath(jsonPath), compressed.ToArray());
+        WriteAllBytesAtomic(MessagePackBrotliPath(jsonPath), compressed.AsSpan(0, bytesWritten).ToArray());
+    }
+
+    private static int BrotliQuality(CompressionLevel level)
+    {
+        return level switch
+        {
+            CompressionLevel.Fastest => 1,
+            CompressionLevel.SmallestSize => 11,
+            CompressionLevel.NoCompression => 0,
+            _ => 4,
+        };
     }
 
     private static void WriteAllBytesAtomic(string path, byte[] bytes)
@@ -219,6 +241,286 @@ public static class RuntimeJsonWriter
         "clips.tracks.times",
         "clips.tracks.values",
     };
+
+    private static readonly ConcurrentDictionary<Type, PropertyInfo[]> SerializableProperties = new();
+
+    private static void WriteMessagePackObject(
+        Stream stream,
+        object? value,
+        JsonSerializerOptions options,
+        RuntimeBinaryArraySchema binaryArraySchema,
+        string path
+    )
+    {
+        if (value is null)
+        {
+            stream.WriteByte(0xc0);
+            return;
+        }
+
+        if (value is JsonElement element)
+        {
+            WriteMessagePackValue(stream, element, binaryArraySchema, path);
+            return;
+        }
+        if (value is JsonNode node)
+        {
+            using var document = JsonDocument.Parse(node.ToJsonString(options));
+            WriteMessagePackValue(stream, document.RootElement, binaryArraySchema, path);
+            return;
+        }
+        if (value is string text)
+        {
+            WriteString(stream, text);
+            return;
+        }
+        if (value is bool boolean)
+        {
+            stream.WriteByte(boolean ? (byte)0xc3 : (byte)0xc2);
+            return;
+        }
+        if (value is byte[] bytes)
+        {
+            WriteString(stream, Convert.ToBase64String(bytes));
+            return;
+        }
+        if (TryWriteNumber(stream, value))
+        {
+            return;
+        }
+        if (value is Enum enumValue)
+        {
+            if (options.Converters.Any(converter => converter is JsonStringEnumConverter))
+            {
+                WriteString(stream, enumValue.ToString());
+            }
+            else
+            {
+                WriteSignedNumber(stream, Convert.ToInt64(enumValue));
+            }
+            return;
+        }
+        if (TryWriteDictionary(stream, value, options, binaryArraySchema, path))
+        {
+            return;
+        }
+        if (value is IEnumerable enumerable)
+        {
+            if (TryWriteBinaryArray(stream, enumerable, binaryArraySchema, path))
+            {
+                return;
+            }
+            var items = enumerable.Cast<object?>().ToList();
+            WriteArrayHeader(stream, items.Count);
+            foreach (var item in items)
+            {
+                WriteMessagePackObject(stream, item, options, binaryArraySchema, path);
+            }
+            return;
+        }
+
+        var properties = SerializableProperties.GetOrAdd(
+            value.GetType(),
+            type => type.GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                .Where(property => property.CanRead && property.GetIndexParameters().Length == 0)
+                .ToArray()
+        );
+        var selected = properties
+            .Select(property => (Property: property, Value: property.GetValue(value)))
+            .Where(item => ShouldWriteProperty(item.Property, item.Value, options))
+            .ToList();
+        WriteMapHeader(stream, selected.Count);
+        foreach (var item in selected)
+        {
+            var propertyName = item.Property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name
+                ?? options.PropertyNamingPolicy?.ConvertName(item.Property.Name)
+                ?? item.Property.Name;
+            WriteString(stream, propertyName);
+            var childPath = path.Length == 0 ? propertyName : $"{path}.{propertyName}";
+            WriteMessagePackObject(stream, item.Value, options, binaryArraySchema, childPath);
+        }
+    }
+
+    private static bool ShouldWriteProperty(
+        PropertyInfo property,
+        object? value,
+        JsonSerializerOptions options
+    )
+    {
+        var ignore = property.GetCustomAttribute<JsonIgnoreAttribute>();
+        var condition = ignore?.Condition ?? options.DefaultIgnoreCondition;
+        if (ignore is not null && condition == JsonIgnoreCondition.Always)
+        {
+            return false;
+        }
+        if (condition == JsonIgnoreCondition.WhenWritingNull && value is null)
+        {
+            return false;
+        }
+        if (condition == JsonIgnoreCondition.WhenWritingDefault && IsDefaultValue(value, property.PropertyType))
+        {
+            return false;
+        }
+        return true;
+    }
+
+    private static bool IsDefaultValue(object? value, Type type)
+    {
+        if (value is null)
+        {
+            return true;
+        }
+        return type.IsValueType && value.Equals(Activator.CreateInstance(type));
+    }
+
+    private static bool TryWriteDictionary(
+        Stream stream,
+        object value,
+        JsonSerializerOptions options,
+        RuntimeBinaryArraySchema binaryArraySchema,
+        string path
+    )
+    {
+        if (value is IDictionary dictionary)
+        {
+            WriteMapHeader(stream, dictionary.Count);
+            foreach (DictionaryEntry entry in dictionary)
+            {
+                var key = Convert.ToString(entry.Key) ?? string.Empty;
+                WriteString(stream, key);
+                var childPath = path.Length == 0 ? key : $"{path}.{key}";
+                WriteMessagePackObject(stream, entry.Value, options, binaryArraySchema, childPath);
+            }
+            return true;
+        }
+
+        var dictionaryInterface = value.GetType().GetInterfaces()
+            .FirstOrDefault(type =>
+                type.IsGenericType &&
+                type.GetGenericTypeDefinition() == typeof(IReadOnlyDictionary<,>) &&
+                type.GetGenericArguments()[0] == typeof(string));
+        if (dictionaryInterface is null || value is not IEnumerable entries)
+        {
+            return false;
+        }
+        var items = entries.Cast<object>().ToList();
+        WriteMapHeader(stream, items.Count);
+        foreach (var item in items)
+        {
+            var itemType = item.GetType();
+            var key = (string?)itemType.GetProperty("Key")?.GetValue(item) ?? string.Empty;
+            var itemValue = itemType.GetProperty("Value")?.GetValue(item);
+            WriteString(stream, key);
+            var childPath = path.Length == 0 ? key : $"{path}.{key}";
+            WriteMessagePackObject(stream, itemValue, options, binaryArraySchema, childPath);
+        }
+        return true;
+    }
+
+    private static bool TryWriteBinaryArray(
+        Stream stream,
+        IEnumerable values,
+        RuntimeBinaryArraySchema binaryArraySchema,
+        string path
+    )
+    {
+        var isFloat32Array = binaryArraySchema switch
+        {
+            RuntimeBinaryArraySchema.PartRuntime => PartRuntimeFloat32ArrayPaths.Contains(path),
+            RuntimeBinaryArraySchema.UnityMotion => UnityMotionFloat32ArrayPaths.Contains(path),
+            _ => false,
+        };
+        if (isFloat32Array)
+        {
+            var numbers = values.Cast<object?>().Select(Convert.ToSingle).ToArray();
+            if (numbers.Length < 8 || numbers.Any(number => !float.IsFinite(number)))
+            {
+                return false;
+            }
+            var payload = new byte[1 + numbers.Length * sizeof(float)];
+            payload[0] = 1;
+            for (var index = 0; index < numbers.Length; index += 1)
+            {
+                BinaryPrimitives.WriteSingleLittleEndian(
+                    payload.AsSpan(1 + index * sizeof(float), sizeof(float)),
+                    numbers[index]
+                );
+            }
+            WriteExtension(stream, payload);
+            return true;
+        }
+
+        if (binaryArraySchema != RuntimeBinaryArraySchema.PartRuntime ||
+            !PartRuntimeUnsignedIndexArrayPaths.Contains(path))
+        {
+            return false;
+        }
+        var indexes = values.Cast<object?>().Select(Convert.ToUInt32).ToArray();
+        if (indexes.Length < 16)
+        {
+            return false;
+        }
+        var useUInt16 = indexes.All(number => number <= ushort.MaxValue);
+        var width = useUInt16 ? sizeof(ushort) : sizeof(uint);
+        var integerPayload = new byte[1 + indexes.Length * width];
+        integerPayload[0] = useUInt16 ? (byte)2 : (byte)3;
+        for (var index = 0; index < indexes.Length; index += 1)
+        {
+            var target = integerPayload.AsSpan(1 + index * width, width);
+            if (useUInt16)
+            {
+                BinaryPrimitives.WriteUInt16LittleEndian(target, (ushort)indexes[index]);
+            }
+            else
+            {
+                BinaryPrimitives.WriteUInt32LittleEndian(target, indexes[index]);
+            }
+        }
+        WriteExtension(stream, integerPayload);
+        return true;
+    }
+
+    private static bool TryWriteNumber(Stream stream, object value)
+    {
+        switch (value)
+        {
+            case byte number:
+                WriteUnsignedNumber(stream, number);
+                return true;
+            case ushort number:
+                WriteUnsignedNumber(stream, number);
+                return true;
+            case uint number:
+                WriteUnsignedNumber(stream, number);
+                return true;
+            case ulong number:
+                WriteUnsignedNumber(stream, number);
+                return true;
+            case sbyte number:
+                WriteSignedNumber(stream, number);
+                return true;
+            case short number:
+                WriteSignedNumber(stream, number);
+                return true;
+            case int number:
+                WriteSignedNumber(stream, number);
+                return true;
+            case long number:
+                WriteSignedNumber(stream, number);
+                return true;
+            case float number:
+                WriteFloat64(stream, number);
+                return true;
+            case double number:
+                WriteFloat64(stream, number);
+                return true;
+            case decimal number:
+                WriteFloat64(stream, (double)number);
+                return true;
+            default:
+                return false;
+        }
+    }
 
     private static void WriteMessagePackValue(
         Stream stream,
@@ -432,46 +734,13 @@ public static class RuntimeJsonWriter
     {
         if (value.TryGetInt64(out var integer))
         {
-            if (integer >= 0)
-            {
-                WriteUnsignedNumber(stream, (ulong)integer);
-            }
-            else if (integer >= -32)
-            {
-                stream.WriteByte((byte)integer);
-            }
-            else if (integer >= sbyte.MinValue)
-            {
-                stream.WriteByte(0xd0);
-                stream.WriteByte((byte)(sbyte)integer);
-            }
-            else if (integer >= short.MinValue)
-            {
-                stream.WriteByte(0xd1);
-                WriteInt16(stream, (short)integer);
-            }
-            else if (integer >= int.MinValue)
-            {
-                stream.WriteByte(0xd2);
-                WriteInt32(stream, (int)integer);
-            }
-            else
-            {
-                WriteFloat64(stream, integer);
-            }
+            WriteSignedNumber(stream, integer);
             return;
         }
 
         if (value.TryGetUInt64(out var unsigned))
         {
-            if (unsigned <= uint.MaxValue)
-            {
-                WriteUnsignedNumber(stream, unsigned);
-            }
-            else
-            {
-                WriteFloat64(stream, unsigned);
-            }
+            WriteUnsignedNumber(stream, unsigned);
             return;
         }
 
@@ -496,8 +765,48 @@ public static class RuntimeJsonWriter
         }
         else
         {
-            stream.WriteByte(0xce);
-            WriteUInt32(stream, (uint)value);
+            if (value <= uint.MaxValue)
+            {
+                stream.WriteByte(0xce);
+                WriteUInt32(stream, (uint)value);
+            }
+            else
+            {
+                stream.WriteByte(0xcf);
+                WriteUInt64(stream, value);
+            }
+        }
+    }
+
+    private static void WriteSignedNumber(Stream stream, long value)
+    {
+        if (value >= 0)
+        {
+            WriteUnsignedNumber(stream, (ulong)value);
+        }
+        else if (value >= -32)
+        {
+            stream.WriteByte(unchecked((byte)value));
+        }
+        else if (value >= sbyte.MinValue)
+        {
+            stream.WriteByte(0xd0);
+            stream.WriteByte(unchecked((byte)(sbyte)value));
+        }
+        else if (value >= short.MinValue)
+        {
+            stream.WriteByte(0xd1);
+            WriteInt16(stream, (short)value);
+        }
+        else if (value >= int.MinValue)
+        {
+            stream.WriteByte(0xd2);
+            WriteInt32(stream, (int)value);
+        }
+        else
+        {
+            stream.WriteByte(0xd3);
+            WriteInt64(stream, value);
         }
     }
 
@@ -711,6 +1020,20 @@ public static class RuntimeJsonWriter
     {
         Span<byte> buffer = stackalloc byte[4];
         BinaryPrimitives.WriteInt32BigEndian(buffer, value);
+        stream.Write(buffer);
+    }
+
+    private static void WriteUInt64(Stream stream, ulong value)
+    {
+        Span<byte> buffer = stackalloc byte[8];
+        BinaryPrimitives.WriteUInt64BigEndian(buffer, value);
+        stream.Write(buffer);
+    }
+
+    private static void WriteInt64(Stream stream, long value)
+    {
+        Span<byte> buffer = stackalloc byte[8];
+        BinaryPrimitives.WriteInt64BigEndian(buffer, value);
         stream.Write(buffer);
     }
 

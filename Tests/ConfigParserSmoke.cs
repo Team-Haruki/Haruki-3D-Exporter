@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.IO.Compression;
 using PjskBundle2Parts.Tests;
 using PjskBundle2Parts.Models;
@@ -25,7 +26,9 @@ File.WriteAllText(configPath, JsonSerializer.Serialize(new
     assetStudioLogLevel = "info",
     runtimeJsonOutput = "both",
     compactTextures = true,
+    optimizeTextureStore = false,
     sharedContentStore = "/data/shared-cas-from-config",
+    compiledContentStore = "/data/compiled-cas-from-config",
     pngOptimize = "off",
     textureCompactWorkers = 2,
     keepIntermediate = true
@@ -38,7 +41,8 @@ var parsed = ConversionOptionsParser.Parse(new[]
     "--part-type", "head_optional",
     "--role-character3d-id", "9",
     "--manifest", "/data/manifest-from-cli.json",
-    "--shared-content-store", "/data/shared-cas-from-cli"
+    "--shared-content-store", "/data/shared-cas-from-cli",
+    "--compiled-content-store", "/data/compiled-cas-from-cli"
 });
 
 if (!parsed.IsSuccess || parsed.Options is null)
@@ -66,7 +70,9 @@ Expect(options.PartPackageShardIndex == 0, "part package shard index defaults to
 Expect(options.AssetStudioLogLevel == "info", "assetstudio log level comes from config");
 Expect(options.RuntimeJsonOutput == "both", "runtime JSON output comes from config");
 Expect(options.CompactTextures, "texture compaction comes from config");
+Expect(!options.OptimizeTextureStore, "standalone texture optimization comes from config");
 Expect(options.SharedContentStore == "/data/shared-cas-from-cli", "CLI shared content store overrides config");
+Expect(options.CompiledContentStore == "/data/compiled-cas-from-cli", "CLI compiled content store parses");
 Expect(options.PngOptimizeMode == "off", "PNG optimization mode comes from config");
 Expect(options.TextureCompactWorkers == 2, "texture compaction worker count comes from config");
 
@@ -137,6 +143,15 @@ Expect(workerParsed.Options!.CompactTextures, "CLI compact textures parses");
 Expect(workerParsed.Options!.PngOptimizeMode == "off", "CLI PNG optimize mode parses");
 Expect(workerParsed.Options!.TextureCompactWorkers == 3, "CLI texture compact workers parses");
 
+var optimizeStoreParsed = ConversionOptionsParser.Parse(new[]
+{
+    "--optimize-texture-store",
+    "--out", "/data/out",
+    "--png-optimize", "off",
+    "--texture-compact-workers", "2",
+});
+Expect(optimizeStoreParsed.IsSuccess && optimizeStoreParsed.Options!.OptimizeTextureStore, "standalone texture store optimization parses without asset inputs");
+
 var invalidRuntimeJsonOutputParsed = ConversionOptionsParser.Parse(new[]
 {
     "--emit-part-packages",
@@ -192,6 +207,20 @@ var shardParsed = ConversionOptionsParser.Parse(new[]
 Expect(shardParsed.IsSuccess && shardParsed.Options is not null, "shard parse succeeds");
 Expect(shardParsed.Options!.PartPackageShardCount == 8, "CLI part package shard count parses");
 Expect(shardParsed.Options!.PartPackageShardIndex == 3, "CLI part package shard index parses");
+
+var claimDirectory = Path.Combine(tempDir, "claims");
+var claimParsed = ConversionOptionsParser.Parse(new[]
+{
+    "--emit-part-packages",
+    "--master", "/data/master",
+    "--asset-root", "/data/assets",
+    "--out", "/data/out",
+    "--part-package-claim-directory", claimDirectory,
+});
+Expect(claimParsed.IsSuccess && claimParsed.Options?.PartPackageClaimDirectory == claimDirectory, "dynamic package claim directory parses");
+var claims = new PartPackageWorkClaims(claimDirectory);
+Expect(claims.TryClaim("parts/_sources/body/a"), "first worker claims a package");
+Expect(!claims.TryClaim("parts/_sources/body/a"), "a package can only be claimed by one worker");
 
 var invalidSingleAutoParsed = ConversionOptionsParser.Parse(new[]
 {
@@ -255,6 +284,25 @@ using (var document = RuntimeJsonWriter.ReadJsonDocument(writerPath, RuntimeJson
     Expect(document.RootElement.GetProperty("items").GetArrayLength() == 3, "msgpack-br runtime JSON preserves arrays");
 }
 Expect(RuntimeJsonWriter.PrimaryPath(writerPath, RuntimeJsonWriter.MessagePackBrotli) == writerMessagePackPath, "msgpack-br primary path points at .msgpack.br");
+Expect(RuntimeJsonWriter.DefaultBrotliQuality == 6, "runtime MessagePack defaults to Brotli quality 6");
+
+var directWriterPath = Path.Combine(writerDir, "direct-writer.json");
+RuntimeJsonWriter.Write(
+    directWriterPath,
+    new DirectWriterFixture("direct", DirectWriterState.Ready, null),
+    new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { new JsonStringEnumConverter() },
+    },
+    RuntimeJsonWriter.MessagePackBrotli
+);
+using (var document = RuntimeJsonWriter.ReadJsonDocument(directWriterPath, RuntimeJsonWriter.MessagePackBrotli))
+{
+    Expect(document.RootElement.GetProperty("displayName").GetString() == "direct", "direct MessagePack writer honors JSON property naming");
+    Expect(document.RootElement.GetProperty("state").GetString() == "Ready", "direct MessagePack writer honors string enums");
+    Expect(!document.RootElement.TryGetProperty("optional", out _), "direct MessagePack writer honors null ignore conditions");
+}
 
 var binaryWriterPath = Path.Combine(writerDir, "binary-arrays.json");
 var binaryPositions = Enumerable.Range(0, 12).Select(index => index / 10f).ToArray();
@@ -306,6 +354,16 @@ Expect(
     !ContainsRuntimeBinaryExtension(ReadBrotliBytes(RuntimeJsonWriter.MessagePackBrotliPath(genericValuesPath))),
     "generic JSON properties are not binary-encoded by name alone"
 );
+
+var directTextureRoot = Path.Combine(tempDir, "direct-texture-store");
+var directTextureStore = new RuntimeTextureStore(directTextureRoot);
+var directTextureBytes = new byte[] { 137, 80, 78, 71, 1, 2, 3, 4 };
+var directTexturePath = directTextureStore.StorePng(directTextureBytes);
+Expect(directTexturePath.StartsWith("/_texture_store/sha256/", StringComparison.Ordinal), "direct texture store returns a root-relative CAS URI");
+Expect(directTextureStore.StorePng(directTextureBytes) == directTexturePath, "direct texture store reuses exact texture bytes");
+Expect(Directory.EnumerateFiles(directTextureRoot, "*.png", SearchOption.AllDirectories).Count() == 1, "direct texture store writes one file per exact texture hash");
+var storeOptimization = new TextureCompactor().OptimizeStore(directTextureRoot, "off", 2);
+Expect(storeOptimization.TextureFileCount == 1 && storeOptimization.OptimizedFileCount == 0, "standalone texture optimizer scans the direct store without rewriting in off mode");
 
 var motionValuesPath = Path.Combine(writerDir, "motion-values.json");
 RuntimeJsonWriter.Write(
@@ -1102,6 +1160,7 @@ var partPackageExporterSource = File.ReadAllText(Path.Combine(repoRoot, "Service
 var conversionPlannerSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "ConversionPlanner.cs"));
 var roleRuntimeExporterSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "RoleRuntimeExporter.cs"));
 var assetStudioLoadedBundleSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "AssetStudioLoadedBundle.cs"));
+var assetStudioImportedModelFactorySource = File.ReadAllText(Path.Combine(repoRoot, "Services", "AssetStudioImportedModelFactory.cs"));
 var bundleDependencyResolverSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "BundleDependencyResolver.cs"));
 var materialIdentityLookupSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "MaterialIdentityLookup.cs"));
 var bundleInputResolverSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "BundleInputResolver.cs"));
@@ -1270,6 +1329,11 @@ Expect(inventoryModelsSource.Contains("RenderMaterialSlotInventory"), "inventory
 Expect(inventoryModelsSource.Contains("MaterialKey"), "inventory exposes material identity keys");
 Expect(assetStudioBundleParserSource.Contains("m_FileID"), "bundle parser preserves renderer material file ids");
 Expect(assetStudioBundleParserSource.Contains("m_PathID"), "bundle parser preserves renderer material path ids");
+Expect(assetStudioBundleParserSource.Contains("ConvertToStream(ImageFormat.Png, false)"), "bundle parser exports correctly oriented PNGs once");
+Expect(!assetStudioBundleParserSource.Contains("Image.Load"), "bundle parser does not decode and re-encode exported PNGs");
+Expect(assetStudioImportedModelFactorySource.Contains("typeof(bool)"), "part model conversion uses AssetStudio's no-texture constructor when available");
+Expect(assetStudioImportedModelFactorySource.Contains("false,"), "part model conversion disables unused ModelConverter textures");
+Expect(!assetStudioImportedModelFactorySource.Contains("NormalizeTextureOrientation"), "part model conversion does not decode and flip textures a second time");
 Expect(partPackageExporterSource.Contains("MaterialIdentityLookup"), "part package exporter resolves materials by identity");
 Expect(!partPackageExporterSource.Contains("BuildMaterialMap"), "part package exporter no longer indexes materials by display name");
 Expect(partPackageExporterSource.Contains("part-export-error.json"), "part package exporter writes per-package errors during full export");
@@ -1277,7 +1341,7 @@ Expect(partPackageExporterSource.Contains("Part package export skipped"), "part 
 Expect(partPackageExporterSource.Contains("DeletePartExportError"), "part package exporter removes stale per-package errors after success");
 Expect(partPackageExporterSource.Contains("IsInShard"), "part package exporter can filter deterministic shards");
 Expect(partPackageExporterSource.Contains("public static void Merge"), "part package exporter can merge worker manifests");
-Expect(partPackageExporterSource.Contains("bundle-open-summary.json"), "part package exporter writes bundle-open diagnostics");
+Expect(!partPackageExporterSource.Contains("bundle-open-summary.json"), "part package exporter omits per-package debug summaries from production output");
 Expect(partPackageExporterSource.Contains("missing_after_fallback"), "part package exporter marks material failures after full-directory fallback");
 Expect(assetStudioLoadedBundleSource.Contains("BundleDependencyResolver.ResolveLoadBundlePaths"), "loaded bundle uses shared dependency resolver");
 Expect(bundleDependencyResolverSource.Contains("BundleLoadDependencyMode.FullDirectory"), "bundle dependency resolver supports full-directory fallback");
@@ -1424,3 +1488,14 @@ static bool ContainsRuntimeBinaryExtension(byte[] messagePack)
     }
     return false;
 }
+
+enum DirectWriterState
+{
+    Ready,
+}
+
+sealed record DirectWriterFixture(
+    string DisplayName,
+    DirectWriterState State,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Optional
+);

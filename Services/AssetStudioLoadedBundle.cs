@@ -11,10 +11,10 @@ public sealed class AssetStudioLoadedBundle : IDisposable
     private readonly DecryptedBundleWorkspace readableBundles;
     private readonly AssetsManager manager;
 
-    public ResolvedBundleInput Input { get; }
+    public ResolvedBundleInput Input { get; private set; }
     public BundleLoadDependencyMode DependencyMode { get; }
     public IReadOnlyList<Object> Objects { get; }
-    public IReadOnlyList<Object> PrimaryObjects { get; }
+    public IReadOnlyList<Object> PrimaryObjects { get; private set; }
     public int AssetsFileCount => manager.AssetsFileList.Count;
 
     private AssetStudioLoadedBundle(
@@ -32,6 +32,24 @@ public sealed class AssetStudioLoadedBundle : IDisposable
             .SelectMany(file => file.Objects)
             .ToList();
         PrimaryObjects = AssetStudioObjectFilter.SelectPrimaryObjects(Objects, readableBundles.PrimaryFileName);
+    }
+
+    public bool TrySelectInput(ResolvedBundleInput input)
+    {
+        if (!string.Equals(
+                BundleDependencyResolver.ResolveLoadFamilyKey(Input, DependencyMode),
+                BundleDependencyResolver.ResolveLoadFamilyKey(input, DependencyMode),
+                StringComparison.Ordinal) ||
+            !File.Exists(Path.Combine(readableBundles.DirectoryPath, Path.GetFileName(input.ResolvedBundlePath))))
+        {
+            return false;
+        }
+        Input = input;
+        PrimaryObjects = AssetStudioObjectFilter.SelectPrimaryObjects(
+            Objects,
+            Path.GetFileName(input.ResolvedBundlePath)
+        );
+        return true;
     }
 
     public static AssetStudioLoadedBundle Load(

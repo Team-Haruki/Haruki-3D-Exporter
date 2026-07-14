@@ -19,6 +19,28 @@ if (!parseResult.IsSuccess || parseResult.Options is null)
 
 var options = parseResult.Options;
 Logger.Default = new AssetStudioConsoleLogger(options.AssetStudioLogLevel);
+if (options.OptimizeTextureStore)
+{
+    try
+    {
+        var report = new TextureCompactor().OptimizeStore(
+            options.OutputDirectory,
+            options.PngOptimizeMode,
+            options.TextureCompactWorkers
+        );
+        Console.WriteLine(
+            $"Optimized texture store: {report.OptimizedFileCount}/{report.TextureFileCount} file(s), " +
+            $"saved {report.SavedBytes} byte(s)."
+        );
+        RunContentAddressedStoreIfEnabled(options);
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Texture store optimization failed: {ex.Message}");
+        return 2;
+    }
+}
 if (options.ExportFaceMotion)
 {
     try
@@ -136,7 +158,10 @@ if (options.EmitPartPackages)
                 options.ManifestPath,
                 options.PartPackageShardCount,
                 options.PartPackageShardIndex,
-                options.RuntimeJsonOutput
+                options.RuntimeJsonOutput,
+                options.PartPackageClaimDirectory,
+                options.CompiledContentStore,
+                options.SharedContentStore
             );
             var succeeded = results.Count(result => result.Succeeded);
             var failed = results.Count - succeeded;
@@ -1020,9 +1045,11 @@ static int RunPartPackageWorkers(ConversionOptions options)
     var shardManifestPaths = Enumerable.Range(0, workers)
         .Select(index => $"{manifestPath}.shard-{index}")
         .ToList();
+    var claimDirectory = $"{manifestPath}.claims-{Guid.NewGuid():N}";
     var processes = new List<Process>();
 
     DeleteManifestShards(manifestPath);
+    Directory.CreateDirectory(claimDirectory);
     foreach (var shardManifestPath in shardManifestPaths)
     {
         if (File.Exists(manifestPath))
@@ -1031,49 +1058,76 @@ static int RunPartPackageWorkers(ConversionOptions options)
         }
     }
 
-    for (var index = 0; index < workers; index++)
+    try
     {
-        var startInfo = CreateCurrentProcessStartInfo(new[]
+        for (var index = 0; index < workers; index++)
         {
-            "--emit-part-packages",
-            "--master", options.MasterDirectory!,
-            "--asset-root", options.AssetRoot!,
-            "--out", options.OutputDirectory,
-            "--manifest", shardManifestPaths[index],
-            "--part-package-process-concurrency", "1",
-            "--part-package-shard-count", workers.ToString(CultureInfo.InvariantCulture),
-            "--part-package-shard-index", index.ToString(CultureInfo.InvariantCulture),
-            "--assetstudio-log-level", options.AssetStudioLogLevel,
-            "--runtime-json-output", options.RuntimeJsonOutput,
-        });
-        var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException($"Failed to start part package worker {index}.");
-        processes.Add(process);
-        Console.WriteLine($"Started part package worker {index + 1}/{workers}: pid {process.Id}");
-    }
+            var startInfo = CreateCurrentProcessStartInfo(new[]
+            {
+                "--emit-part-packages",
+                "--master", options.MasterDirectory!,
+                "--asset-root", options.AssetRoot!,
+                "--out", options.OutputDirectory,
+                "--manifest", shardManifestPaths[index],
+                "--part-package-process-concurrency", "1",
+                "--part-package-claim-directory", claimDirectory,
+                "--assetstudio-log-level", options.AssetStudioLogLevel,
+                "--runtime-json-output", options.RuntimeJsonOutput,
+            });
+            if (!string.IsNullOrWhiteSpace(options.CompiledContentStore))
+            {
+                startInfo.ArgumentList.Add("--compiled-content-store");
+                startInfo.ArgumentList.Add(options.CompiledContentStore);
+            }
+            if (!string.IsNullOrWhiteSpace(options.SharedContentStore))
+            {
+                startInfo.ArgumentList.Add("--shared-content-store");
+                startInfo.ArgumentList.Add(options.SharedContentStore);
+            }
+            var process = Process.Start(startInfo)
+                ?? throw new InvalidOperationException($"Failed to start part package worker {index}.");
+            processes.Add(process);
+            Console.WriteLine($"Started part package worker {index + 1}/{workers}: pid {process.Id}");
+        }
 
-    var failed = false;
-    foreach (var process in processes)
-    {
-        process.WaitForExit();
-        if (process.ExitCode != 0)
+        var failed = false;
+        foreach (var process in processes)
         {
-            Console.Error.WriteLine($"Part package worker pid {process.Id} exited with code {process.ExitCode}.");
-            failed = true;
+            process.WaitForExit();
+            if (process.ExitCode != 0)
+            {
+                Console.Error.WriteLine($"Part package worker pid {process.Id} exited with code {process.ExitCode}.");
+                failed = true;
+            }
+        }
+
+        if (failed)
+        {
+            return 2;
+        }
+
+        PartPackageExportManifest.Merge(manifestPath, shardManifestPaths);
+        DeleteManifestShards(manifestPath);
+        Console.WriteLine($"Merged {workers} part package manifest shard(s): {manifestPath}");
+        RunTextureCompactionIfEnabled(options);
+        RunContentAddressedStoreIfEnabled(options);
+        return 0;
+    }
+    finally
+    {
+        foreach (var process in processes)
+        {
+            if (!process.HasExited)
+            {
+                process.WaitForExit();
+            }
+            process.Dispose();
+        }
+        if (Directory.Exists(claimDirectory))
+        {
+            Directory.Delete(claimDirectory, recursive: true);
         }
     }
-
-    if (failed)
-    {
-        return 2;
-    }
-
-    PartPackageExportManifest.Merge(manifestPath, shardManifestPaths);
-    DeleteManifestShards(manifestPath);
-    Console.WriteLine($"Merged {workers} part package manifest shard(s): {manifestPath}");
-    RunTextureCompactionIfEnabled(options);
-    RunContentAddressedStoreIfEnabled(options);
-    return 0;
 }
 
 static void DeleteManifestShards(string manifestPath)
@@ -1179,7 +1233,8 @@ static void RunTextureCompactionIfEnabled(ConversionOptions options)
 
 static void RunContentAddressedStoreIfEnabled(ConversionOptions options)
 {
-    if (string.IsNullOrWhiteSpace(options.SharedContentStore))
+    if (string.IsNullOrWhiteSpace(options.SharedContentStore) ||
+        !string.IsNullOrWhiteSpace(options.PartPackageClaimDirectory))
     {
         return;
     }

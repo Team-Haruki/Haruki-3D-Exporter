@@ -162,9 +162,9 @@ public sealed class ContentAddressedStore
 
     private static IEnumerable<string> EnumeratePartRuntimes(string outputDirectory)
     {
-        var root = Path.Combine(outputDirectory, "parts", "_sources");
+        var root = Path.Combine(outputDirectory, "parts");
         return Directory.Exists(root)
-            ? Directory.EnumerateFiles(root, "part-runtime.msgpack.br", SearchOption.AllDirectories)
+            ? Directory.EnumerateFiles(root, "part-runtime*.msgpack.br", SearchOption.AllDirectories)
             : Array.Empty<string>();
     }
 

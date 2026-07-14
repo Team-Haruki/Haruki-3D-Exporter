@@ -63,10 +63,13 @@ public static class ConversionOptionsParser
         var partPackageProcessConcurrency = 1;
         var partPackageShardCount = 1;
         var partPackageShardIndex = 0;
+        string? partPackageClaimDirectory = null;
         var assetStudioLogLevel = "warning";
         var runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli;
         var compactTextures = false;
+        var optimizeTextureStore = false;
         string? sharedContentStore = null;
+        string? compiledContentStore = null;
         var pngOptimize = "oxipng";
         var textureCompactWorkers = 0;
 
@@ -114,6 +117,7 @@ public static class ConversionOptionsParser
                     1;
                 partPackageShardCount = config.PartPackageShardCount ?? 1;
                 partPackageShardIndex = config.PartPackageShardIndex ?? 0;
+                partPackageClaimDirectory = config.PartPackageClaimDirectory;
                 assetStudioLogLevel = string.IsNullOrWhiteSpace(config.AssetStudioLogLevel)
                     ? "warning"
                     : config.AssetStudioLogLevel!;
@@ -121,7 +125,9 @@ public static class ConversionOptionsParser
                     ? RuntimeJsonWriter.MessagePackBrotli
                     : config.RuntimeJsonOutput!;
                 compactTextures = config.CompactTextures ?? false;
+                optimizeTextureStore = config.OptimizeTextureStore ?? false;
                 sharedContentStore = config.SharedContentStore;
+                compiledContentStore = config.CompiledContentStore;
                 pngOptimize = string.IsNullOrWhiteSpace(config.PngOptimize)
                     ? "oxipng"
                     : config.PngOptimize!;
@@ -300,9 +306,21 @@ public static class ConversionOptionsParser
                 continue;
             }
 
+            if (arg is "--optimize-texture-store")
+            {
+                optimizeTextureStore = true;
+                continue;
+            }
+
             if (arg is "--shared-content-store")
             {
                 sharedContentStore = ReadValue(args, ref i, arg);
+                continue;
+            }
+
+            if (arg is "--compiled-content-store")
+            {
+                compiledContentStore = ReadValue(args, ref i, arg);
                 continue;
             }
 
@@ -330,6 +348,12 @@ public static class ConversionOptionsParser
                 continue;
             }
 
+            if (arg is "--part-package-claim-directory")
+            {
+                partPackageClaimDirectory = ReadValue(args, ref i, arg);
+                continue;
+            }
+
             if (arg is "--help" or "-?")
             {
                 return new ParseResult(false, null, "Help requested.");
@@ -344,6 +368,9 @@ public static class ConversionOptionsParser
             {
                 return new ParseResult(false, null, "Missing --motion for --export-face-motion.");
             }
+        }
+        else if (optimizeTextureStore)
+        {
         }
         else if (emitCostumeRegistries || emitPartPackages || emitRoleRuntimes)
         {
@@ -384,6 +411,7 @@ public static class ConversionOptionsParser
             !emitCostumeRegistries &&
             !emitPartPackages &&
             !emitRoleRuntimes &&
+            !optimizeTextureStore &&
             character3dId is null &&
             string.IsNullOrWhiteSpace(head))
         {
@@ -469,10 +497,13 @@ public static class ConversionOptionsParser
                 partPackageProcessConcurrency,
                 partPackageShardCount,
                 partPackageShardIndex,
+                string.IsNullOrWhiteSpace(partPackageClaimDirectory) ? null : partPackageClaimDirectory,
                 assetStudioLogLevel.Trim().ToLowerInvariant(),
                 RuntimeJsonWriter.NormalizeMode(runtimeJsonOutput),
                 compactTextures,
+                optimizeTextureStore,
                 string.IsNullOrWhiteSpace(sharedContentStore) ? null : sharedContentStore,
+                string.IsNullOrWhiteSpace(compiledContentStore) ? null : compiledContentStore,
                 NormalizePngOptimizeMode(pngOptimize),
                 textureCompactWorkers
             ),

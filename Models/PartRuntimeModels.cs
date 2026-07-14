@@ -17,6 +17,27 @@ public sealed record PartRuntimePackage(
     [property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings
 );
 
+public sealed record PartRuntimeCorePackage(
+    [property: JsonPropertyName("version")] string Version,
+    [property: JsonPropertyName("nativeMeshes")] PjskUnityRuntimeNativeMeshSet NativeMeshes,
+    [property: JsonPropertyName("springBone")] PartRuntimeSpringBone SpringBone,
+    [property: JsonPropertyName("morphChannelBindings")] IReadOnlyList<HeadMorphChannel> MorphChannelBindings,
+    [property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings
+);
+
+public sealed record PartRuntimeDeltaPackage(
+    [property: JsonPropertyName("version")] string Version,
+    [property: JsonPropertyName("corePath")] string CorePath,
+    [property: JsonPropertyName("part")] PartRuntimeIdentity Part,
+    [property: JsonPropertyName("source")] PartRuntimeSource Source,
+    [property: JsonPropertyName("mount")] PartRuntimeMount Mount,
+    [property: JsonPropertyName("manifest")] object Manifest,
+    [property: JsonPropertyName("materialSlots")] IReadOnlyList<PjskSekaiRuntimeMaterialSlot> MaterialSlots,
+    [property: JsonPropertyName("textureRoles")] IReadOnlyList<PjskSekaiRuntimeTextureRole> TextureRoles,
+    [property: JsonPropertyName("characterTextures")] IReadOnlyDictionary<string, string> CharacterTextures,
+    [property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings
+);
+
 public sealed record PartRuntimeIdentity(
     [property: JsonPropertyName("costume3dId")] int Costume3dId,
     [property: JsonPropertyName("partType")] string PartType,

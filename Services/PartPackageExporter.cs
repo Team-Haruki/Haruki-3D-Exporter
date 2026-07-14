@@ -37,7 +37,10 @@ public sealed class PartPackageExporter
         string? manifestPath = null,
         int shardCount = 1,
         int shardIndex = 0,
-        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
+        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli,
+        string? claimDirectory = null,
+        string? compiledContentStore = null,
+        string? sharedContentStore = null
     )
     {
         var characterHeightMetersById = CharacterHeightResolver.LoadMetersByCharacterId(masterDirectory);
@@ -47,11 +50,24 @@ public sealed class PartPackageExporter
             .Where(HasRequiredBundleFiles)
             .ToList();
         var results = new List<PartPackageExportResult>();
+        var claims = string.IsNullOrWhiteSpace(claimDirectory)
+            ? null
+            : new PartPackageWorkClaims(claimDirectory);
+        var compiledCache = string.IsNullOrWhiteSpace(compiledContentStore) ||
+            string.IsNullOrWhiteSpace(sharedContentStore) ||
+            runtimeJsonOutput != RuntimeJsonWriter.MessagePackBrotli
+                ? null
+                : new CompiledPartCache(compiledContentStore, sharedContentStore);
         AssetStudioLoadedBundle? cachedBundle = null;
+        PartBuildCore? cachedCore = null;
         try
         {
-            foreach (var entry in SelectRepresentativePartEntries(partEntries)
-                .Where(entry => IsInShard(ShardKey(entry), shardCount, shardIndex)))
+            foreach (var entry in SelectWorkEntries(
+                SelectRepresentativePartEntries(partEntries),
+                shardCount,
+                shardIndex,
+                claims
+            ))
             {
                 var packageDirectory = Path.Combine(outputDirectory, entry.PackagePath.Replace('/', Path.DirectorySeparatorChar));
                 var runtimePath = Path.Combine(packageDirectory, "part-runtime.json");
@@ -65,6 +81,22 @@ public sealed class PartPackageExporter
                     continue;
                 }
 
+                var resolvedInput = ResolveInput(entry);
+                if (compiledCache?.TryRestore(
+                        entry,
+                        resolvedInput,
+                        assetRoot,
+                        outputDirectory,
+                        characterHeightMetersById,
+                        out var restoredResult
+                    ) == true)
+                {
+                    DeletePartExportError(packageDirectory);
+                    manifest.Update(entry.PackagePath, stamp);
+                    results.Add(restoredResult!);
+                    continue;
+                }
+
                 PartPackageExportResult result;
                 try
                 {
@@ -74,7 +106,15 @@ public sealed class PartPackageExporter
                         outputDirectory,
                         characterHeightMetersById,
                         ref cachedBundle,
+                        ref cachedCore,
                         runtimeJsonOutput
+                    );
+                    compiledCache?.Store(
+                        entry,
+                        resolvedInput,
+                        outputDirectory,
+                        result.RuntimePath,
+                        cachedBundle?.DependencyMode ?? BundleLoadDependencyMode.Default
                     );
                     manifest.Update(entry.PackagePath, stamp);
                 }
@@ -115,6 +155,27 @@ public sealed class PartPackageExporter
         return results;
     }
 
+    private static IEnumerable<PartRegistryEntry> SelectWorkEntries(
+        IReadOnlyList<PartRegistryEntry> entries,
+        int shardCount,
+        int shardIndex,
+        PartPackageWorkClaims? claims
+    )
+    {
+        foreach (var group in entries.GroupBy(ShardKey, StringComparer.Ordinal))
+        {
+            if (!IsInShard(group.Key, shardCount, shardIndex) ||
+                (claims is not null && !claims.TryClaim(group.Key)))
+            {
+                continue;
+            }
+            foreach (var entry in group)
+            {
+                yield return entry;
+            }
+        }
+    }
+
     private static IReadOnlyList<PartRegistryEntry> SelectRepresentativePartEntries(IReadOnlyList<PartRegistryEntry> entries)
     {
         return entries
@@ -124,9 +185,25 @@ public sealed class PartPackageExporter
                 .ThenBy(entry => entry.Unit ?? string.Empty, StringComparer.Ordinal)
                 .First())
             .OrderBy(entry => entry.PartType, StringComparer.Ordinal)
+            .ThenBy(ResolveBundleFamilySortKey, StringComparer.Ordinal)
             .ThenBy(entry => entry.BaseSourceKey ?? entry.SourceKey ?? entry.PackagePath, StringComparer.Ordinal)
             .ThenBy(entry => entry.PackagePath, StringComparer.Ordinal)
             .ToList();
+    }
+
+    private static string ResolveBundleFamilySortKey(PartRegistryEntry entry)
+    {
+        if (string.IsNullOrWhiteSpace(entry.BundlePath))
+        {
+            return entry.PackagePath;
+        }
+        var directory = Path.GetDirectoryName(entry.BundlePath) ?? string.Empty;
+        if (ResolveRuntimePartType(entry) == "body")
+        {
+            return directory;
+        }
+        var stem = Path.GetFileNameWithoutExtension(entry.BundlePath);
+        return Path.Combine(directory, BundleDependencyResolver.ResolveFamilyStem(stem));
     }
 
     private static string ShardKey(PartRegistryEntry entry)
@@ -184,14 +261,16 @@ public sealed class PartPackageExporter
     {
         var input = ResolveInput(entry);
         using var loadedBundle = AssetStudioLoadedBundle.Load(input);
+        PartBuildCore? core = null;
         try
         {
-            return Export(entry, assetRoot, outputDirectory, characterHeightMetersById, loadedBundle, runtimeJsonOutput);
+            return Export(entry, assetRoot, outputDirectory, characterHeightMetersById, loadedBundle, ref core, runtimeJsonOutput);
         }
         catch (MissingMaterialReferenceException ex)
         {
             using var fallbackBundle = AssetStudioLoadedBundle.Load(input, BundleLoadDependencyMode.FullDirectory);
-            var result = Export(entry, assetRoot, outputDirectory, characterHeightMetersById, fallbackBundle, runtimeJsonOutput);
+            core = null;
+            var result = Export(entry, assetRoot, outputDirectory, characterHeightMetersById, fallbackBundle, ref core, runtimeJsonOutput);
             return AddWarning(result, BuildMaterialDependencyFallbackWarning(ex));
         }
     }
@@ -202,28 +281,31 @@ public sealed class PartPackageExporter
         string outputDirectory,
         IReadOnlyDictionary<string, float> characterHeightMetersById,
         ref AssetStudioLoadedBundle? cachedBundle,
+        ref PartBuildCore? cachedCore,
         string runtimeJsonOutput
     )
     {
         var input = ResolveInput(entry);
-        if (cachedBundle is null || !IsSameLoadedInput(cachedBundle.Input, input))
+        if (cachedBundle is null || !cachedBundle.TrySelectInput(input))
         {
             cachedBundle?.Dispose();
             cachedBundle = AssetStudioLoadedBundle.Load(input);
+            cachedCore = null;
         }
 
         try
         {
-            return Export(entry, assetRoot, outputDirectory, characterHeightMetersById, cachedBundle, runtimeJsonOutput);
+            return Export(entry, assetRoot, outputDirectory, characterHeightMetersById, cachedBundle, ref cachedCore, runtimeJsonOutput);
         }
         catch (MissingMaterialReferenceException ex) when (cachedBundle.DependencyMode != BundleLoadDependencyMode.FullDirectory)
         {
             cachedBundle.Dispose();
             cachedBundle = AssetStudioLoadedBundle.Load(input, BundleLoadDependencyMode.FullDirectory);
+            cachedCore = null;
             PartPackageExportResult result;
             try
             {
-                result = Export(entry, assetRoot, outputDirectory, characterHeightMetersById, cachedBundle, runtimeJsonOutput);
+                result = Export(entry, assetRoot, outputDirectory, characterHeightMetersById, cachedBundle, ref cachedCore, runtimeJsonOutput);
             }
             catch (MissingMaterialReferenceException fallbackEx)
             {
@@ -242,6 +324,7 @@ public sealed class PartPackageExporter
         string outputDirectory,
         IReadOnlyDictionary<string, float>? characterHeightMetersById,
         AssetStudioLoadedBundle loadedBundle,
+        ref PartBuildCore? cachedCore,
         string runtimeJsonOutput
     )
     {
@@ -250,44 +333,111 @@ public sealed class PartPackageExporter
         var normalizedType = ResolveRuntimePartType(entry);
         var input = loadedBundle.Input;
 
-        var inventory = parser.Parse(input, loadedBundle.PrimaryObjects, loadedBundle.Objects, loadedBundle.AssetsFileCount);
-        WriteBundleOpenSummary(packageDirectory, entry, input, loadedBundle.DependencyMode, inventory);
-        var imported = modelFactory.CreateImportedModel(
-            input,
-            loadedBundle.PrimaryObjects,
-            normalizedType is "head" or "hair"
-                ? SelectHeadRootName(inventory)
-                : normalizedType == "head_optional" ? SelectAccessoryRootName(inventory) : null
-        );
+        var buildKey = ShardKey(entry);
+        var rebuiltCore = false;
+        if (cachedCore is null ||
+            !string.Equals(cachedCore.Key, buildKey, StringComparison.Ordinal) ||
+            !string.Equals(cachedCore.Input.ResolvedBundlePath, input.ResolvedBundlePath, StringComparison.Ordinal))
+        {
+            var inventory = parser.Parse(input, loadedBundle.PrimaryObjects, loadedBundle.Objects, loadedBundle.AssetsFileCount);
+            var imported = modelFactory.CreateImportedModel(
+                input,
+                loadedBundle.PrimaryObjects,
+                normalizedType is "head" or "hair"
+                    ? SelectHeadRootName(inventory)
+                    : normalizedType == "head_optional" ? SelectAccessoryRootName(inventory) : null
+            );
+            var baseTextures = textureExporter.ExportPartTextures(
+                packageDirectory,
+                outputDirectory,
+                normalizedType,
+                inventory
+            );
+            var springBone = springBoneExporter.Export(input, loadedBundle.PrimaryObjects);
+            var runtimeSpringBone = BuildPartSpringBone(normalizedType, springBone);
+            var nativeMeshes = ExportNativeMeshes(normalizedType, imported, runtimeSpringBone);
+            var builtMaterialSlots = BuildMaterialSlots(
+                normalizedType,
+                inventory,
+                baseTextures,
+                imported,
+                nativeMeshes
+            );
+            var nativeDeduplication = DeduplicateNativeMeshes(nativeMeshes, builtMaterialSlots.Slots);
+            cachedCore = new PartBuildCore(
+                buildKey,
+                input,
+                inventory,
+                springBone,
+                runtimeSpringBone,
+                nativeDeduplication.NativeMeshes,
+                builtMaterialSlots,
+                nativeDeduplication.Warnings,
+                baseTextures,
+                normalizedType is "head" or "hair"
+                    ? ReadHeadMorphBindings(imported)
+                    : Array.Empty<HeadMorphChannel>()
+            );
+            rebuiltCore = true;
+        }
+        var core = cachedCore;
         var overrideTextures = entry.ColorVariationBundlePath is not null
             ? modelFactory.CreateImportedTextures(entry.ColorVariationBundlePath)
             : Array.Empty<ImportedTexture>();
         var textures = textureExporter.ExportPartTextures(
             packageDirectory,
+            outputDirectory,
             normalizedType,
-            inventory,
-            overrideTextures
+            core.Inventory,
+            overrideTextures,
+            core.BaseTextures
         );
-        var springBone = springBoneExporter.Export(input, loadedBundle.PrimaryObjects);
-        var runtimeSpringBone = BuildPartSpringBone(normalizedType, springBone);
-        var nativeMeshes = ExportNativeMeshes(normalizedType, imported, runtimeSpringBone);
-        var builtMaterialSlots = BuildMaterialSlots(normalizedType, inventory, textures, imported, nativeMeshes);
         var colorVariationSlots = ApplyColorVariationTextureOverrides(
             normalizedType,
-            builtMaterialSlots.Slots,
+            core.MaterialSlots.Slots,
             overrideTextures,
             textures
         );
-        var nativeDeduplication = DeduplicateNativeMeshes(nativeMeshes, colorVariationSlots);
-        nativeMeshes = nativeDeduplication.NativeMeshes;
         var materialSlots = FilterMaterialSlotsForNativeMeshes(
             normalizedType,
             colorVariationSlots,
-            nativeMeshes
+            core.NativeMeshes
         );
         var textureRoles = BuildTextureRoles(materialSlots);
-        var package = new PartRuntimePackage(
-            Version: "0414-part-2",
+        var coreWarnings = core.NativeMeshes.Warnings
+            .Concat(core.RuntimeSpringBone.Warnings)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var deltaWarnings = entry.Warnings
+            .Concat(core.MaterialSlots.Warnings)
+            .Concat(core.NativeDeduplicationWarnings)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var coreKey = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(ShardKey(entry)))
+        ).ToLowerInvariant();
+        var coreRuntimeRelativePath = $"parts/_cores/{normalizedType}/{coreKey}/part-runtime-core.json";
+        var coreRuntimePath = Path.Combine(
+            outputDirectory,
+            coreRuntimeRelativePath.Replace('/', Path.DirectorySeparatorChar)
+        );
+        if (rebuiltCore || !RuntimeJsonWriter.OutputsExist(coreRuntimePath, runtimeJsonOutput))
+        {
+            WriteJson(
+                coreRuntimePath,
+                new PartRuntimeCorePackage(
+                    Version: "0415-part-core-1",
+                    NativeMeshes: core.NativeMeshes,
+                    SpringBone: core.RuntimeSpringBone,
+                    MorphChannelBindings: core.MorphChannelBindings,
+                    Warnings: coreWarnings
+                ),
+                runtimeJsonOutput
+            );
+        }
+        var package = new PartRuntimeDeltaPackage(
+            Version: "0415-part-delta-1",
+            CorePath: coreRuntimeRelativePath,
             Part: new PartRuntimeIdentity(
                 Costume3dId: entry.Costume3dId,
                 PartType: normalizedType,
@@ -305,71 +455,22 @@ public sealed class PartPackageExporter
                 ColorVariationBundlePath: entry.ColorVariationBundlePath,
                 AssetRootRelativeBundlePath: TryRelativePath(assetRoot, input.ResolvedBundlePath)
             ),
-            Mount: BuildMount(entry, inventory, normalizedType, springBone),
-            Manifest: BuildManifest(entry, input, inventory, normalizedType, characterHeightMetersById),
-            NativeMeshes: nativeMeshes,
+            Mount: BuildMount(entry, core.Inventory, normalizedType, core.SpringBone),
+            Manifest: BuildManifest(entry, input, core.Inventory, normalizedType, characterHeightMetersById),
             MaterialSlots: materialSlots,
             TextureRoles: textureRoles,
             CharacterTextures: textures,
-            SpringBone: runtimeSpringBone,
-            MorphChannelBindings: normalizedType is "head" or "hair"
-                ? ReadHeadMorphBindings(imported)
-                : Array.Empty<HeadMorphChannel>(),
-            Warnings: entry.Warnings
-                .Concat(nativeMeshes.Warnings)
-                .Concat(builtMaterialSlots.Warnings)
-                .Concat(nativeDeduplication.Warnings)
-                .Concat(runtimeSpringBone.Warnings)
-                .Distinct(StringComparer.Ordinal)
-                .ToList()
+            Warnings: deltaWarnings
         );
 
         var runtimePath = Path.Combine(packageDirectory, "part-runtime.json");
         WriteJson(runtimePath, package, runtimeJsonOutput);
         DeletePartExportError(packageDirectory);
-        return new PartPackageExportResult(entry, RuntimeJsonWriter.PrimaryPath(runtimePath, runtimeJsonOutput), package.Warnings);
-    }
-
-    private static void WriteBundleOpenSummary(
-        string packageDirectory,
-        PartRegistryEntry entry,
-        ResolvedBundleInput input,
-        BundleLoadDependencyMode dependencyMode,
-        BundleInventory inventory
-    )
-    {
-        var path = Path.Combine(packageDirectory, "bundle-open-summary.json");
-        File.WriteAllText(path, JsonSerializer.Serialize(new
-        {
-            status = "opened",
-            dependencyMode = dependencyMode.ToString(),
-            input = new
-            {
-                originalPath = input.OriginalInputPath,
-                resolvedBundlePath = input.ResolvedBundlePath,
-                partKind = input.PartKind.ToString(),
-                characterId = input.CharacterId,
-                bundleStem = input.BundleStem,
-            },
-            part = new
-            {
-                costume3dId = entry.Costume3dId,
-                partType = entry.PartType,
-                packagePath = entry.PackagePath,
-                sourcePackagePath = entry.SourcePackagePath,
-            },
-            inventory = new
-            {
-                assetsFileCount = inventory.AssetsFileCount,
-                objectCount = inventory.ObjectCount,
-                objectTypeCounts = inventory.ObjectTypeCounts,
-                rootCount = inventory.Roots.Count,
-                roots = inventory.Roots,
-                skinnedMeshCount = inventory.SkinnedMeshes.Count,
-                staticMeshCount = inventory.StaticMeshes.Count,
-                materialCount = inventory.Materials.Count,
-            },
-        }, WriteJsonOptions));
+        return new PartPackageExportResult(
+            entry,
+            RuntimeJsonWriter.PrimaryPath(runtimePath, runtimeJsonOutput),
+            coreWarnings.Concat(deltaWarnings).Distinct(StringComparer.Ordinal).ToList()
+        );
     }
 
     private static void DeletePartExportError(string packageDirectory)
@@ -393,13 +494,6 @@ public sealed class PartPackageExporter
             ? resolver.ResolveBody(entry.BundlePath)
             : resolver.ResolveHead(entry.BundlePath);
         return input with { CharacterId = entry.CharacterId.ToString("00") };
-    }
-
-    private static bool IsSameLoadedInput(ResolvedBundleInput current, ResolvedBundleInput next)
-    {
-        return string.Equals(current.ResolvedBundlePath, next.ResolvedBundlePath, StringComparison.Ordinal) &&
-            current.PartKind == next.PartKind &&
-            string.Equals(current.CharacterId, next.CharacterId, StringComparison.Ordinal);
     }
 
     private static PartPackageExportResult AddWarning(PartPackageExportResult result, string warning)
@@ -642,6 +736,19 @@ public sealed class PartPackageExporter
     private sealed record BuiltMaterialSlots(
         IReadOnlyList<PjskSekaiRuntimeMaterialSlot> Slots,
         IReadOnlyList<string> Warnings
+    );
+
+    private sealed record PartBuildCore(
+        string Key,
+        ResolvedBundleInput Input,
+        BundleInventory Inventory,
+        SpringBoneExport SpringBone,
+        PartRuntimeSpringBone RuntimeSpringBone,
+        PjskUnityRuntimeNativeMeshSet NativeMeshes,
+        BuiltMaterialSlots MaterialSlots,
+        IReadOnlyList<string> NativeDeduplicationWarnings,
+        IReadOnlyDictionary<string, string> BaseTextures,
+        IReadOnlyList<HeadMorphChannel> MorphChannelBindings
     );
 
     private sealed record NativeMeshDeduplicationResult(

@@ -23,10 +23,13 @@ public sealed record ConversionOptions(
     int PartPackageProcessConcurrency,
     int PartPackageShardCount,
     int PartPackageShardIndex,
+    string? PartPackageClaimDirectory,
     string AssetStudioLogLevel,
     string RuntimeJsonOutput,
     bool CompactTextures,
+    bool OptimizeTextureStore,
     string? SharedContentStore,
+    string? CompiledContentStore,
     string PngOptimizeMode,
     int TextureCompactWorkers
 );

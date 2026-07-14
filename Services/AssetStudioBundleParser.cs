@@ -1,7 +1,5 @@
 using AssetStudio;
 using PjskBundle2Parts.Models;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Processing;
 using Object = AssetStudio.Object;
 
 namespace PjskBundle2Parts.Services;
@@ -175,7 +173,7 @@ public sealed class AssetStudioBundleParser
 
     private static byte[]? ConvertTextureToPng(Texture2D texture)
     {
-        using var stream = texture.ConvertToStream(ImageFormat.Png, true);
+        using var stream = texture.ConvertToStream(ImageFormat.Png, false);
         if (stream is null)
         {
             return null;
@@ -185,10 +183,8 @@ public sealed class AssetStudioBundleParser
         {
             stream.Position = 0;
         }
-        using var image = Image.Load(stream);
-        image.Mutate(x => x.Flip(FlipMode.Vertical));
         using var output = new MemoryStream();
-        image.SaveAsPng(output);
+        stream.CopyTo(output);
         return output.ToArray();
     }
 
