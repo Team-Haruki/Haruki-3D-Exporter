@@ -25,6 +25,7 @@ if (options.OptimizeTextureStore)
     {
         var report = new TextureCompactor().OptimizeStore(
             options.OutputDirectory,
+            options.RuntimeJsonOutput,
             options.PngOptimizeMode,
             options.TextureCompactWorkers
         );
@@ -1042,21 +1043,10 @@ static int RunPartPackageWorkers(ConversionOptions options)
     var workers = ResolvePartPackageProcessConcurrency(options);
     var manifestPath = options.ManifestPath
         ?? Path.Combine(options.OutputDirectory, "haruki-3d-export-manifest.json");
-    var shardManifestPaths = Enumerable.Range(0, workers)
-        .Select(index => $"{manifestPath}.shard-{index}")
-        .ToList();
     var claimDirectory = $"{manifestPath}.claims-{Guid.NewGuid():N}";
     var processes = new List<Process>();
 
-    DeleteManifestShards(manifestPath);
     Directory.CreateDirectory(claimDirectory);
-    foreach (var shardManifestPath in shardManifestPaths)
-    {
-        if (File.Exists(manifestPath))
-        {
-            File.Copy(manifestPath, shardManifestPath);
-        }
-    }
 
     try
     {
@@ -1068,7 +1058,7 @@ static int RunPartPackageWorkers(ConversionOptions options)
                 "--master", options.MasterDirectory!,
                 "--asset-root", options.AssetRoot!,
                 "--out", options.OutputDirectory,
-                "--manifest", shardManifestPaths[index],
+                "--manifest", manifestPath,
                 "--part-package-process-concurrency", "1",
                 "--part-package-claim-directory", claimDirectory,
                 "--assetstudio-log-level", options.AssetStudioLogLevel,
@@ -1106,9 +1096,17 @@ static int RunPartPackageWorkers(ConversionOptions options)
             return 2;
         }
 
-        PartPackageExportManifest.Merge(manifestPath, shardManifestPaths);
-        DeleteManifestShards(manifestPath);
-        Console.WriteLine($"Merged {workers} part package manifest shard(s): {manifestPath}");
+        var registry = new CostumeRegistryExporter().ExportInMemory(
+            options.MasterDirectory!,
+            options.AssetRoot!
+        );
+        PartPackageExportManifest.Rebuild(
+            manifestPath,
+            options.OutputDirectory,
+            options.RuntimeJsonOutput,
+            registry.PartRegistry.Entries
+        );
+        Console.WriteLine($"Rebuilt part package manifest: {manifestPath}");
         RunTextureCompactionIfEnabled(options);
         RunContentAddressedStoreIfEnabled(options);
         return 0;
@@ -1126,24 +1124,6 @@ static int RunPartPackageWorkers(ConversionOptions options)
         if (Directory.Exists(claimDirectory))
         {
             Directory.Delete(claimDirectory, recursive: true);
-        }
-    }
-}
-
-static void DeleteManifestShards(string manifestPath)
-{
-    var directory = Path.GetDirectoryName(Path.GetFullPath(manifestPath))!;
-    if (!Directory.Exists(directory))
-    {
-        return;
-    }
-
-    var prefix = Path.GetFileName(manifestPath) + ".shard-";
-    foreach (var path in Directory.EnumerateFiles(directory))
-    {
-        if (Path.GetFileName(path).StartsWith(prefix, StringComparison.Ordinal))
-        {
-            File.Delete(path);
         }
     }
 }

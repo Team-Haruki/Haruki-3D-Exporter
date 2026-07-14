@@ -16,6 +16,7 @@ public sealed class TextureCompactor
 
     public TextureStoreOptimizationReport OptimizeStore(
         string outputDirectory,
+        string runtimeJsonOutput,
         string pngOptimizeMode,
         int workers
     )
@@ -26,7 +27,7 @@ public sealed class TextureCompactor
             : new List<string>();
         var mode = NormalizePngOptimizeMode(pngOptimizeMode);
         var workerCount = ResolveWorkerCount(workers);
-        var results = new ConcurrentBag<(long Before, long After, bool Changed)>();
+        var results = new ConcurrentBag<TextureOptimizationResult>();
         var errors = new ConcurrentBag<Exception>();
         Parallel.ForEach(files, new ParallelOptions { MaxDegreeOfParallelism = workerCount }, path =>
         {
@@ -35,7 +36,7 @@ public sealed class TextureCompactor
                 var before = new FileInfo(path).Length;
                 if (mode != "oxipng")
                 {
-                    results.Add((before, before, false));
+                    results.Add(new TextureOptimizationResult(path, null, before, before));
                     return;
                 }
                 var temporaryPath = path + $".{Guid.NewGuid():N}.optimize.png";
@@ -46,12 +47,28 @@ public sealed class TextureCompactor
                     var after = new FileInfo(temporaryPath).Length;
                     if (after < before)
                     {
-                        File.Move(temporaryPath, path, overwrite: true);
-                        results.Add((before, after, true));
+                        var optimizedHash = ComputeSha256Hex(temporaryPath);
+                        var optimizedDirectory = Path.Combine(root, optimizedHash[..2]);
+                        var optimizedPath = Path.Combine(optimizedDirectory, optimizedHash + ".png");
+                        Directory.CreateDirectory(optimizedDirectory);
+                        try
+                        {
+                            File.Move(temporaryPath, optimizedPath);
+                        }
+                        catch (IOException) when (File.Exists(optimizedPath))
+                        {
+                            File.Delete(temporaryPath);
+                        }
+                        results.Add(new TextureOptimizationResult(
+                            path,
+                            $"/_texture_store/sha256/{optimizedHash[..2]}/{optimizedHash}.png",
+                            before,
+                            new FileInfo(optimizedPath).Length
+                        ));
                     }
                     else
                     {
-                        results.Add((before, before, false));
+                        results.Add(new TextureOptimizationResult(path, null, before, before));
                     }
                 }
                 finally
@@ -65,10 +82,30 @@ public sealed class TextureCompactor
             }
         });
         ThrowIfAny(errors, "Texture store optimization failed");
+        var replacements = results
+            .Where(result => result.RuntimePath is not null)
+            .ToDictionary(
+                result => Path.GetFullPath(result.OriginalPath),
+                result => result.RuntimePath!,
+                StringComparer.Ordinal
+            );
+        if (replacements.Count > 0)
+        {
+            var runtimeFiles = EnumerateRuntimeJsonFiles(outputDirectory).ToList();
+            RewriteRuntimeJsonFiles(
+                runtimeFiles,
+                outputDirectory,
+                replacements,
+                runtimeJsonOutput,
+                workerCount
+            );
+            ValidateRuntimeTexturePaths(runtimeFiles, outputDirectory, workerCount);
+            DeleteReplacedTextureFiles(replacements.Keys, outputDirectory, workerCount);
+        }
         var report = new TextureStoreOptimizationReport(
             Version: 1,
             TextureFileCount: files.Count,
-            OptimizedFileCount: results.Count(result => result.Changed),
+            OptimizedFileCount: replacements.Count,
             OriginalBytes: results.Sum(result => result.Before),
             StoredBytes: results.Sum(result => result.After),
             SavedBytes: results.Sum(result => result.Before - result.After),
@@ -81,6 +118,13 @@ public sealed class TextureCompactor
         );
         return report;
     }
+
+    private sealed record TextureOptimizationResult(
+        string OriginalPath,
+        string? RuntimePath,
+        long Before,
+        long After
+    );
 
     public TextureCompactionReport Compact(
         string outputDirectory,

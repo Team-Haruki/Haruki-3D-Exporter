@@ -16,10 +16,11 @@ public sealed class PartPackageWorkClaims
     public bool TryClaim(string packagePath)
     {
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(packagePath))).ToLowerInvariant();
+        var claimPath = Path.Combine(directory, hash + ".claim");
         try
         {
             using var claim = new FileStream(
-                Path.Combine(directory, hash + ".claim"),
+                claimPath,
                 FileMode.CreateNew,
                 FileAccess.Write,
                 FileShare.Read
@@ -28,7 +29,7 @@ public sealed class PartPackageWorkClaims
             writer.Write(packagePath);
             return true;
         }
-        catch (IOException)
+        catch (IOException) when (File.Exists(claimPath))
         {
             return false;
         }

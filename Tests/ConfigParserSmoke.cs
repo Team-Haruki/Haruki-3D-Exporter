@@ -362,7 +362,12 @@ var directTexturePath = directTextureStore.StorePng(directTextureBytes);
 Expect(directTexturePath.StartsWith("/_texture_store/sha256/", StringComparison.Ordinal), "direct texture store returns a root-relative CAS URI");
 Expect(directTextureStore.StorePng(directTextureBytes) == directTexturePath, "direct texture store reuses exact texture bytes");
 Expect(Directory.EnumerateFiles(directTextureRoot, "*.png", SearchOption.AllDirectories).Count() == 1, "direct texture store writes one file per exact texture hash");
-var storeOptimization = new TextureCompactor().OptimizeStore(directTextureRoot, "off", 2);
+var storeOptimization = new TextureCompactor().OptimizeStore(
+    directTextureRoot,
+    RuntimeJsonWriter.MessagePackBrotli,
+    "off",
+    2
+);
 Expect(storeOptimization.TextureFileCount == 1 && storeOptimization.OptimizedFileCount == 0, "standalone texture optimizer scans the direct store without rewriting in off mode");
 
 var motionValuesPath = Path.Combine(writerDir, "motion-values.json");
@@ -1248,16 +1253,9 @@ Expect(
     failedPartGuard >= 0 && failedPartExit > failedPartGuard && failedPartExit < failedPartCompaction,
     "part package failures exit nonzero before texture compaction"
 );
-Expect(programSource.Contains("DeleteManifestShards(manifestPath);"), "part worker orchestration clears every historical shard manifest");
-var manifestMerge = programSource.IndexOf("PartPackageExportManifest.Merge(manifestPath, shardManifestPaths);", StringComparison.Ordinal);
-var mergedManifestShardCleanup = manifestMerge < 0
-    ? -1
-    : programSource.IndexOf("DeleteManifestShards(manifestPath);", manifestMerge, StringComparison.Ordinal);
-Expect(
-    manifestMerge >= 0 && mergedManifestShardCleanup > manifestMerge,
-    "part worker orchestration deletes manifest shards only after a successful merge"
-);
-Expect(partPackageExporterSource.Contains("previous != pair.Value"), "manifest merge ignores unchanged baseline stamps from other shards");
+Expect(!programSource.Contains("shardManifestPaths"), "part worker orchestration does not create manifest shards");
+Expect(programSource.Contains("PartPackageExportManifest.Rebuild("), "parent rebuilds one canonical manifest after worker success");
+Expect(partPackageExporterSource.Contains("if (claims is null)"), "claim workers treat the shared baseline manifest as read-only");
 Expect(pjskRuntimeBuilderSource.Contains("SpringManager.FindSpringBones(true) ownership is authoritative"), "runtime builder documents hierarchy-based SpringManager ownership");
 Expect(!pjskRuntimeBuilderSource.Contains("SpringManager.springBones references remain authoritative"), "runtime builder does not treat serialized springBones as authoritative");
 Expect(
@@ -1333,14 +1331,14 @@ Expect(assetStudioBundleParserSource.Contains("ConvertToStream(ImageFormat.Png, 
 Expect(!assetStudioBundleParserSource.Contains("Image.Load"), "bundle parser does not decode and re-encode exported PNGs");
 Expect(assetStudioImportedModelFactorySource.Contains("typeof(bool)"), "part model conversion uses AssetStudio's no-texture constructor when available");
 Expect(assetStudioImportedModelFactorySource.Contains("false,"), "part model conversion disables unused ModelConverter textures");
-Expect(!assetStudioImportedModelFactorySource.Contains("NormalizeTextureOrientation"), "part model conversion does not decode and flip textures a second time");
+Expect(assetStudioImportedModelFactorySource.Contains("NormalizeTextureOrientation(legacyImported.TextureList)"), "legacy AssetStudio fallback preserves texture orientation");
 Expect(partPackageExporterSource.Contains("MaterialIdentityLookup"), "part package exporter resolves materials by identity");
 Expect(!partPackageExporterSource.Contains("BuildMaterialMap"), "part package exporter no longer indexes materials by display name");
 Expect(partPackageExporterSource.Contains("part-export-error.json"), "part package exporter writes per-package errors during full export");
 Expect(partPackageExporterSource.Contains("Part package export skipped"), "part package exporter continues after per-package export failures");
 Expect(partPackageExporterSource.Contains("DeletePartExportError"), "part package exporter removes stale per-package errors after success");
 Expect(partPackageExporterSource.Contains("IsInShard"), "part package exporter can filter deterministic shards");
-Expect(partPackageExporterSource.Contains("public static void Merge"), "part package exporter can merge worker manifests");
+Expect(partPackageExporterSource.Contains("public static void Rebuild"), "part package exporter rebuilds one canonical worker manifest");
 Expect(!partPackageExporterSource.Contains("bundle-open-summary.json"), "part package exporter omits per-package debug summaries from production output");
 Expect(partPackageExporterSource.Contains("missing_after_fallback"), "part package exporter marks material failures after full-directory fallback");
 Expect(assetStudioLoadedBundleSource.Contains("BundleDependencyResolver.ResolveLoadBundlePaths"), "loaded bundle uses shared dependency resolver");

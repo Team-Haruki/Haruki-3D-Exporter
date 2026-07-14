@@ -108,7 +108,9 @@ public sealed class CompiledPartCache
         result = new PartPackageExportResult(
             entry,
             RuntimeJsonWriter.MessagePackBrotliPath(runtimePath),
-            warnings
+            warnings,
+            CoreRuntimePath: RuntimeJsonWriter.MessagePackBrotliPath(corePath),
+            TextureHashes: cached.TextureHashes
         );
         return true;
     }
@@ -116,37 +118,25 @@ public sealed class CompiledPartCache
     public void Store(
         PartRegistryEntry entry,
         ResolvedBundleInput input,
-        string outputDirectory,
-        string runtimePath,
+        PartPackageExportResult result,
         BundleLoadDependencyMode dependencyMode
     )
     {
+        var runtimePath = result.RuntimePath;
         if (!runtimePath.EndsWith(".msgpack.br", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+        if (result.CoreRuntimePath is not { } corePath ||
+            !corePath.EndsWith(".msgpack.br", StringComparison.OrdinalIgnoreCase) ||
+            !File.Exists(corePath))
         {
             return;
         }
         var lookupFingerprint = Fingerprint(entry, input, BundleLoadDependencyMode.Default);
         var cachePath = EntryPath(lookupFingerprint);
-        var runtimeJsonPath = runtimePath[..^".msgpack.br".Length] + ".json";
-        using var delta = RuntimeJsonWriter.ReadJsonDocument(runtimeJsonPath, RuntimeJsonWriter.MessagePackBrotli);
-        if (!delta.RootElement.TryGetProperty("corePath", out var corePathNode))
-        {
-            return;
-        }
-        var coreRelativePath = corePathNode.GetString();
-        if (string.IsNullOrWhiteSpace(coreRelativePath))
-        {
-            return;
-        }
-        var corePath = RuntimeJsonWriter.MessagePackBrotliPath(Path.Combine(
-            outputDirectory,
-            coreRelativePath.Replace('/', Path.DirectorySeparatorChar)
-        ));
-        if (!File.Exists(corePath))
-        {
-            return;
-        }
-        var textureHashes = EnumerateTextureHashes(delta.RootElement).Distinct(StringComparer.Ordinal).ToList();
+        var textureHashes = result.TextureHashes?.Distinct(StringComparer.Ordinal).ToList()
+            ?? new List<string>();
         var cached = new CompiledPartCacheEntry(
             Schema,
             Fingerprint(entry, input, dependencyMode),
@@ -313,47 +303,6 @@ public sealed class CompiledPartCache
         if (manifest["source"] is JsonObject source)
         {
             source["bundleRoot"] = input.ResolvedBundlePath;
-        }
-    }
-
-    private static IEnumerable<string> EnumerateTextureHashes(JsonElement delta)
-    {
-        foreach (var text in EnumerateStrings(delta))
-        {
-            const string prefix = "/_texture_store/sha256/";
-            if (!text.StartsWith(prefix, StringComparison.Ordinal))
-            {
-                continue;
-            }
-            var hash = Path.GetFileNameWithoutExtension(text);
-            if (hash.Length == 64 && hash.All(Uri.IsHexDigit))
-            {
-                yield return hash.ToLowerInvariant();
-            }
-        }
-    }
-
-    private static IEnumerable<string> EnumerateStrings(JsonElement value)
-    {
-        if (value.ValueKind == JsonValueKind.String && value.GetString() is { } text)
-        {
-            yield return text;
-        }
-        else if (value.ValueKind == JsonValueKind.Object)
-        {
-            foreach (var property in value.EnumerateObject())
-            foreach (var nestedText in EnumerateStrings(property.Value))
-            {
-                yield return nestedText;
-            }
-        }
-        else if (value.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var item in value.EnumerateArray())
-            foreach (var nestedText in EnumerateStrings(item))
-            {
-                yield return nestedText;
-            }
         }
     }
 

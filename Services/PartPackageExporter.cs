@@ -74,7 +74,7 @@ public sealed class PartPackageExporter
                 var runtimeOutputPath = RuntimeJsonWriter.PrimaryPath(runtimePath, runtimeJsonOutput);
                 var stamp = PartPackageInputStamp.From(entry);
                 if (manifest.CanSkip(entry.PackagePath, runtimeOutputPath, stamp) &&
-                    RuntimePackageHasCharacterHeight(runtimePath, runtimeJsonOutput))
+                    RuntimePackageCanSkip(runtimePath, outputDirectory, runtimeJsonOutput))
                 {
                     DeletePartExportError(packageDirectory);
                     results.Add(new PartPackageExportResult(entry, runtimeOutputPath, Array.Empty<string>()));
@@ -112,8 +112,7 @@ public sealed class PartPackageExporter
                     compiledCache?.Store(
                         entry,
                         resolvedInput,
-                        outputDirectory,
-                        result.RuntimePath,
+                        result,
                         cachedBundle?.DependencyMode ?? BundleLoadDependencyMode.Default
                     );
                     manifest.Update(entry.PackagePath, stamp);
@@ -150,7 +149,10 @@ public sealed class PartPackageExporter
         {
             cachedBundle?.Dispose();
         }
-        manifest.Save();
+        if (claims is null)
+        {
+            manifest.Save();
+        }
 
         return results;
     }
@@ -469,7 +471,14 @@ public sealed class PartPackageExporter
         return new PartPackageExportResult(
             entry,
             RuntimeJsonWriter.PrimaryPath(runtimePath, runtimeJsonOutput),
-            coreWarnings.Concat(deltaWarnings).Distinct(StringComparer.Ordinal).ToList()
+            coreWarnings.Concat(deltaWarnings).Distinct(StringComparer.Ordinal).ToList(),
+            CoreRuntimePath: RuntimeJsonWriter.PrimaryPath(coreRuntimePath, runtimeJsonOutput),
+            TextureHashes: textures.Values
+                .Select(path => Path.GetFileNameWithoutExtension(path) ?? string.Empty)
+                .Where(hash => hash.Length == 64 && hash.All(Uri.IsHexDigit))
+                .Select(hash => hash.ToLowerInvariant())
+                .Distinct(StringComparer.Ordinal)
+                .ToList()
         );
     }
 
@@ -1165,7 +1174,11 @@ public sealed class PartPackageExporter
         };
     }
 
-    private static bool RuntimePackageHasCharacterHeight(string runtimePath, string runtimeJsonOutput)
+    private static bool RuntimePackageCanSkip(
+        string runtimePath,
+        string outputDirectory,
+        string runtimeJsonOutput
+    )
     {
         if (!RuntimeJsonWriter.OutputsExist(runtimePath, runtimeJsonOutput))
         {
@@ -1175,7 +1188,25 @@ public sealed class PartPackageExporter
         try
         {
             using var document = RuntimeJsonWriter.ReadJsonDocument(runtimePath, runtimeJsonOutput);
-            return document.RootElement.TryGetProperty("manifest", out var manifest) &&
+            if (!document.RootElement.TryGetProperty("version", out var version) ||
+                version.GetString() != "0415-part-delta-1" ||
+                !document.RootElement.TryGetProperty("corePath", out var corePathNode) ||
+                string.IsNullOrWhiteSpace(corePathNode.GetString()))
+            {
+                return false;
+            }
+            var coreRelativePath = corePathNode.GetString()!;
+            if (Path.IsPathRooted(coreRelativePath) ||
+                coreRelativePath.Split('/', '\\').Any(segment => segment is "." or ".."))
+            {
+                return false;
+            }
+            var corePath = Path.Combine(
+                outputDirectory,
+                coreRelativePath.Replace('/', Path.DirectorySeparatorChar)
+            );
+            return RuntimeJsonWriter.OutputsExist(corePath, runtimeJsonOutput) &&
+                document.RootElement.TryGetProperty("manifest", out var manifest) &&
                 manifest.TryGetProperty("characterHeightMeters", out var height) &&
                 height.ValueKind == JsonValueKind.Number &&
                 height.GetSingle() > 0f;
@@ -1741,7 +1772,9 @@ public sealed record PartPackageExportResult(
     PartRegistryEntry Entry,
     string RuntimePath,
     IReadOnlyList<string> Warnings,
-    bool Succeeded = true
+    bool Succeeded = true,
+    string? CoreRuntimePath = null,
+    IReadOnlyList<string>? TextureHashes = null
 );
 
 public sealed class PartPackageExportManifest
@@ -1808,36 +1841,47 @@ public sealed class PartPackageExportManifest
         File.WriteAllText(manifestPath, JsonSerializer.Serialize(packages, JsonOptions));
     }
 
-    public static void Merge(string manifestPath, IEnumerable<string> shardManifestPaths)
+    public static void Rebuild(
+        string manifestPath,
+        string outputDirectory,
+        string runtimeJsonOutput,
+        IEnumerable<PartRegistryEntry> entries
+    )
     {
-        var baseline = File.Exists(manifestPath)
-            ? JsonSerializer.Deserialize<Dictionary<string, PartPackageInputStamp>>(
-                File.ReadAllText(manifestPath),
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-            ) ?? new Dictionary<string, PartPackageInputStamp>(StringComparer.Ordinal)
-            : new Dictionary<string, PartPackageInputStamp>(StringComparer.Ordinal);
-        var merged = new Dictionary<string, PartPackageInputStamp>(baseline, StringComparer.Ordinal);
-        foreach (var shardManifestPath in shardManifestPaths.Where(File.Exists))
-        {
-            var packages = JsonSerializer.Deserialize<Dictionary<string, PartPackageInputStamp>>(
-                File.ReadAllText(shardManifestPath),
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-            ) ?? new Dictionary<string, PartPackageInputStamp>(StringComparer.Ordinal);
-            foreach (var pair in packages)
-            {
-                if (!baseline.TryGetValue(pair.Key, out var previous) || previous != pair.Value)
-                {
-                    merged[pair.Key] = pair.Value;
-                }
-            }
-        }
+        var rebuilt = entries
+            .Where(entry => entry.BundlePath is not null && File.Exists(entry.BundlePath))
+            .Where(entry => entry.ColorVariationBundlePath is null || File.Exists(entry.ColorVariationBundlePath))
+            .GroupBy(entry => entry.PackagePath, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .Where(entry => RuntimeJsonWriter.OutputsExist(
+                Path.Combine(
+                    outputDirectory,
+                    entry.PackagePath.Replace('/', Path.DirectorySeparatorChar),
+                    "part-runtime.json"
+                ),
+                runtimeJsonOutput
+            ))
+            .ToDictionary(
+                entry => entry.PackagePath,
+                PartPackageInputStamp.From,
+                StringComparer.Ordinal
+            );
 
         var parent = Path.GetDirectoryName(manifestPath);
         if (!string.IsNullOrWhiteSpace(parent))
         {
             Directory.CreateDirectory(parent);
         }
-        File.WriteAllText(manifestPath, JsonSerializer.Serialize(merged, JsonOptions));
+        var temporaryPath = manifestPath + $".{Guid.NewGuid():N}.tmp";
+        try
+        {
+            File.WriteAllText(temporaryPath, JsonSerializer.Serialize(rebuilt, JsonOptions));
+            File.Move(temporaryPath, manifestPath, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(temporaryPath);
+        }
     }
 }
 

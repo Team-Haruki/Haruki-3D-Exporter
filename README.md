@@ -311,8 +311,10 @@ content store is the authoritative source for the cached texture hashes.
 Texture lossless optimization is deliberately separate from package export.
 After publishing an output, run the exporter with only `--out`,
 `--optimize-texture-store`, and the desired `--png-optimize`/worker options.
-The optimizer works on temporary files and atomically replaces a texture only
-when the result is smaller, so exports do not wait for oxipng.
+The optimizer works on temporary files and keeps a result only when it is
+smaller. It stores the optimized bytes under their new exact hash, rewrites
+part-runtime references, and only then removes the old object, so exports do not
+wait for oxipng and CAS paths remain truthful.
 
 `msgpack-br` uses direct object-to-MessagePack serialization and Brotli quality
 6. It avoids the former JSON UTF-8 and DOM intermediate while retaining a good
