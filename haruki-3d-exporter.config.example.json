@@ -3,6 +3,7 @@
   "assetRoot": "/data/assets",
   "output": "/data/out",
   "assetStudioRoot": "/opt/AssetStudio-Haruki",
+  "convertModelTextures": false,
   "character3dId": 5,
   "body": null,
   "head": null,

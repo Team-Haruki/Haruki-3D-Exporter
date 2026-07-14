@@ -9,6 +9,12 @@ namespace PjskBundle2Parts.Services;
 public sealed class AssetStudioImportedModelFactory
 {
     private const string SekaiUnityVersion = "2022.3.21f1";
+    private readonly bool convertModelTextures;
+
+    public AssetStudioImportedModelFactory(bool convertModelTextures = false)
+    {
+        this.convertModelTextures = convertModelTextures;
+    }
 
     public IImported CreateImportedModel(ResolvedBundleInput input, string? preferredRootOverride = null)
     {
@@ -54,7 +60,7 @@ public sealed class AssetStudioImportedModelFactory
         return CreateImportedModel(input, rootGameObjects, preferredRootOverride);
     }
 
-    private static IImported CreateImportedModel(
+    private IImported CreateImportedModel(
         ResolvedBundleInput input,
         IReadOnlyList<GameObject> rootGameObjects,
         string? preferredRootOverride
@@ -100,7 +106,7 @@ public sealed class AssetStudioImportedModelFactory
                 preferredRoot,
                 ImageFormat.Png,
                 null,
-                false,
+                convertModelTextures,
             });
     }
 

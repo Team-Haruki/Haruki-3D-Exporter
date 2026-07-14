@@ -71,7 +71,7 @@ if (options.EmitRoleRuntimes)
             return RunRoleRuntimeWorkers(options);
         }
 
-        var roleRuntimeExporter = new RoleRuntimeExporter();
+        var roleRuntimeExporter = new RoleRuntimeExporter(options.ConvertModelTextures);
         var results = roleRuntimeExporter.ExportMany(
             options.MasterDirectory!,
             options.AssetRoot!,
@@ -125,7 +125,10 @@ if (options.EmitPartPackages)
         var partCharacterHeightMetersById = !string.IsNullOrWhiteSpace(options.MasterDirectory)
             ? LoadCharacterHeightMetersById(options.MasterDirectory!)
             : null;
-        var partPackageExporter = new PartPackageExporter(partCharacterHeightMetersById);
+        var partPackageExporter = new PartPackageExporter(
+            partCharacterHeightMetersById,
+            options.ConvertModelTextures
+        );
         if (options.PartCostume3dId is not null && options.PartType is not null)
         {
             var result = partPackageExporter.ExportOne(
@@ -187,7 +190,7 @@ if (options.EmitPartPackages)
 var resolver = new BundleInputResolver();
 var character3dCostumeResolver = new Character3dCostumeResolver();
 var parser = new AssetStudioBundleParser();
-var modelFactory = new AssetStudioImportedModelFactory();
+var modelFactory = new AssetStudioImportedModelFactory(options.ConvertModelTextures);
 var springBoneExporter = new SpringBoneExporter();
 var vrmSpringBoneCandidateBuilder = new VrmSpringBoneCandidateBuilder();
 var pjskSekaiRuntimeExtensionBuilder = new PjskSekaiRuntimeExtensionBuilder();
@@ -1063,6 +1066,7 @@ static int RunPartPackageWorkers(ConversionOptions options)
                 "--part-package-claim-directory", claimDirectory,
                 "--assetstudio-log-level", options.AssetStudioLogLevel,
                 "--runtime-json-output", options.RuntimeJsonOutput,
+                "--convert-model-textures", options.ConvertModelTextures.ToString(),
             });
             if (!string.IsNullOrWhiteSpace(options.CompiledContentStore))
             {
@@ -1155,6 +1159,7 @@ static int RunRoleRuntimeWorkers(ConversionOptions options)
             "--part-package-process-concurrency", "1",
             "--assetstudio-log-level", options.AssetStudioLogLevel,
             "--runtime-json-output", options.RuntimeJsonOutput,
+            "--convert-model-textures", options.ConvertModelTextures.ToString(),
         };
         if (!string.IsNullOrWhiteSpace(options.MotionPath))
         {

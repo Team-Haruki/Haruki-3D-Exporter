@@ -17,17 +17,19 @@ public sealed class PartPackageExporter
 
     private readonly BundleInputResolver resolver = new();
     private readonly AssetStudioBundleParser parser = new();
-    private readonly AssetStudioImportedModelFactory modelFactory = new();
+    private readonly AssetStudioImportedModelFactory modelFactory;
     private readonly SpringBoneExporter springBoneExporter = new();
     private readonly UnityRuntimeNativeMeshExporter nativeMeshExporter = new();
     private readonly UnityRuntimeTextureExporter textureExporter = new();
     private readonly IReadOnlyDictionary<string, float> characterHeightMetersById;
 
     public PartPackageExporter(
-        IReadOnlyDictionary<string, float>? characterHeightMetersById = null
+        IReadOnlyDictionary<string, float>? characterHeightMetersById = null,
+        bool convertModelTextures = false
     )
     {
         this.characterHeightMetersById = characterHeightMetersById ?? DefaultCharacterHeightMetersById;
+        modelFactory = new AssetStudioImportedModelFactory(convertModelTextures);
     }
 
     public IReadOnlyList<PartPackageExportResult> ExportAll(

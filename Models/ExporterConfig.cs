@@ -34,5 +34,6 @@ public sealed record ExporterConfig(
     string? CompiledContentStore,
     string? PngOptimize,
     int? TextureCompactWorkers,
-    string? AssetStudioRoot
+    string? AssetStudioRoot,
+    bool? ConvertModelTextures
 );

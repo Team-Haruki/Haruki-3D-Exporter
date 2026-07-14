@@ -31,6 +31,7 @@ File.WriteAllText(configPath, JsonSerializer.Serialize(new
     compiledContentStore = "/data/compiled-cas-from-config",
     pngOptimize = "off",
     textureCompactWorkers = 2,
+    convertModelTextures = true,
     keepIntermediate = true
 }));
 
@@ -75,6 +76,15 @@ Expect(options.SharedContentStore == "/data/shared-cas-from-cli", "CLI shared co
 Expect(options.CompiledContentStore == "/data/compiled-cas-from-cli", "CLI compiled content store parses");
 Expect(options.PngOptimizeMode == "off", "PNG optimization mode comes from config");
 Expect(options.TextureCompactWorkers == 2, "texture compaction worker count comes from config");
+Expect(options.ConvertModelTextures, "model texture conversion comes from config");
+
+var booleanOverride = ConversionOptionsParser.Parse(new[]
+{
+    "--config", configPath,
+    "--convert-model-textures", "false"
+});
+Expect(booleanOverride.IsSuccess && booleanOverride.Options is not null, "model texture CLI override parses");
+Expect(!booleanOverride.Options!.ConvertModelTextures, "model texture CLI override wins over config");
 
 var dependencyRoot = Path.Combine(tempDir, "dependencies", "face", "11");
 Directory.CreateDirectory(dependencyRoot);

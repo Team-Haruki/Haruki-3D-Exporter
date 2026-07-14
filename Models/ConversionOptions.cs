@@ -31,5 +31,6 @@ public sealed record ConversionOptions(
     string? SharedContentStore,
     string? CompiledContentStore,
     string PngOptimizeMode,
-    int TextureCompactWorkers
+    int TextureCompactWorkers,
+    bool ConvertModelTextures
 );

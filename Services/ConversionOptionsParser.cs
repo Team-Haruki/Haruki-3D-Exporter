@@ -28,6 +28,7 @@ public static class ConversionOptionsParser
         "  --part-package-workers and --part-package-core-count are aliases for --part-package-process-concurrency\n" +
         "  --part-package-shard-count and --part-package-shard-index run one deterministic package shard\n" +
         "  --assetstudio-log-level controls AssetStudio logs: warning, info, or debug\n" +
+        "  --convert-model-textures controls AssetStudio model texture conversion: true or false\n" +
         "  --runtime-json-output controls runtime JSON files: msgpack-br, gzip, json, or both\n" +
         "  --compact-textures deduplicates package textures by exact SHA-256 and rewrites runtime JSON paths\n" +
         "  --shared-content-store hard-links exact texture and part-runtime bytes into a shared cross-region CAS\n" +
@@ -72,6 +73,7 @@ public static class ConversionOptionsParser
         string? compiledContentStore = null;
         var pngOptimize = "oxipng";
         var textureCompactWorkers = 0;
+        var convertModelTextures = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -132,6 +134,7 @@ public static class ConversionOptionsParser
                     ? "oxipng"
                     : config.PngOptimize!;
                 textureCompactWorkers = config.TextureCompactWorkers ?? 0;
+                convertModelTextures = config.ConvertModelTextures ?? false;
             }
             catch (Exception ex)
             {
@@ -336,6 +339,12 @@ public static class ConversionOptionsParser
                 continue;
             }
 
+            if (arg is "--convert-model-textures")
+            {
+                convertModelTextures = ReadBoolValue(args, ref i, arg);
+                continue;
+            }
+
             if (arg is "--part-package-shard-count")
             {
                 partPackageShardCount = ReadIntValue(args, ref i, arg);
@@ -505,7 +514,8 @@ public static class ConversionOptionsParser
                 string.IsNullOrWhiteSpace(sharedContentStore) ? null : sharedContentStore,
                 string.IsNullOrWhiteSpace(compiledContentStore) ? null : compiledContentStore,
                 NormalizePngOptimizeMode(pngOptimize),
-                textureCompactWorkers
+                textureCompactWorkers,
+                convertModelTextures
             ),
             string.Empty
         );
@@ -580,6 +590,16 @@ public static class ConversionOptionsParser
         if (!int.TryParse(value, out var parsed))
         {
             throw new ArgumentException($"Option {optionName} must be an integer.");
+        }
+        return parsed;
+    }
+
+    private static bool ReadBoolValue(string[] args, ref int index, string optionName)
+    {
+        var value = ReadValue(args, ref index, optionName);
+        if (!bool.TryParse(value, out var parsed))
+        {
+            throw new ArgumentException($"Option {optionName} must be true or false.");
         }
         return parsed;
     }

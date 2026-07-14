@@ -31,9 +31,14 @@ public sealed class RoleRuntimeExporter
     private readonly ConversionPlanner planner = new();
     private readonly SpringBoneExporter springBoneExporter = new();
     private readonly VrmSpringBoneCandidateBuilder vrmSpringBoneCandidateBuilder = new();
-    private readonly AssetStudioImportedModelFactory modelFactory = new();
+    private readonly AssetStudioImportedModelFactory modelFactory;
     private readonly MotionPackageExporter motionPackageExporter = new();
     private readonly PjskSekaiRuntimeExtensionBuilder runtimeExtensionBuilder = new();
+
+    public RoleRuntimeExporter(bool convertModelTextures = false)
+    {
+        modelFactory = new AssetStudioImportedModelFactory(convertModelTextures);
+    }
 
     public IReadOnlyList<RoleRuntimeExportResult> ExportMany(
         string masterDirectory,
