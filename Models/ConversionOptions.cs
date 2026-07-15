@@ -35,4 +35,9 @@ public sealed record ConversionOptions(
     bool ConvertModelTextures,
     string? PartPackageWorkList,
     string? BundleHashIndex
-);
+)
+{
+    public bool OwnsOutputFinalization =>
+        string.IsNullOrWhiteSpace(PartPackageClaimDirectory) &&
+        string.IsNullOrWhiteSpace(PartPackageWorkList);
+}

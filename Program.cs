@@ -1282,7 +1282,7 @@ static void RunTextureCompactionIfEnabled(ConversionOptions options)
 static void RunContentAddressedStoreIfEnabled(ConversionOptions options)
 {
     if (string.IsNullOrWhiteSpace(options.SharedContentStore) ||
-        !string.IsNullOrWhiteSpace(options.PartPackageClaimDirectory))
+        !options.OwnsOutputFinalization)
     {
         return;
     }

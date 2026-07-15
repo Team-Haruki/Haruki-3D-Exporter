@@ -80,6 +80,7 @@ Expect(options.PngOptimizeMode == "off", "PNG optimization mode comes from confi
 Expect(options.TextureCompactWorkers == 2, "texture compaction worker count comes from config");
 Expect(options.ConvertModelTextures, "model texture conversion comes from config");
 Expect(options.PartPackageWorkList == "/data/work-list.json", "part package work list parses");
+Expect(!options.OwnsOutputFinalization, "part package work-list workers do not own output finalization");
 Expect(options.BundleHashIndex == "/data/bundle-hashes.json", "bundle hash index parses");
 
 var hashAssetRoot = Path.Combine(tempDir, "hash-assets");
