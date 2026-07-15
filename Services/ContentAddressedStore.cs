@@ -89,7 +89,11 @@ public sealed class ContentAddressedStore
                 ? ".msgpack.br"
                 : Path.GetExtension(sourcePath).ToLowerInvariant();
             var storePath = Path.Combine(storeRoot, hash[..2], hash + extension);
-            var created = EnsureCanonical(sourcePath, storePath, hash);
+            var created = ContentAddressedFile.Ensure(
+                storePath,
+                hash,
+                temporaryPath => File.Copy(sourcePath, temporaryPath)
+            );
             ProtectCanonical(storePath);
             ReplaceWithHardLink(sourcePath, storePath);
             var linkedInfo = new FileInfo(sourcePath);
@@ -168,37 +172,6 @@ public sealed class ContentAddressedStore
             : Array.Empty<string>();
     }
 
-    private static bool EnsureCanonical(string sourcePath, string storePath, string expectedHash)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(storePath)!);
-        if (File.Exists(storePath))
-        {
-            ValidateHash(storePath, expectedHash);
-            return false;
-        }
-
-        var tempPath = $"{storePath}.{Guid.NewGuid():N}.tmp";
-        try
-        {
-            File.Copy(sourcePath, tempPath, overwrite: false);
-            ValidateHash(tempPath, expectedHash);
-            try
-            {
-                File.Move(tempPath, storePath, overwrite: false);
-                return true;
-            }
-            catch (IOException) when (File.Exists(storePath))
-            {
-                ValidateHash(storePath, expectedHash);
-                return false;
-            }
-        }
-        finally
-        {
-            File.Delete(tempPath);
-        }
-    }
-
     private static void ReplaceWithHardLink(string path, string canonicalPath)
     {
         var tempPath = $"{path}.{Guid.NewGuid():N}.cas";
@@ -232,15 +205,6 @@ public sealed class ContentAddressedStore
     {
         using var stream = File.OpenRead(path);
         return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
-    }
-
-    private static void ValidateHash(string path, string expectedHash)
-    {
-        var actualHash = ComputeSha256Hex(path);
-        if (!string.Equals(actualHash, expectedHash, StringComparison.Ordinal))
-        {
-            throw new InvalidDataException($"Shared content hash mismatch for {path}: expected {expectedHash}, got {actualHash}.");
-        }
     }
 
     [DllImport("libc", EntryPoint = "link", SetLastError = true)]

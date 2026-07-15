@@ -86,8 +86,11 @@ public sealed class CompiledPartCache
             );
             if (!File.Exists(target))
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                File.Copy(SharedTexturePath(hash), target);
+                ContentAddressedFile.Ensure(
+                    target,
+                    hash,
+                    temporaryPath => File.Copy(SharedTexturePath(hash), temporaryPath)
+                );
             }
         }
 
@@ -230,23 +233,11 @@ public sealed class CompiledPartCache
         var target = ObjectPath(hash);
         if (!File.Exists(target))
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            var temporaryPath = target + $".{Guid.NewGuid():N}.tmp";
-            try
-            {
-                File.Copy(sourcePath, temporaryPath);
-                try
-                {
-                    File.Move(temporaryPath, target);
-                }
-                catch (IOException) when (File.Exists(target))
-                {
-                }
-            }
-            finally
-            {
-                File.Delete(temporaryPath);
-            }
+            ContentAddressedFile.Ensure(
+                target,
+                hash,
+                temporaryPath => File.Copy(sourcePath, temporaryPath)
+            );
         }
         return hash;
     }

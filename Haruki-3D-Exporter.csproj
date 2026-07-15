@@ -29,6 +29,7 @@
     <Compile Include="Services/PartPackageWorkPlanner.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/SekaiMaterialMetadata.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/TextureCompactor.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
+    <Compile Include="Services/ContentAddressedFile.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/ContentAddressedStore.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Models/ConversionOptions.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Models/CostumeRegistryModels.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />

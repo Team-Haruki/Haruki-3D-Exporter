@@ -19,24 +19,12 @@ public sealed class RuntimeTextureStore
         var path = Path.Combine(directory, hash + ".png");
         if (!File.Exists(path))
         {
-            Directory.CreateDirectory(directory);
-            var temporaryPath = Path.Combine(directory, $".{hash}.{Guid.NewGuid():N}.tmp");
-            try
-            {
-                File.WriteAllBytes(temporaryPath, png.ToArray());
-                try
-                {
-                    File.Move(temporaryPath, path);
-                }
-                catch (IOException) when (File.Exists(path))
-                {
-                    // Another exporter process won the exact-content race.
-                }
-            }
-            finally
-            {
-                File.Delete(temporaryPath);
-            }
+            var bytes = png.ToArray();
+            ContentAddressedFile.Ensure(
+                path,
+                hash,
+                temporaryPath => File.WriteAllBytes(temporaryPath, bytes)
+            );
         }
         return $"/_texture_store/sha256/{shard}/{hash}.png";
     }

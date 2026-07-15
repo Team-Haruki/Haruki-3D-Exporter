@@ -429,6 +429,40 @@ var directTexturePath = directTextureStore.StorePng(directTextureBytes);
 Expect(directTexturePath.StartsWith("/_texture_store/sha256/", StringComparison.Ordinal), "direct texture store returns a root-relative CAS URI");
 Expect(directTextureStore.StorePng(directTextureBytes) == directTexturePath, "direct texture store reuses exact texture bytes");
 Expect(Directory.EnumerateFiles(directTextureRoot, "*.png", SearchOption.AllDirectories).Count() == 1, "direct texture store writes one file per exact texture hash");
+
+var concurrentPublishRoot = Path.Combine(tempDir, "concurrent-content-publish");
+var concurrentPublishSource = Path.Combine(concurrentPublishRoot, "source.png");
+var concurrentPublishTarget = Path.Combine(concurrentPublishRoot, "store", "texture.png");
+Directory.CreateDirectory(concurrentPublishRoot);
+File.WriteAllBytes(concurrentPublishSource, directTextureBytes);
+var concurrentPublishHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(directTextureBytes)).ToLowerInvariant();
+const int concurrentPublishers = 8;
+using (var publishersReady = new CountdownEvent(concurrentPublishers))
+{
+    var publishTasks = Enumerable.Range(0, concurrentPublishers)
+        .Select(_ => Task.Factory.StartNew(
+            () => ContentAddressedFile.Ensure(
+                concurrentPublishTarget,
+                concurrentPublishHash,
+                temporaryPath =>
+                {
+                    File.Copy(concurrentPublishSource, temporaryPath);
+                    publishersReady.Signal();
+                    publishersReady.Wait();
+                }
+            ),
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default
+        ))
+        .ToArray();
+    Task.WaitAll(publishTasks);
+}
+Expect(File.ReadAllBytes(concurrentPublishTarget).SequenceEqual(directTextureBytes),
+    "concurrent exact-content publishers converge on one valid file");
+Expect(!Directory.EnumerateFiles(Path.GetDirectoryName(concurrentPublishTarget)!, "*.tmp").Any(),
+    "concurrent content publishing cleans temporary files");
+
 var storeOptimization = new TextureCompactor().OptimizeStore(
     directTextureRoot,
     RuntimeJsonWriter.MessagePackBrotli,
