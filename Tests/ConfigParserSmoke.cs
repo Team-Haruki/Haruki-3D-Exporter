@@ -528,6 +528,19 @@ var storeOptimization = new TextureCompactor().OptimizeStore(
     2
 );
 Expect(storeOptimization.TextureFileCount == 1 && storeOptimization.OptimizedFileCount == 0, "standalone texture optimizer scans the direct store without rewriting in off mode");
+var resolveTexturePath = typeof(TextureCompactor).GetMethod(
+    "ResolveTexturePath",
+    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
+) ?? throw new Exception("missing texture path resolver");
+var rootRelativeTexture = "/_texture_store/sha256/ab/abc.png";
+var resolvedRootRelativeTexture = (string?)resolveTexturePath.Invoke(
+    null,
+    new object[] { directTextureRoot, directTextureRoot, rootRelativeTexture }
+);
+Expect(
+    resolvedRootRelativeTexture == Path.Combine(directTextureRoot, rootRelativeTexture.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)),
+    "texture optimizer resolves root-relative CAS paths instead of treating them as external URIs"
+);
 
 var motionValuesPath = Path.Combine(writerDir, "motion-values.json");
 RuntimeJsonWriter.Write(

@@ -440,7 +440,8 @@ public sealed class TextureCompactor
 
     private static string? ResolveTexturePath(string packageDirectory, string outputDirectory, string value)
     {
-        if (string.IsNullOrWhiteSpace(value) || Uri.TryCreate(value, UriKind.Absolute, out _))
+        if (string.IsNullOrWhiteSpace(value) ||
+            Uri.TryCreate(value, UriKind.Absolute, out var uri) && !uri.IsFile)
         {
             return null;
         }
