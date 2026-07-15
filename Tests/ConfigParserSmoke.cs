@@ -2,9 +2,31 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.IO.Compression;
+using System.Diagnostics;
 using PjskBundle2Parts.Tests;
 using PjskBundle2Parts.Models;
 using PjskBundle2Parts.Services;
+
+if (args is ["--compiled-cache-copy-race-worker", var sourcePath, var targetPath, var workerStartGate])
+{
+    while (!File.Exists(workerStartGate))
+    {
+        Thread.Sleep(1);
+    }
+    try
+    {
+        for (var index = 0; index < 32; index++)
+        {
+            ContentAddressedFile.Replace(targetPath, temporaryPath => File.Copy(sourcePath, temporaryPath));
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        Environment.ExitCode = 2;
+    }
+    return;
+}
 
 var tempDir = Path.Combine(Path.GetTempPath(), $"haruki-exporter-config-test-{Guid.NewGuid():N}");
 Directory.CreateDirectory(tempDir);
@@ -353,6 +375,41 @@ using (var document = RuntimeJsonWriter.ReadJsonDocument(writerPath, RuntimeJson
 }
 Expect(RuntimeJsonWriter.PrimaryPath(writerPath, RuntimeJsonWriter.MessagePackBrotli) == writerMessagePackPath, "msgpack-br primary path points at .msgpack.br");
 Expect(RuntimeJsonWriter.DefaultBrotliQuality == 6, "runtime MessagePack defaults to Brotli quality 6");
+
+var raceRoot = Path.Combine(writerDir, "compiled-cache-race");
+var raceStore = Path.Combine(writerDir, "compiled-cache-race-store");
+var raceSource = Path.Combine(writerDir, "compiled-cache-source.msgpack.br");
+var startGate = Path.Combine(writerDir, "shared-core.start");
+var raceBytes = Enumerable.Range(0, 256 * 1024).Select(index => (byte)(index % 251)).ToArray();
+File.WriteAllBytes(raceSource, raceBytes);
+var raceTargets = Enumerable.Range(0, 48).Select(index =>
+{
+    var target = Path.Combine(raceRoot, "parts", index.ToString(), "part-runtime-core.msgpack.br");
+    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+    File.WriteAllBytes(target, raceBytes);
+    return target;
+}).ToArray();
+new ContentAddressedStore().Compact(raceRoot, raceStore);
+var raceWorkers = raceTargets.Select(target =>
+{
+    var startInfo = new ProcessStartInfo(Environment.ProcessPath!);
+    startInfo.ArgumentList.Add("--compiled-cache-copy-race-worker");
+    startInfo.ArgumentList.Add(raceSource);
+    startInfo.ArgumentList.Add(target);
+    startInfo.ArgumentList.Add(startGate);
+    return Process.Start(startInfo) ?? throw new Exception("failed to start runtime writer race worker");
+}).ToArray();
+File.WriteAllText(startGate, "start");
+foreach (var worker in raceWorkers)
+{
+    worker.WaitForExit();
+    Expect(worker.ExitCode == 0, "parallel processes can publish the same immutable runtime file");
+    worker.Dispose();
+}
+foreach (var target in raceTargets)
+{
+    Expect(File.ReadAllBytes(target).SequenceEqual(raceBytes), "parallel compiled-cache publication leaves valid content");
+}
 
 var directWriterPath = Path.Combine(writerDir, "direct-writer.json");
 RuntimeJsonWriter.Write(

@@ -74,7 +74,10 @@ public sealed class CompiledPartCache
             coreRelativePath.Replace('/', Path.DirectorySeparatorChar)
         );
         Directory.CreateDirectory(Path.GetDirectoryName(corePath)!);
-        File.Copy(coreObject, RuntimeJsonWriter.MessagePackBrotliPath(corePath), overwrite: true);
+        ContentAddressedFile.Replace(
+            RuntimeJsonWriter.MessagePackBrotliPath(corePath),
+            temporaryPath => File.Copy(coreObject, temporaryPath)
+        );
         foreach (var hash in cached.TextureHashes)
         {
             var target = Path.Combine(

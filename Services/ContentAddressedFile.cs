@@ -4,6 +4,21 @@ namespace PjskBundle2Parts.Services;
 
 internal static class ContentAddressedFile
 {
+    public static void Replace(string path, Action<string> writeTemporaryFile)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            writeTemporaryFile(temporaryPath);
+            File.Move(temporaryPath, path, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(temporaryPath);
+        }
+    }
+
     public static bool Ensure(string path, string expectedHash, Action<string> writeTemporaryFile)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
