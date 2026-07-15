@@ -32,6 +32,7 @@ public static class ConversionOptionsParser
         "  --runtime-json-output controls runtime JSON files: msgpack-br, gzip, json, or both\n" +
         "  --compact-textures deduplicates package textures by exact SHA-256 and rewrites runtime JSON paths\n" +
         "  --shared-content-store hard-links exact texture and part-runtime bytes into a shared cross-region CAS\n" +
+        "  --bundle-hash-index reuses updater-provided SHA-256 values when fingerprinting source bundles\n" +
         "  --png-optimize controls lossless PNG optimization during compaction: oxipng or off\n" +
         "  --texture-compact-workers limits concurrent PNG optimizers; 0 = min(4, CPU count)\n" +
         "  --export-face-motion writes face_motion.json from a costume_setting bundle or decoded AnimationClip JSON without Python helpers\n" +
@@ -74,6 +75,8 @@ public static class ConversionOptionsParser
         var pngOptimize = "oxipng";
         var textureCompactWorkers = 0;
         var convertModelTextures = false;
+        string? partPackageWorkList = null;
+        string? bundleHashIndex = null;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -135,6 +138,8 @@ public static class ConversionOptionsParser
                     : config.PngOptimize!;
                 textureCompactWorkers = config.TextureCompactWorkers ?? 0;
                 convertModelTextures = config.ConvertModelTextures ?? false;
+                partPackageWorkList = config.PartPackageWorkList;
+                bundleHashIndex = config.BundleHashIndex;
             }
             catch (Exception ex)
             {
@@ -363,6 +368,18 @@ public static class ConversionOptionsParser
                 continue;
             }
 
+            if (arg is "--part-package-work-list")
+            {
+                partPackageWorkList = ReadValue(args, ref i, arg);
+                continue;
+            }
+
+            if (arg is "--bundle-hash-index")
+            {
+                bundleHashIndex = ReadValue(args, ref i, arg);
+                continue;
+            }
+
             if (arg is "--help" or "-?")
             {
                 return new ParseResult(false, null, "Help requested.");
@@ -515,7 +532,9 @@ public static class ConversionOptionsParser
                 string.IsNullOrWhiteSpace(compiledContentStore) ? null : compiledContentStore,
                 NormalizePngOptimizeMode(pngOptimize),
                 textureCompactWorkers,
-                convertModelTextures
+                convertModelTextures,
+                string.IsNullOrWhiteSpace(partPackageWorkList) ? null : partPackageWorkList,
+                string.IsNullOrWhiteSpace(bundleHashIndex) ? null : bundleHashIndex
             ),
             string.Empty
         );

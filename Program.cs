@@ -122,9 +122,11 @@ if (options.EmitPartPackages)
 {
     try
     {
-        var partCharacterHeightMetersById = !string.IsNullOrWhiteSpace(options.MasterDirectory)
-            ? LoadCharacterHeightMetersById(options.MasterDirectory!)
-            : null;
+        var partCharacterHeightMetersById = !string.IsNullOrWhiteSpace(options.PartPackageWorkList)
+            ? PartPackageWorkPlanner.Load(options.PartPackageWorkList!).CharacterHeightMetersById
+            : !string.IsNullOrWhiteSpace(options.MasterDirectory)
+                ? LoadCharacterHeightMetersById(options.MasterDirectory!)
+                : null;
         var partPackageExporter = new PartPackageExporter(
             partCharacterHeightMetersById,
             options.ConvertModelTextures
@@ -152,10 +154,10 @@ if (options.EmitPartPackages)
         {
             if (ResolvePartPackageProcessConcurrency(options) > 1)
             {
-                return RunPartPackageWorkers(options);
+                return RunPartPackageWorkers(options, partCharacterHeightMetersById!);
             }
 
-            var results = partPackageExporter.ExportAll(
+            var batch = partPackageExporter.ExportAll(
                 options.MasterDirectory!,
                 options.AssetRoot!,
                 options.OutputDirectory,
@@ -165,11 +167,26 @@ if (options.EmitPartPackages)
                 options.RuntimeJsonOutput,
                 options.PartPackageClaimDirectory,
                 options.CompiledContentStore,
-                options.SharedContentStore
+                options.SharedContentStore,
+                options.PartPackageWorkList,
+                options.BundleHashIndex
             );
+            var results = batch.Results;
             var succeeded = results.Count(result => result.Succeeded);
             var failed = results.Count - succeeded;
             Console.WriteLine($"Wrote {succeeded} part runtime package(s).");
+            Console.WriteLine(
+                $"Part export metrics: built={batch.Built}, restored={batch.Restored}, " +
+                $"manifestSkipped={batch.ManifestSkipped}, bundleHashIndexHits={batch.BundleHashIndexHits}, " +
+                $"fileHashComputations={batch.FileHashComputations}, elapsedMs={batch.ElapsedMilliseconds}."
+            );
+            if (!string.IsNullOrWhiteSpace(options.PartPackageWorkList))
+            {
+                File.WriteAllText(
+                    PartPackageWorkPlanner.SummaryPath(options.PartPackageWorkList),
+                    JsonSerializer.Serialize(PartPackageWorkerSummary.From(batch))
+                );
+            }
             if (failed > 0)
             {
                 Console.Error.WriteLine($"Skipped {failed} part runtime package(s); see part-export-error.json files in the output tree.");
@@ -1041,18 +1058,45 @@ static IReadOnlyDictionary<string, float> LoadCharacterHeightMetersById(string m
     return CharacterHeightResolver.LoadMetersByCharacterId(masterDirectory);
 }
 
-static int RunPartPackageWorkers(ConversionOptions options)
+static int RunPartPackageWorkers(
+    ConversionOptions options,
+    IReadOnlyDictionary<string, float> characterHeightMetersById
+)
 {
-    var workers = ResolvePartPackageProcessConcurrency(options);
+    var requestedWorkers = ResolvePartPackageProcessConcurrency(options);
     var manifestPath = options.ManifestPath
         ?? Path.Combine(options.OutputDirectory, "haruki-3d-export-manifest.json");
-    var claimDirectory = $"{manifestPath}.claims-{Guid.NewGuid():N}";
+    var workListDirectory = $"{manifestPath}.work-{Guid.NewGuid():N}";
     var processes = new List<Process>();
+    var totalStopwatch = Stopwatch.StartNew();
 
-    Directory.CreateDirectory(claimDirectory);
+    Directory.CreateDirectory(workListDirectory);
 
     try
     {
+        var planningStopwatch = Stopwatch.StartNew();
+        var registry = new CostumeRegistryExporter().ExportInMemory(
+            options.MasterDirectory!,
+            options.AssetRoot!
+        );
+        var partitions = PartPackageWorkPlanner.Plan(registry.PartRegistry.Entries, requestedWorkers);
+        var workers = partitions.Count;
+        var workListPaths = new List<string>(workers);
+        for (var index = 0; index < workers; index++)
+        {
+            var path = Path.Combine(workListDirectory, $"worker-{index:D3}.json");
+            File.WriteAllText(path, JsonSerializer.Serialize(new PartPackageWorkList(
+                characterHeightMetersById,
+                partitions[index]
+            )));
+            workListPaths.Add(path);
+        }
+        planningStopwatch.Stop();
+        Console.WriteLine(
+            $"Planned {registry.PartRegistry.Entries.Count} registry row(s) across {workers} worker(s) " +
+            $"in {planningStopwatch.ElapsedMilliseconds} ms."
+        );
+
         for (var index = 0; index < workers; index++)
         {
             var startInfo = CreateCurrentProcessStartInfo(new[]
@@ -1063,7 +1107,7 @@ static int RunPartPackageWorkers(ConversionOptions options)
                 "--out", options.OutputDirectory,
                 "--manifest", manifestPath,
                 "--part-package-process-concurrency", "1",
-                "--part-package-claim-directory", claimDirectory,
+                "--part-package-work-list", workListPaths[index],
                 "--assetstudio-log-level", options.AssetStudioLogLevel,
                 "--runtime-json-output", options.RuntimeJsonOutput,
                 "--convert-model-textures", options.ConvertModelTextures.ToString(),
@@ -1077,6 +1121,11 @@ static int RunPartPackageWorkers(ConversionOptions options)
             {
                 startInfo.ArgumentList.Add("--shared-content-store");
                 startInfo.ArgumentList.Add(options.SharedContentStore);
+            }
+            if (!string.IsNullOrWhiteSpace(options.BundleHashIndex))
+            {
+                startInfo.ArgumentList.Add("--bundle-hash-index");
+                startInfo.ArgumentList.Add(options.BundleHashIndex);
             }
             var process = Process.Start(startInfo)
                 ?? throw new InvalidOperationException($"Failed to start part package worker {index}.");
@@ -1100,17 +1149,31 @@ static int RunPartPackageWorkers(ConversionOptions options)
             return 2;
         }
 
-        var registry = new CostumeRegistryExporter().ExportInMemory(
-            options.MasterDirectory!,
-            options.AssetRoot!
-        );
+        var workerSummaries = workListPaths
+            .Select(path => JsonSerializer.Deserialize<PartPackageWorkerSummary>(
+                File.ReadAllText(PartPackageWorkPlanner.SummaryPath(path))
+            ) ?? throw new InvalidOperationException($"Invalid worker summary for {path}."))
+            .ToList();
+
+        var finalizingStopwatch = Stopwatch.StartNew();
         PartPackageExportManifest.Rebuild(
             manifestPath,
             options.OutputDirectory,
             options.RuntimeJsonOutput,
             registry.PartRegistry.Entries
         );
+        finalizingStopwatch.Stop();
+        totalStopwatch.Stop();
         Console.WriteLine($"Rebuilt part package manifest: {manifestPath}");
+        Console.WriteLine(
+            $"Part export parent metrics: planningMs={planningStopwatch.ElapsedMilliseconds}, " +
+            $"finalizingMs={finalizingStopwatch.ElapsedMilliseconds}, totalMs={totalStopwatch.ElapsedMilliseconds}, " +
+            $"built={workerSummaries.Sum(summary => summary.Built)}, " +
+            $"restored={workerSummaries.Sum(summary => summary.Restored)}, " +
+            $"manifestSkipped={workerSummaries.Sum(summary => summary.ManifestSkipped)}, " +
+            $"bundleHashIndexHits={workerSummaries.Sum(summary => summary.BundleHashIndexHits)}, " +
+            $"fileHashComputations={workerSummaries.Sum(summary => summary.FileHashComputations)}."
+        );
         RunTextureCompactionIfEnabled(options);
         RunContentAddressedStoreIfEnabled(options);
         return 0;
@@ -1125,9 +1188,9 @@ static int RunPartPackageWorkers(ConversionOptions options)
             }
             process.Dispose();
         }
-        if (Directory.Exists(claimDirectory))
+        if (Directory.Exists(workListDirectory))
         {
-            Directory.Delete(claimDirectory, recursive: true);
+            Directory.Delete(workListDirectory, recursive: true);
         }
     }
 }

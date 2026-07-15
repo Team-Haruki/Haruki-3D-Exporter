@@ -21,10 +21,12 @@
   <ItemGroup>
     <Compile Include="Services/ConversionOptionsParser.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/BundleDependencyResolver.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
+    <Compile Include="Services/BundleHashIndex.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/MaterialIdentityLookup.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/RuntimeJsonWriter.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/RuntimeTextureStore.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/PartPackageWorkClaims.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
+    <Compile Include="Services/PartPackageWorkPlanner.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/SekaiMaterialMetadata.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/TextureCompactor.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/ContentAddressedStore.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />

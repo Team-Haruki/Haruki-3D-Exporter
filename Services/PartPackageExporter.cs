@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Diagnostics;
 using AssetStudio;
 using PjskBundle2Parts.Models;
 
@@ -32,7 +33,7 @@ public sealed class PartPackageExporter
         modelFactory = new AssetStudioImportedModelFactory(convertModelTextures);
     }
 
-    public IReadOnlyList<PartPackageExportResult> ExportAll(
+    public PartPackageExportBatchResult ExportAll(
         string masterDirectory,
         string assetRoot,
         string outputDirectory,
@@ -42,12 +43,14 @@ public sealed class PartPackageExporter
         string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli,
         string? claimDirectory = null,
         string? compiledContentStore = null,
-        string? sharedContentStore = null
+        string? sharedContentStore = null,
+        string? workListPath = null,
+        string? bundleHashIndex = null
     )
     {
-        var characterHeightMetersById = CharacterHeightResolver.LoadMetersByCharacterId(masterDirectory);
+        var stopwatch = Stopwatch.StartNew();
         var manifest = PartPackageExportManifest.Load(manifestPath);
-        var partEntries = LoadPartEntries(masterDirectory, assetRoot)
+        var partEntries = LoadPartEntries(masterDirectory, assetRoot, workListPath)
             .Where(entry => entry.BundlePath is not null && entry.Status != "missing")
             .Where(HasRequiredBundleFiles)
             .ToList();
@@ -59,7 +62,10 @@ public sealed class PartPackageExporter
             string.IsNullOrWhiteSpace(sharedContentStore) ||
             runtimeJsonOutput != RuntimeJsonWriter.MessagePackBrotli
                 ? null
-                : new CompiledPartCache(compiledContentStore, sharedContentStore);
+                : new CompiledPartCache(compiledContentStore, sharedContentStore, assetRoot, bundleHashIndex);
+        var built = 0;
+        var restored = 0;
+        var manifestSkipped = 0;
         AssetStudioLoadedBundle? cachedBundle = null;
         PartBuildCore? cachedCore = null;
         try
@@ -80,6 +86,7 @@ public sealed class PartPackageExporter
                 {
                     DeletePartExportError(packageDirectory);
                     results.Add(new PartPackageExportResult(entry, runtimeOutputPath, Array.Empty<string>()));
+                    manifestSkipped += 1;
                     continue;
                 }
 
@@ -96,6 +103,7 @@ public sealed class PartPackageExporter
                     DeletePartExportError(packageDirectory);
                     manifest.Update(entry.PackagePath, stamp);
                     results.Add(restoredResult!);
+                    restored += 1;
                     continue;
                 }
 
@@ -118,6 +126,7 @@ public sealed class PartPackageExporter
                         cachedBundle?.DependencyMode ?? BundleLoadDependencyMode.Default
                     );
                     manifest.Update(entry.PackagePath, stamp);
+                    built += 1;
                 }
                 catch (Exception ex)
                 {
@@ -151,12 +160,21 @@ public sealed class PartPackageExporter
         {
             cachedBundle?.Dispose();
         }
-        if (claims is null)
+        if (claims is null && string.IsNullOrWhiteSpace(workListPath))
         {
             manifest.Save();
         }
 
-        return results;
+        stopwatch.Stop();
+        return new PartPackageExportBatchResult(
+            results,
+            built,
+            restored,
+            manifestSkipped,
+            compiledCache?.BundleHashIndexHits ?? 0,
+            compiledCache?.FileHashComputations ?? 0,
+            stopwatch.ElapsedMilliseconds
+        );
     }
 
     private static IEnumerable<PartRegistryEntry> SelectWorkEntries(
@@ -1256,8 +1274,16 @@ public sealed class PartPackageExporter
         );
     }
 
-    private IReadOnlyList<PartRegistryEntry> LoadPartEntries(string masterDirectory, string assetRoot)
+    private IReadOnlyList<PartRegistryEntry> LoadPartEntries(
+        string masterDirectory,
+        string assetRoot,
+        string? workListPath = null
+    )
     {
+        if (!string.IsNullOrWhiteSpace(workListPath))
+        {
+            return PartPackageWorkPlanner.Load(workListPath).Entries;
+        }
         var output = new CostumeRegistryExporter().ExportInMemory(masterDirectory, assetRoot);
         return output.PartRegistry.Entries;
     }
@@ -1778,6 +1804,35 @@ public sealed record PartPackageExportResult(
     string? CoreRuntimePath = null,
     IReadOnlyList<string>? TextureHashes = null
 );
+
+public sealed record PartPackageExportBatchResult(
+    IReadOnlyList<PartPackageExportResult> Results,
+    int Built,
+    int Restored,
+    int ManifestSkipped,
+    int BundleHashIndexHits,
+    int FileHashComputations,
+    long ElapsedMilliseconds
+);
+
+public sealed record PartPackageWorkerSummary(
+    int Built,
+    int Restored,
+    int ManifestSkipped,
+    int BundleHashIndexHits,
+    int FileHashComputations,
+    long ElapsedMilliseconds
+)
+{
+    public static PartPackageWorkerSummary From(PartPackageExportBatchResult batch) => new(
+        batch.Built,
+        batch.Restored,
+        batch.ManifestSkipped,
+        batch.BundleHashIndexHits,
+        batch.FileHashComputations,
+        batch.ElapsedMilliseconds
+    );
+}
 
 public sealed class PartPackageExportManifest
 {

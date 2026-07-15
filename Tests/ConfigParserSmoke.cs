@@ -43,7 +43,9 @@ var parsed = ConversionOptionsParser.Parse(new[]
     "--role-character3d-id", "9",
     "--manifest", "/data/manifest-from-cli.json",
     "--shared-content-store", "/data/shared-cas-from-cli",
-    "--compiled-content-store", "/data/compiled-cas-from-cli"
+    "--compiled-content-store", "/data/compiled-cas-from-cli",
+    "--part-package-work-list", "/data/work-list.json",
+    "--bundle-hash-index", "/data/bundle-hashes.json"
 });
 
 if (!parsed.IsSuccess || parsed.Options is null)
@@ -77,6 +79,61 @@ Expect(options.CompiledContentStore == "/data/compiled-cas-from-cli", "CLI compi
 Expect(options.PngOptimizeMode == "off", "PNG optimization mode comes from config");
 Expect(options.TextureCompactWorkers == 2, "texture compaction worker count comes from config");
 Expect(options.ConvertModelTextures, "model texture conversion comes from config");
+Expect(options.PartPackageWorkList == "/data/work-list.json", "part package work list parses");
+Expect(options.BundleHashIndex == "/data/bundle-hashes.json", "bundle hash index parses");
+
+var hashAssetRoot = Path.Combine(tempDir, "hash-assets");
+var indexedBundle = Path.Combine(hashAssetRoot, "live_pv", "model", "body.bundle");
+Directory.CreateDirectory(Path.GetDirectoryName(indexedBundle)!);
+File.WriteAllBytes(indexedBundle, new byte[] { 1, 2, 3 });
+var expectedBundleHash = new string('a', 64);
+var hashIndexPath = Path.Combine(hashAssetRoot, ".haruki-bundle-sha256.json");
+File.WriteAllText(hashIndexPath, JsonSerializer.Serialize(new Dictionary<string, string>
+{
+    ["live_pv/model/body.bundle"] = expectedBundleHash,
+    ["invalid.bundle"] = "not-a-hash",
+}));
+var hashIndex = new BundleHashIndex(hashIndexPath);
+Expect(hashIndex.TryGet(hashAssetRoot, indexedBundle, out var indexedHash),
+    "bundle hash index resolves exporter-relative path");
+Expect(Convert.ToHexString(indexedHash).ToLowerInvariant() == expectedBundleHash,
+    "bundle hash index decodes SHA-256 bytes");
+Expect(!hashIndex.TryGet(hashAssetRoot, Path.Combine(hashAssetRoot, "invalid.bundle"), out _),
+    "bundle hash index ignores invalid digests");
+var corruptHashIndexPath = Path.Combine(hashAssetRoot, "corrupt.json");
+File.WriteAllText(corruptHashIndexPath, "{");
+Expect(!new BundleHashIndex(corruptHashIndexPath).TryGet(hashAssetRoot, indexedBundle, out _),
+    "corrupt bundle hash index safely falls back to file hashing");
+
+var plannerRoot = Path.Combine(tempDir, "work-planner");
+Directory.CreateDirectory(plannerRoot);
+var plannerEntries = new[]
+{
+    PartEntry(plannerRoot, "heavy-a", 900, "source-a"),
+    PartEntry(plannerRoot, "heavy-b", 700, "source-b"),
+    PartEntry(plannerRoot, "medium", 400, "source-c"),
+    PartEntry(plannerRoot, "small", 100, "source-d"),
+    PartEntry(plannerRoot, "small-alias", 100, "source-d", packagePath: "parts/body/small"),
+};
+var planned = PartPackageWorkPlanner.Plan(plannerEntries, 2);
+var plannedAgain = PartPackageWorkPlanner.Plan(plannerEntries, 2);
+Expect(planned.SelectMany(worker => worker).Select(entry => entry.PackagePath).Distinct().Count() == 4,
+    "work planner emits one representative per package");
+Expect(JsonSerializer.Serialize(planned) == JsonSerializer.Serialize(plannedAgain),
+    "work planner is deterministic");
+var plannedWeights = planned.Select(worker => worker.Sum(entry => new FileInfo(entry.BundlePath!).Length)).ToArray();
+Expect(plannedWeights.Max() - plannedWeights.Min() <= 200,
+    "work planner balances heavy source groups");
+var serializedWorkListPath = Path.Combine(plannerRoot, "worker.json");
+File.WriteAllText(serializedWorkListPath, JsonSerializer.Serialize(new PartPackageWorkList(
+    new Dictionary<string, float> { ["5"] = 1.56f },
+    planned[0]
+)));
+var serializedWorkList = PartPackageWorkPlanner.Load(serializedWorkListPath);
+Expect(serializedWorkList.CharacterHeightMetersById["5"] == 1.56f,
+    "worker list carries parent-built character heights");
+Expect(serializedWorkList.Entries.Count == planned[0].Count,
+    "worker list round trips planned entries");
 
 var booleanOverride = ConversionOptionsParser.Parse(new[]
 {
@@ -1265,7 +1322,10 @@ Expect(
 );
 Expect(!programSource.Contains("shardManifestPaths"), "part worker orchestration does not create manifest shards");
 Expect(programSource.Contains("PartPackageExportManifest.Rebuild("), "parent rebuilds one canonical manifest after worker success");
-Expect(partPackageExporterSource.Contains("if (claims is null)"), "claim workers treat the shared baseline manifest as read-only");
+Expect(
+    partPackageExporterSource.Contains("if (claims is null && string.IsNullOrWhiteSpace(workListPath))"),
+    "claim and work-list workers treat the shared baseline manifest as read-only"
+);
 Expect(pjskRuntimeBuilderSource.Contains("SpringManager.FindSpringBones(true) ownership is authoritative"), "runtime builder documents hierarchy-based SpringManager ownership");
 Expect(!pjskRuntimeBuilderSource.Contains("SpringManager.springBones references remain authoritative"), "runtime builder does not treat serialized springBones as authoritative");
 Expect(
@@ -1457,6 +1517,23 @@ static void WriteJsonFile(string path, object payload)
 {
     Directory.CreateDirectory(Path.GetDirectoryName(path)!);
     File.WriteAllText(path, JsonSerializer.Serialize(payload));
+}
+
+static PartRegistryEntry PartEntry(
+    string root,
+    string name,
+    int bytes,
+    string sourceKey,
+    string? packagePath = null
+)
+{
+    var path = Path.Combine(root, $"haruki-work-{Guid.NewGuid():N}.bundle");
+    File.WriteAllBytes(path, new byte[bytes]);
+    return new PartRegistryEntry(
+        1, "body", 1, null, name, 1, null, 1, 1, 0,
+        null, null, null, null, null, path, null, sourceKey, sourceKey, null,
+        packagePath ?? $"parts/body/{name}", null, "ready", Array.Empty<string>()
+    );
 }
 
 static JsonObject ReadRuntimePackage(

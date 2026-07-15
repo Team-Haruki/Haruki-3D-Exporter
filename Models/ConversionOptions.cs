@@ -32,5 +32,7 @@ public sealed record ConversionOptions(
     string? CompiledContentStore,
     string PngOptimizeMode,
     int TextureCompactWorkers,
-    bool ConvertModelTextures
+    bool ConvertModelTextures,
+    string? PartPackageWorkList,
+    string? BundleHashIndex
 );

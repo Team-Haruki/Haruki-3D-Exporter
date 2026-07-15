@@ -12,12 +12,19 @@ public sealed class CompiledPartCache
     private const string Schema = "0415-compiled-part-2";
     private readonly string cacheRoot;
     private readonly string sharedContentRoot;
+    private readonly string assetRoot;
+    private readonly BundleHashIndex bundleHashes;
     private readonly ConcurrentDictionary<string, CachedFileHash> fileHashes = new(StringComparer.Ordinal);
 
-    public CompiledPartCache(string cacheRoot, string sharedContentRoot)
+    public int BundleHashIndexHits { get; private set; }
+    public int FileHashComputations { get; private set; }
+
+    public CompiledPartCache(string cacheRoot, string sharedContentRoot, string assetRoot, string? bundleHashIndex)
     {
         this.cacheRoot = Path.GetFullPath(cacheRoot);
         this.sharedContentRoot = Path.GetFullPath(sharedContentRoot);
+        this.assetRoot = Path.GetFullPath(assetRoot);
+        bundleHashes = new BundleHashIndex(bundleHashIndex);
     }
 
     public bool TryRestore(
@@ -184,17 +191,22 @@ public sealed class CompiledPartCache
 
     private byte[] FileHash(string path)
     {
+        if (bundleHashes.TryGet(assetRoot, path, out var indexedHash))
+        {
+            BundleHashIndexHits += 1;
+            return indexedHash;
+        }
         var info = new FileInfo(path);
         var cached = fileHashes.GetOrAdd(path, _ => new CachedFileHash(
             info.Length,
             info.LastWriteTimeUtc.Ticks,
-            ComputeFileHash(path)
+            ComputeAndCountFileHash(path)
         ));
         if (cached.Length == info.Length && cached.LastWriteUtcTicks == info.LastWriteTimeUtc.Ticks)
         {
             return cached.Hash;
         }
-        cached = new CachedFileHash(info.Length, info.LastWriteTimeUtc.Ticks, ComputeFileHash(path));
+        cached = new CachedFileHash(info.Length, info.LastWriteTimeUtc.Ticks, ComputeAndCountFileHash(path));
         fileHashes[path] = cached;
         return cached.Hash;
     }
@@ -203,6 +215,12 @@ public sealed class CompiledPartCache
     {
         using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         return SHA256.HashData(stream);
+    }
+
+    private byte[] ComputeAndCountFileHash(string path)
+    {
+        FileHashComputations += 1;
+        return ComputeFileHash(path);
     }
 
     private string EnsureObject(string sourcePath)
