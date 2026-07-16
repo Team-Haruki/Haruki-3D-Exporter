@@ -1291,6 +1291,7 @@ var sekaiBundleDecryptorSource = File.ReadAllText(Path.Combine(repoRoot, "Servic
 var character3dCostumeResolverSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "Character3dCostumeResolver.cs"));
 Expect(partPackageExporterSource.Contains("part-runtime-core.msgpack.br"), "part package corePath uses the final MessagePack Brotli filename");
 Expect(compiledPartCacheSource.Contains("part-runtime-core.msgpack.br"), "compiled part cache restores the final MessagePack Brotli corePath");
+Expect(compiledPartCacheSource.Contains("Append(hash, Path.GetFileName(input.ResolvedBundlePath))"), "compiled part cache fingerprints the primary bundle among sibling dependencies");
 Expect(!partPackageExporterSource.Contains("part-runtime-core.json"), "part package exporter omits logical JSON core paths");
 Expect(!compiledPartCacheSource.Contains("part-runtime-core.json"), "compiled part cache omits logical JSON core paths");
 Expect(partPackageExporterSource.Contains("coreRelativePath.EndsWith(\".msgpack.br\""), "incremental export rejects old logical corePath manifests");

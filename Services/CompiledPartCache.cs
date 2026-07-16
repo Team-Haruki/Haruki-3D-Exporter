@@ -9,7 +9,7 @@ namespace PjskBundle2Parts.Services;
 
 public sealed class CompiledPartCache
 {
-    private const string Schema = "0415-compiled-part-2";
+    private const string Schema = "0415-compiled-part-3";
     private readonly string cacheRoot;
     private readonly string sharedContentRoot;
     private readonly string assetRoot;
@@ -179,6 +179,7 @@ public sealed class CompiledPartCache
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         Append(hash, Schema);
         Append(hash, ResolvePartType(entry));
+        Append(hash, Path.GetFileName(input.ResolvedBundlePath));
         Append(hash, dependencyMode.ToString());
         foreach (var path in BundleDependencyResolver.ResolveLoadBundlePaths(input, dependencyMode)
             .Append(entry.ColorVariationBundlePath)
