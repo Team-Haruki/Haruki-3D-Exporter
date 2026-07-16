@@ -36,7 +36,6 @@ File.WriteAllText(configPath, JsonSerializer.Serialize(new
     master = "/data/master",
     assetRoot = "/data/assets",
     output = "/data/out-from-config",
-    character3dId = 5,
     emitCostumeRegistries = true,
     emitPartPackages = true,
     emitRoleRuntimes = true,
@@ -46,15 +45,13 @@ File.WriteAllText(configPath, JsonSerializer.Serialize(new
     roleCharacter3dIds = new[] { 5, 7 },
     manifest = "/data/manifest-from-config.json",
     assetStudioLogLevel = "info",
-    runtimeJsonOutput = "both",
     compactTextures = true,
     optimizeTextureStore = false,
     sharedContentStore = "/data/shared-cas-from-config",
     compiledContentStore = "/data/compiled-cas-from-config",
     pngOptimize = "off",
     textureCompactWorkers = 2,
-    convertModelTextures = true,
-    keepIntermediate = true
+    convertModelTextures = true
 }));
 
 var parsed = ConversionOptionsParser.Parse(new[]
@@ -79,7 +76,6 @@ var options = parsed.Options;
 Expect(options.MasterDirectory == "/data/master", "master comes from config");
 Expect(options.AssetRoot == "/data/assets", "asset root comes from config");
 Expect(options.OutputDirectory == "/data/out-from-cli", "CLI output overrides config");
-Expect(options.Character3dId == 5, "character3d id comes from config");
 Expect(options.EmitCostumeRegistries, "emit registries comes from config");
 Expect(options.EmitPartPackages, "emit part packages comes from config");
 Expect(options.EmitRoleRuntimes, "emit role runtimes comes from config");
@@ -88,12 +84,10 @@ Expect(options.PartType == "head_optional", "CLI part type overrides and normali
 Expect(options.PartUnit == "light_sound", "part unit comes from config");
 Expect(options.RoleCharacter3dIds.SequenceEqual(new[] { 5, 7, 9 }), "role character3d ids merge config and CLI");
 Expect(options.ManifestPath == "/data/manifest-from-cli.json", "CLI manifest overrides config");
-Expect(options.KeepIntermediate, "keep intermediate comes from config");
 Expect(options.PartPackageProcessConcurrency == 1, "part package process concurrency defaults to single process");
 Expect(options.PartPackageShardCount == 1, "part package shard count defaults to one");
 Expect(options.PartPackageShardIndex == 0, "part package shard index defaults to zero");
 Expect(options.AssetStudioLogLevel == "info", "assetstudio log level comes from config");
-Expect(options.RuntimeJsonOutput == "both", "runtime JSON output comes from config");
 Expect(options.CompactTextures, "texture compaction comes from config");
 Expect(!options.OptimizeTextureStore, "standalone texture optimization comes from config");
 Expect(options.SharedContentStore == "/data/shared-cas-from-cli", "CLI shared content store overrides config");
@@ -220,7 +214,6 @@ var workerParsed = ConversionOptionsParser.Parse(new[]
     "--out", "/data/out",
     "--part-package-process-concurrency", "8",
     "--assetstudio-log-level", "debug",
-    "--runtime-json-output", "gzip",
     "--compact-textures",
     "--png-optimize", "off",
     "--texture-compact-workers", "3"
@@ -228,7 +221,6 @@ var workerParsed = ConversionOptionsParser.Parse(new[]
 Expect(workerParsed.IsSuccess && workerParsed.Options is not null, "worker parse succeeds");
 Expect(workerParsed.Options!.PartPackageProcessConcurrency == 8, "CLI part package process concurrency parses");
 Expect(workerParsed.Options!.AssetStudioLogLevel == "debug", "CLI assetstudio log level parses");
-Expect(workerParsed.Options!.RuntimeJsonOutput == "gzip", "CLI runtime JSON output parses");
 Expect(workerParsed.Options!.CompactTextures, "CLI compact textures parses");
 Expect(workerParsed.Options!.PngOptimizeMode == "off", "CLI PNG optimize mode parses");
 Expect(workerParsed.Options!.TextureCompactWorkers == 3, "CLI texture compact workers parses");
@@ -241,16 +233,6 @@ var optimizeStoreParsed = ConversionOptionsParser.Parse(new[]
     "--texture-compact-workers", "2",
 });
 Expect(optimizeStoreParsed.IsSuccess && optimizeStoreParsed.Options!.OptimizeTextureStore, "standalone texture store optimization parses without asset inputs");
-
-var invalidRuntimeJsonOutputParsed = ConversionOptionsParser.Parse(new[]
-{
-    "--emit-part-packages",
-    "--master", "/data/master",
-    "--asset-root", "/data/assets",
-    "--out", "/data/out",
-    "--runtime-json-output", "brotli"
-});
-Expect(!invalidRuntimeJsonOutputParsed.IsSuccess, "invalid runtime JSON output is rejected");
 
 var invalidPngOptimizeParsed = ConversionOptionsParser.Parse(new[]
 {
@@ -336,21 +318,6 @@ Expect(allRoleParsed.Options!.RoleCharacter3dIds.Count == 0, "empty role id list
 
 var writerDir = Path.Combine(tempDir, "writer");
 var writerPath = Path.Combine(writerDir, "part-runtime.json");
-RuntimeJsonWriter.Write(writerPath, new { version = "test", value = 7 }, new JsonSerializerOptions(), RuntimeJsonWriter.Gzip);
-Expect(!File.Exists(writerPath), "gzip runtime JSON mode does not write plain JSON");
-Expect(File.Exists(writerPath + ".gz"), "gzip runtime JSON mode writes gzip file");
-using (var stream = new GZipStream(File.OpenRead(writerPath + ".gz"), CompressionMode.Decompress))
-using (var document = JsonDocument.Parse(stream))
-{
-    Expect(document.RootElement.GetProperty("version").GetString() == "test", "gzip runtime JSON can be decompressed and parsed");
-}
-
-RuntimeJsonWriter.Write(writerPath, new { version = "both" }, new JsonSerializerOptions(), RuntimeJsonWriter.Both);
-Expect(File.Exists(writerPath), "both runtime JSON mode writes plain JSON");
-Expect(File.Exists(writerPath + ".gz"), "both runtime JSON mode writes gzip file");
-
-File.Delete(writerPath);
-File.Delete(writerPath + ".gz");
 RuntimeJsonWriter.Write(
     writerPath,
     new
@@ -360,20 +327,20 @@ RuntimeJsonWriter.Write(
         nested = new { ok = true },
         items = new object?[] { "a", 2, null }
     },
-    new JsonSerializerOptions(),
-    RuntimeJsonWriter.MessagePackBrotli
+    new JsonSerializerOptions()
 );
 var writerMessagePackPath = RuntimeJsonWriter.MessagePackBrotliPath(writerPath);
 Expect(!File.Exists(writerPath), "msgpack-br runtime JSON mode does not write plain JSON");
 Expect(!File.Exists(writerPath + ".gz"), "msgpack-br runtime JSON mode does not write gzip");
 Expect(File.Exists(writerMessagePackPath), "msgpack-br runtime JSON mode writes MessagePack Brotli file");
-using (var document = RuntimeJsonWriter.ReadJsonDocument(writerPath, RuntimeJsonWriter.MessagePackBrotli))
+using (var document = RuntimeJsonWriter.ReadJsonDocument(writerPath))
 {
     Expect(document.RootElement.GetProperty("version").GetString() == "msgpack", "msgpack-br runtime JSON can be decoded and parsed");
     Expect(document.RootElement.GetProperty("nested").GetProperty("ok").GetBoolean(), "msgpack-br runtime JSON preserves nested objects");
     Expect(document.RootElement.GetProperty("items").GetArrayLength() == 3, "msgpack-br runtime JSON preserves arrays");
 }
-Expect(RuntimeJsonWriter.PrimaryPath(writerPath, RuntimeJsonWriter.MessagePackBrotli) == writerMessagePackPath, "msgpack-br primary path points at .msgpack.br");
+Expect(RuntimeJsonWriter.PrimaryPath(writerPath) == writerMessagePackPath, "runtime primary path points at .msgpack.br");
+Expect(RuntimeJsonWriter.PrimaryPath(writerMessagePackPath) == writerMessagePackPath, "runtime primary path keeps final .msgpack.br paths unchanged");
 Expect(RuntimeJsonWriter.DefaultBrotliQuality == 6, "runtime MessagePack defaults to Brotli quality 6");
 
 var raceRoot = Path.Combine(writerDir, "compiled-cache-race");
@@ -419,10 +386,9 @@ RuntimeJsonWriter.Write(
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Converters = { new JsonStringEnumConverter() },
-    },
-    RuntimeJsonWriter.MessagePackBrotli
+    }
 );
-using (var document = RuntimeJsonWriter.ReadJsonDocument(directWriterPath, RuntimeJsonWriter.MessagePackBrotli))
+using (var document = RuntimeJsonWriter.ReadJsonDocument(directWriterPath))
 {
     Expect(document.RootElement.GetProperty("displayName").GetString() == "direct", "direct MessagePack writer honors JSON property naming");
     Expect(document.RootElement.GetProperty("state").GetString() == "Ready", "direct MessagePack writer honors string enums");
@@ -451,12 +417,11 @@ RuntimeJsonWriter.Write(
         gravityDir = new[] { 0f, -1f, 0f }
     },
     new JsonSerializerOptions(),
-    RuntimeJsonWriter.MessagePackBrotli,
     binaryArraySchema: RuntimeBinaryArraySchema.PartRuntime
 );
 var binaryMessagePack = ReadBrotliBytes(RuntimeJsonWriter.MessagePackBrotliPath(binaryWriterPath));
 Expect(ContainsRuntimeBinaryExtension(binaryMessagePack), "runtime mesh arrays are emitted as MessagePack binary extensions");
-using (var document = RuntimeJsonWriter.ReadJsonDocument(binaryWriterPath, RuntimeJsonWriter.MessagePackBrotli))
+using (var document = RuntimeJsonWriter.ReadJsonDocument(binaryWriterPath))
 {
     var mesh = document.RootElement.GetProperty("nativeMeshes").GetProperty("meshes")[0];
     var positions = mesh.GetProperty("positions").EnumerateArray().Select(item => item.GetSingle()).ToArray();
@@ -472,8 +437,7 @@ var genericValuesPath = Path.Combine(writerDir, "generic-values.json");
 RuntimeJsonWriter.Write(
     genericValuesPath,
     new { values = Enumerable.Range(0, 20).Select(index => (double)index).ToArray() },
-    new JsonSerializerOptions(),
-    RuntimeJsonWriter.MessagePackBrotli
+    new JsonSerializerOptions()
 );
 Expect(
     !ContainsRuntimeBinaryExtension(ReadBrotliBytes(RuntimeJsonWriter.MessagePackBrotliPath(genericValuesPath))),
@@ -523,7 +487,6 @@ Expect(!Directory.EnumerateFiles(Path.GetDirectoryName(concurrentPublishTarget)!
 
 var storeOptimization = new TextureCompactor().OptimizeStore(
     directTextureRoot,
-    RuntimeJsonWriter.MessagePackBrotli,
     "off",
     2
 );
@@ -563,7 +526,6 @@ RuntimeJsonWriter.Write(
         }
     },
     new JsonSerializerOptions(),
-    RuntimeJsonWriter.MessagePackBrotli,
     binaryArraySchema: RuntimeBinaryArraySchema.UnityMotion
 );
 Expect(
@@ -578,7 +540,7 @@ var packageC = Path.Combine(compactDir, "parts", "_sources", "hair", "c");
 WriteRuntimePackage(packageA, "textures/body/a.png", new byte[] { 1, 2, 3, 4 });
 WriteRuntimePackage(packageB, "textures/head/b.png", new byte[] { 1, 2, 3, 4 });
 WriteRuntimePackage(packageC, "textures/hair/c.png", new byte[] { 9, 8, 7 });
-var compactReport = new TextureCompactor().Compact(compactDir, RuntimeJsonWriter.Gzip, "off", 3);
+var compactReport = new TextureCompactor().Compact(compactDir, "off", 3);
 Expect(compactReport.TextureFileCount == 3, "texture compactor scans package textures");
 Expect(compactReport.UniqueHashCount == 2, "texture compactor groups by exact SHA-256");
 Expect(compactReport.DuplicateFileCount == 1, "texture compactor counts duplicate files");
@@ -608,20 +570,17 @@ var messagePackPackage = Path.Combine(compactMessagePackDir, "parts", "_sources"
 WriteRuntimePackage(
     messagePackPackage,
     "textures/body/a.png",
-    new byte[] { 1, 2, 3, 4 },
-    RuntimeJsonWriter.MessagePackBrotli
+    new byte[] { 1, 2, 3, 4 }
 );
 var compactMessagePackReport = new TextureCompactor().Compact(
     compactMessagePackDir,
-    RuntimeJsonWriter.MessagePackBrotli,
     "off",
     1
 );
 Expect(compactMessagePackReport.RewrittenReferenceCount == 3, "texture compactor rewrites MessagePack runtime references");
 Expect(!File.Exists(Path.Combine(messagePackPackage, "textures", "body", "a.png")), "MessagePack compaction removes replaced source texture");
 var rewrittenMessagePack = ReadRuntimePackage(
-    Path.Combine(messagePackPackage, "part-runtime.json"),
-    RuntimeJsonWriter.MessagePackBrotli
+    Path.Combine(messagePackPackage, "part-runtime.json")
 );
 var messagePackTexture = rewrittenMessagePack["characterTextures"]!["main"]!.GetValue<string>();
 Expect(messagePackTexture.StartsWith("/_texture_store/sha256/"), "MessagePack runtime points at compacted texture store");
@@ -658,13 +617,11 @@ var regionAPartBytes = File.ReadAllBytes(CasPartRuntimePath(casRegionA));
 RuntimeJsonWriter.Write(
     Path.Combine(casRegionB, "parts", "_sources", "body", "source", "part-runtime.json"),
     new { version = "changed", positions = new[] { 3f, 4f, 5f } },
-    new JsonSerializerOptions(),
-    RuntimeJsonWriter.MessagePackBrotli
+    new JsonSerializerOptions()
 );
 Expect(File.ReadAllBytes(CasPartRuntimePath(casRegionA)).SequenceEqual(regionAPartBytes), "atomic runtime writes do not mutate another region's CAS link");
 using (var changedRuntime = RuntimeJsonWriter.ReadJsonDocument(
-    Path.Combine(casRegionB, "parts", "_sources", "body", "source", "part-runtime.json"),
-    RuntimeJsonWriter.MessagePackBrotli
+    Path.Combine(casRegionB, "parts", "_sources", "body", "source", "part-runtime.json")
 ))
 {
     Expect(changedRuntime.RootElement.GetProperty("version").GetString() == "changed", "atomic runtime writes replace only the requested region path");
@@ -1075,7 +1032,7 @@ var legacyAccessory = Path.Combine(
     registryAssetRoot,
     "live_pv",
     "model",
-    "character",
+    "characterv2",
     "head_optional",
     "0019",
     "a03.bundle"
@@ -1084,7 +1041,7 @@ var legacyAccessoryColor = Path.Combine(
     registryAssetRoot,
     "live_pv",
     "model",
-    "character",
+    "characterv2",
     "color_variation",
     "head_optional",
     "0019",
@@ -1202,25 +1159,23 @@ var registryOutput = Path.Combine(tempDir, "registry-output");
 new CostumeRegistryExporter().Export(
     registryMasterDir,
     registryAssetRoot,
-    registryOutput,
-    RuntimeJsonWriter.Json
+    registryOutput
 );
-using (var scopedCompatibility = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(
+using (var scopedCompatibility = RuntimeJsonWriter.ReadJsonDocument(Path.Combine(
     registryOutput,
     "parts",
     "compat",
     "by-unit",
     "light_sound",
     "head-hair-compatibility.json"
-))))
+)))
 {
     var scopedRules = scopedCompatibility.RootElement.GetProperty("rules").EnumerateArray().ToArray();
     Expect(scopedRules.Length == 1, "scoped head-hair compatibility omits positive and default rules");
     Expect(scopedRules[0].GetProperty("state").GetString() == "not_available", "scoped head-hair compatibility keeps deny rules");
 }
 using (var compactRegistry = RuntimeJsonWriter.ReadJsonDocument(
-    Path.Combine(registryOutput, "parts", "part-registry-compact.json"),
-    RuntimeJsonWriter.MessagePackBrotli
+    Path.Combine(registryOutput, "parts", "part-registry-compact.json")
 ))
 {
     var root = compactRegistry.RootElement;
@@ -1232,8 +1187,7 @@ using (var compactRegistry = RuntimeJsonWriter.ReadJsonDocument(
     Expect(firstRow.ValueKind == JsonValueKind.Array && firstRow.GetArrayLength() == 15, "compact part registry rows omit repeated field names");
 }
 using (var compactCompatibility = RuntimeJsonWriter.ReadJsonDocument(
-    Path.Combine(registryOutput, "parts", "head-hair-compatibility-compact.json"),
-    RuntimeJsonWriter.MessagePackBrotli
+    Path.Combine(registryOutput, "parts", "head-hair-compatibility-compact.json")
 ))
 {
     var rootItems = compactCompatibility.RootElement.EnumerateArray().ToArray();
@@ -1244,15 +1198,6 @@ using (var compactCompatibility = RuntimeJsonWriter.ReadJsonDocument(
 Expect(
     registryExport.Character3dIndex.Entries.All(entry => entry.RoleRuntimePath.EndsWith(".msgpack.br", StringComparison.Ordinal)),
     "default character registry points at MessagePack Brotli role runtimes"
-);
-var gzipRegistryExport = new CostumeRegistryExporter().ExportInMemory(
-    registryMasterDir,
-    registryAssetRoot,
-    RuntimeJsonWriter.Gzip
-);
-Expect(
-    gzipRegistryExport.Character3dIndex.Entries.All(entry => entry.RoleRuntimePath.EndsWith(".json.gz", StringComparison.Ordinal)),
-    "gzip character registry points at gzip role runtimes"
 );
 Expect(registryExport.PartRegistry.Version == 2, "part registry marks source-based accessory identity schema");
 var presetEntry = registryExport.Character3dIndex.Entries.Single(entry => entry.Character3dId == 9001);
@@ -1265,8 +1210,8 @@ var legacyAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => e
 Expect(legacyAccessoryEntry.OutfitId == 0, "non-body registry rows do not expose an outfit id");
 Expect(legacyAccessoryEntry.AccessoryId == 11000, "head_optional color inherits its original-color source accessory id");
 Expect(legacyAccessoryEntry.PartType == "head_optional", "head_only registry rows are exported as head_optional");
-Expect(legacyAccessoryEntry.BundlePath == legacyAccessory, "head_optional registry resolves legacy character base bundle");
-Expect(legacyAccessoryEntry.ColorVariationBundlePath == legacyAccessoryColor, "head_optional registry resolves legacy character color variation bundle");
+Expect(legacyAccessoryEntry.BundlePath == legacyAccessory, "head_optional registry resolves characterv2 base bundle");
+Expect(legacyAccessoryEntry.ColorVariationBundlePath == legacyAccessoryColor, "head_optional registry resolves characterv2 color variation bundle");
 Expect(legacyAccessoryEntry.PackagePath.StartsWith("parts/_sources/head_optional/"), "head_optional registry writes shared source package path");
 var fallbackAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11009 && entry.CharacterId == 21 && entry.Unit == "light_sound");
 Expect(fallbackAccessoryEntry.Status == "planned", "head_optional fallback accessory is planned");
@@ -1334,6 +1279,7 @@ PartMaterialMetadataSmoke.Run();
 var repoRoot = FindRepoRoot();
 var programSource = File.ReadAllText(Path.Combine(repoRoot, "Program.cs"));
 var partPackageExporterSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "PartPackageExporter.cs"));
+var compiledPartCacheSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "CompiledPartCache.cs"));
 var conversionPlannerSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "ConversionPlanner.cs"));
 var roleRuntimeExporterSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "RoleRuntimeExporter.cs"));
 var assetStudioLoadedBundleSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "AssetStudioLoadedBundle.cs"));
@@ -1343,6 +1289,11 @@ var materialIdentityLookupSource = File.ReadAllText(Path.Combine(repoRoot, "Serv
 var bundleInputResolverSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "BundleInputResolver.cs"));
 var sekaiBundleDecryptorSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "SekaiBundleDecryptor.cs"));
 var character3dCostumeResolverSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "Character3dCostumeResolver.cs"));
+Expect(partPackageExporterSource.Contains("part-runtime-core.msgpack.br"), "part package corePath uses the final MessagePack Brotli filename");
+Expect(compiledPartCacheSource.Contains("part-runtime-core.msgpack.br"), "compiled part cache restores the final MessagePack Brotli corePath");
+Expect(!partPackageExporterSource.Contains("part-runtime-core.json"), "part package exporter omits logical JSON core paths");
+Expect(!compiledPartCacheSource.Contains("part-runtime-core.json"), "compiled part cache omits logical JSON core paths");
+Expect(partPackageExporterSource.Contains("coreRelativePath.EndsWith(\".msgpack.br\""), "incremental export rejects old logical corePath manifests");
 Expect(partPackageExporterSource.Contains("name.Contains(\"eyelash\")"), "part package exporter classifies eyelash separately");
 Expect(partPackageExporterSource.Contains("return \"eyelash\""), "part package exporter returns eyelash material kind");
 Expect(partPackageExporterSource.Contains("name.Contains(\"eyebrow\")"), "part package exporter classifies eyebrow separately");
@@ -1413,7 +1364,6 @@ Expect(partRuntimeModelsSource.Contains("JsonPropertyName(\"extraBones\")"), "pa
 Expect(partPackageExporterSource.Contains("ExtraBones: springBone.ExtraBones"), "part package exporter preserves ExtraBone records for custom composition");
 Expect(partPackageExporterSource.Contains("partType is \"head\" or \"hair\""), "head and hair color variations target hair materials");
 Expect(character3dCostumeResolverSource.Contains("ResolveFaceColorVariationPath"), "character resolver resolves real face color variation bundles");
-Expect(programSource.Contains("headOverrideTextures: headOverrideTextures"), "direct character export applies head color variation textures");
 var failedPartGuard = programSource.IndexOf("if (failed > 0)", StringComparison.Ordinal);
 var failedPartExit = failedPartGuard < 0
     ? -1
@@ -1478,8 +1428,9 @@ Expect(costumeRegistryExporterSource.Contains("part-source-map.json"), "registry
 Expect(costumeRegistryExporterSource.Contains("BuildSourceIdentity"), "registry exporter builds source identities");
 Expect(costumeRegistryExporterSource.Contains("SHA256.HashData"), "registry exporter uses stable source key hashes");
 Expect(costumeRegistryExporterSource.Contains("parts/_sources/"), "registry exporter points duplicate part ids at shared source package paths");
-Expect(costumeRegistryExporterSource.Contains("ResolveAssetBaseDirectoryCandidates"), "registry exporter checks v2, legacy, and flat asset roots");
-Expect(costumeRegistryExporterSource.Contains("\"model\", \"character\""), "registry exporter includes legacy character model fallback roots");
+Expect(costumeRegistryExporterSource.Contains("ResolveAssetBaseDirectoryCandidates"), "registry exporter resolves the characterv2 asset root");
+Expect(!costumeRegistryExporterSource.Contains("\"model\", \"character\""), "registry exporter omits legacy character model roots");
+Expect(!costumeRegistryExporterSource.Contains("Path.Combine(assetRoot, part)"), "registry exporter omits flat asset roots");
 Expect(partPackageExporterSource.Contains("SelectRepresentativePartEntries"), "part package exporter exports each shared source package once");
 Expect(partPackageExporterSource.Contains("GroupBy(entry => entry.PackagePath"), "part package exporter groups export work by package path");
 Expect(roleRuntimeExporterSource.Contains("ResolveDefaultCostumeSettingMotionPath"), "role runtime exporter auto-resolves costume_setting motion bundles");
@@ -1504,9 +1455,9 @@ Expect(assetStudioBundleParserSource.Contains("m_FileID"), "bundle parser preser
 Expect(assetStudioBundleParserSource.Contains("m_PathID"), "bundle parser preserves renderer material path ids");
 Expect(assetStudioBundleParserSource.Contains("ConvertToStream(ImageFormat.Png, false)"), "bundle parser exports correctly oriented PNGs once");
 Expect(!assetStudioBundleParserSource.Contains("Image.Load"), "bundle parser does not decode and re-encode exported PNGs");
-Expect(assetStudioImportedModelFactorySource.Contains("typeof(bool)"), "part model conversion uses AssetStudio's no-texture constructor when available");
-Expect(assetStudioImportedModelFactorySource.Contains("false,"), "part model conversion disables unused ModelConverter textures");
-Expect(assetStudioImportedModelFactorySource.Contains("NormalizeTextureOrientation(legacyImported.TextureList)"), "legacy AssetStudio fallback preserves texture orientation");
+Expect(assetStudioImportedModelFactorySource.Contains("new ModelConverter(preferredRoot, ImageFormat.Png, null, convertModelTextures)"), "part model conversion uses the final AssetStudio constructor directly");
+Expect(!assetStudioImportedModelFactorySource.Contains("GetConstructor"), "part model conversion omits reflective AssetStudio fallbacks");
+Expect(!assetStudioImportedModelFactorySource.Contains("NormalizeTextureOrientation"), "part model conversion omits legacy texture repair");
 Expect(partPackageExporterSource.Contains("MaterialIdentityLookup"), "part package exporter resolves materials by identity");
 Expect(!partPackageExporterSource.Contains("BuildMaterialMap"), "part package exporter no longer indexes materials by display name");
 Expect(partPackageExporterSource.Contains("part-export-error.json"), "part package exporter writes per-package errors during full export");
@@ -1554,8 +1505,7 @@ static string FindRepoRoot()
 static void WriteRuntimePackage(
     string packageDirectory,
     string texturePath,
-    byte[] textureBytes,
-    string runtimeJsonOutput = RuntimeJsonWriter.Gzip
+    byte[] textureBytes
 )
 {
     var textureFile = Path.Combine(packageDirectory, texturePath.Replace('/', Path.DirectorySeparatorChar));
@@ -1594,8 +1544,7 @@ static void WriteRuntimePackage(
                 }
             }
         },
-        new JsonSerializerOptions(),
-        runtimeJsonOutput
+        new JsonSerializerOptions()
     );
 }
 
@@ -1613,8 +1562,7 @@ static void WriteCasFixture(string outputDirectory)
     RuntimeJsonWriter.Write(
         Path.Combine(outputDirectory, "parts", "_sources", "body", "source", "part-runtime.json"),
         new { version = "cas", positions = new[] { 0f, 1f, 2f } },
-        new JsonSerializerOptions(),
-        RuntimeJsonWriter.MessagePackBrotli
+        new JsonSerializerOptions()
     );
 }
 
@@ -1641,12 +1589,9 @@ static PartRegistryEntry PartEntry(
     );
 }
 
-static JsonObject ReadRuntimePackage(
-    string runtimeJsonPath,
-    string runtimeJsonOutput = RuntimeJsonWriter.Gzip
-)
+static JsonObject ReadRuntimePackage(string runtimeJsonPath)
 {
-    using var document = RuntimeJsonWriter.ReadJsonDocument(runtimeJsonPath, runtimeJsonOutput);
+    using var document = RuntimeJsonWriter.ReadJsonDocument(runtimeJsonPath);
     return JsonNode.Parse(document.RootElement.GetRawText())!.AsObject();
 }
 

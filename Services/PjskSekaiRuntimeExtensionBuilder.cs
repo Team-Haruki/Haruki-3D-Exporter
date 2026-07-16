@@ -608,7 +608,6 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
             ParentAttachPath: parentAttachPath,
             ChildRootPath: childRootPath,
             ChildOriginPath: childOriginPath,
-            RuntimeMountPath: null,
             ParentingMode: "model_combine_setup",
             CoordinateSpace: "unity-left-handed",
             Notes: new[]

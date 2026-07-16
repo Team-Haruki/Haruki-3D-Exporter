@@ -7,50 +7,38 @@ public static class ConversionOptionsParser
 {
     public static string Usage =>
         "Usage:\n" +
-        "  Haruki-3D-Exporter --body <path> --head <path> --out <directory> [--master <master-directory>] [--motion <bundle-or-export-folder>] [--head-root <name>] [--keep-intermediate]\n" +
-        "  Haruki-3D-Exporter --character3d-id <id> --master <master-directory> --asset-root <AssetBundles-root> --out <directory> [--motion <bundle-or-export-folder>] [--keep-intermediate]\n" +
         "  Haruki-3D-Exporter --emit-costume-registries --master <master-directory> --asset-root <AssetBundles-root> --out <directory>\n" +
         "  Haruki-3D-Exporter --emit-part-packages --part-costume3d-id <id> --part-type <body|head|hair|head_optional> --master <master-directory> --asset-root <AssetBundles-root> --out <directory> [--part-unit <unit>]\n\n" +
         "  Haruki-3D-Exporter --emit-role-runtimes [--role-character3d-id <id>] --master <master-directory> --asset-root <AssetBundles-root> --out <directory> [--motion <bundle-or-export-folder>]\n" +
         "  Haruki-3D-Exporter --export-face-motion --motion <bundle-or-decoded-folder-or-json> --out <face_motion.json-or-directory> [--source-path <bundle-path>]\n\n" +
         "  Add --config <json> to load defaults from haruki-3d-exporter.config.json.\n\n" +
         "Notes:\n" +
-        "  --body accepts either a bundle file or a body directory like .../body/05/0001\n" +
-        "  --head accepts either a bundle file or a head directory like .../face/05\n" +
-        "  --master reads gameCharacters.json for character heights; with --character3d-id it also resolves character3ds.json and costume3dModels.json\n" +
-        "  --character3d-id resolves body/hair/head from gameCharacters.json, character3ds.json, and costume3dModels.json\n" +
+        "  --master provides the masterdata used to resolve runtime roles and parts\n" +
         "  --asset-root points at the AssetBundles root containing live_pv/model/characterv2\n" +
-        "  --emit-costume-registries writes character3d-index.json, parts/part-registry.json, parts/head-hair-compatibility.json, and parts/card-costume-unlocks.json\n" +
-        "  --emit-part-packages writes one parts/<partType>/<costume3dId>/<unit>/part-runtime.json for runtime custom assembly\n" +
-        "  --emit-role-runtimes writes roles/<characterId>/<unit>/role-runtime.json with motion metadata; without --role-character3d-id it exports one representative row per character+unit role\n" +
+        "  --emit-costume-registries writes .msgpack.br character, part, compatibility, and unlock registries\n" +
+        "  --emit-part-packages writes core+delta part-runtime.msgpack.br packages for runtime custom assembly\n" +
+        "  --emit-role-runtimes writes roles/<characterId>/<unit>/role-runtime.msgpack.br with motion metadata; without --role-character3d-id it exports one representative row per character+unit role\n" +
         "  --manifest records part package input file stamps for incremental --emit-part-packages runs\n" +
         "  --part-package-process-concurrency runs role or full part exports across N workers; 0 = auto CPU count\n" +
         "  --part-package-workers and --part-package-core-count are aliases for --part-package-process-concurrency\n" +
         "  --part-package-shard-count and --part-package-shard-index run one deterministic package shard\n" +
         "  --assetstudio-log-level controls AssetStudio logs: warning, info, or debug\n" +
         "  --convert-model-textures controls AssetStudio model texture conversion: true or false\n" +
-        "  --runtime-json-output controls runtime JSON files: msgpack-br, gzip, json, or both\n" +
-        "  --compact-textures deduplicates package textures by exact SHA-256 and rewrites runtime JSON paths\n" +
+        "  --compact-textures deduplicates package textures by exact SHA-256 and rewrites runtime package paths\n" +
         "  --shared-content-store hard-links exact texture and part-runtime bytes into a shared cross-region CAS\n" +
         "  --bundle-hash-index reuses updater-provided SHA-256 values when fingerprinting source bundles\n" +
         "  --png-optimize controls lossless PNG optimization during compaction: oxipng or off\n" +
         "  --texture-compact-workers limits concurrent PNG optimizers; 0 = min(4, CPU count)\n" +
         "  --export-face-motion writes face_motion.json from a costume_setting bundle or decoded AnimationClip JSON without Python helpers\n" +
         "  --motion accepts a costume_setting bundle or a folder containing unity-motion.json/face_motion.json/light_motion.json\n" +
-        "  --head-root selects a specific root GameObject from the head bundle, for example face or mdl_chr_IDL_A_00\n" +
-        "  lean output is the default; use --keep-intermediate to keep diagnostic manifests, inventories, and reports";
+        "  runtime metadata is always emitted as Brotli-compressed MessagePack";
 
     public static ParseResult Parse(string[] args)
     {
-        string? body = null;
-        string? head = null;
         string? output = null;
         string? motion = null;
-        string? headRoot = null;
         string? masterDirectory = null;
         string? assetRoot = null;
-        int? character3dId = null;
-        var keepIntermediate = false;
         var emitCostumeRegistries = false;
         var emitPartPackages = false;
         var emitRoleRuntimes = false;
@@ -67,7 +55,6 @@ public static class ConversionOptionsParser
         var partPackageShardIndex = 0;
         string? partPackageClaimDirectory = null;
         var assetStudioLogLevel = "warning";
-        var runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli;
         var compactTextures = false;
         var optimizeTextureStore = false;
         string? sharedContentStore = null;
@@ -96,15 +83,10 @@ public static class ConversionOptionsParser
             try
             {
                 var config = LoadConfig(configPath);
-                body = config.Body;
-                head = config.Head;
                 output = config.Output;
                 motion = config.Motion;
-                headRoot = config.HeadRoot;
                 masterDirectory = config.Master;
                 assetRoot = config.AssetRoot;
-                character3dId = config.Character3dId;
-                keepIntermediate = config.KeepIntermediate ?? false;
                 emitCostumeRegistries = config.EmitCostumeRegistries ?? false;
                 emitPartPackages = config.EmitPartPackages ?? false;
                 emitRoleRuntimes = config.EmitRoleRuntimes ?? false;
@@ -126,9 +108,6 @@ public static class ConversionOptionsParser
                 assetStudioLogLevel = string.IsNullOrWhiteSpace(config.AssetStudioLogLevel)
                     ? "warning"
                     : config.AssetStudioLogLevel!;
-                runtimeJsonOutput = string.IsNullOrWhiteSpace(config.RuntimeJsonOutput)
-                    ? RuntimeJsonWriter.MessagePackBrotli
-                    : config.RuntimeJsonOutput!;
                 compactTextures = config.CompactTextures ?? false;
                 optimizeTextureStore = config.OptimizeTextureStore ?? false;
                 sharedContentStore = config.SharedContentStore;
@@ -161,18 +140,6 @@ public static class ConversionOptionsParser
                 continue;
             }
 
-            if (arg is "--body" or "-b")
-            {
-                body = ReadValue(args, ref i, arg);
-                continue;
-            }
-
-            if (arg is "--head" or "-h")
-            {
-                head = ReadValue(args, ref i, arg);
-                continue;
-            }
-
             if (arg is "--out" or "-o")
             {
                 output = ReadValue(args, ref i, arg);
@@ -185,17 +152,6 @@ public static class ConversionOptionsParser
                 continue;
             }
 
-            if (arg is "--character3d-id")
-            {
-                var value = ReadValue(args, ref i, arg);
-                if (!int.TryParse(value, out var parsed))
-                {
-                    return new ParseResult(false, null, $"Option {arg} must be an integer.");
-                }
-                character3dId = parsed;
-                continue;
-            }
-
             if (arg is "--master")
             {
                 masterDirectory = ReadValue(args, ref i, arg);
@@ -205,18 +161,6 @@ public static class ConversionOptionsParser
             if (arg is "--asset-root")
             {
                 assetRoot = ReadValue(args, ref i, arg);
-                continue;
-            }
-
-            if (arg is "--head-root")
-            {
-                headRoot = ReadValue(args, ref i, arg);
-                continue;
-            }
-
-            if (arg is "--keep-intermediate")
-            {
-                keepIntermediate = true;
                 continue;
             }
 
@@ -299,12 +243,6 @@ public static class ConversionOptionsParser
             if (arg is "--assetstudio-log-level")
             {
                 assetStudioLogLevel = ReadValue(args, ref i, arg);
-                continue;
-            }
-
-            if (arg is "--runtime-json-output")
-            {
-                runtimeJsonOutput = ReadValue(args, ref i, arg);
                 continue;
             }
 
@@ -416,32 +354,9 @@ public static class ConversionOptionsParser
             }
 
         }
-        else if (character3dId is not null)
+        else
         {
-            if (string.IsNullOrWhiteSpace(masterDirectory))
-            {
-                return new ParseResult(false, null, "Missing --master for --character3d-id.");
-            }
-
-            if (string.IsNullOrWhiteSpace(assetRoot))
-            {
-                return new ParseResult(false, null, "Missing --asset-root for --character3d-id.");
-            }
-        }
-        else if (string.IsNullOrWhiteSpace(body))
-        {
-            return new ParseResult(false, null, "Missing --body.");
-        }
-
-        if (!exportFaceMotion &&
-            !emitCostumeRegistries &&
-            !emitPartPackages &&
-            !emitRoleRuntimes &&
-            !optimizeTextureStore &&
-            character3dId is null &&
-            string.IsNullOrWhiteSpace(head))
-        {
-            return new ParseResult(false, null, "Missing --head.");
+            return new ParseResult(false, null, "Missing final pipeline operation.");
         }
 
         if (string.IsNullOrWhiteSpace(output))
@@ -469,11 +384,6 @@ public static class ConversionOptionsParser
             return new ParseResult(false, null, "--assetstudio-log-level must be warning, info, or debug.");
         }
 
-        if (!RuntimeJsonWriter.IsValidMode(runtimeJsonOutput))
-        {
-            return new ParseResult(false, null, "--runtime-json-output must be msgpack-br, gzip, json, or both.");
-        }
-
         if (!IsValidPngOptimizeMode(pngOptimize))
         {
             return new ParseResult(false, null, "--png-optimize must be oxipng or off.");
@@ -498,13 +408,8 @@ public static class ConversionOptionsParser
         return new ParseResult(
             true,
             new ConversionOptions(
-                body,
-                head,
                 output,
                 motion,
-                headRoot,
-                keepIntermediate,
-                character3dId,
                 masterDirectory,
                 assetRoot,
                 emitCostumeRegistries,
@@ -514,10 +419,7 @@ public static class ConversionOptionsParser
                 partCostume3dId,
                 NormalizePartType(partType),
                 string.IsNullOrWhiteSpace(partUnit) ? null : partUnit,
-                roleCharacter3dIds
-                    .Concat(character3dId is null ? Array.Empty<int>() : new[] { character3dId.Value })
-                    .Distinct()
-                    .ToList(),
+                roleCharacter3dIds.Distinct().ToList(),
                 string.IsNullOrWhiteSpace(sourcePath) ? null : sourcePath,
                 string.IsNullOrWhiteSpace(manifestPath) ? null : manifestPath,
                 partPackageProcessConcurrency,
@@ -525,7 +427,6 @@ public static class ConversionOptionsParser
                 partPackageShardIndex,
                 string.IsNullOrWhiteSpace(partPackageClaimDirectory) ? null : partPackageClaimDirectory,
                 assetStudioLogLevel.Trim().ToLowerInvariant(),
-                RuntimeJsonWriter.NormalizeMode(runtimeJsonOutput),
                 compactTextures,
                 optimizeTextureStore,
                 string.IsNullOrWhiteSpace(sharedContentStore) ? null : sharedContentStore,

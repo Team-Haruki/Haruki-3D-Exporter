@@ -295,7 +295,8 @@ public sealed record PjskSpringBoneRuntimeUnitySetup(
     [property: JsonPropertyName("unityVersion")] string UnityVersion,
     [property: JsonPropertyName("coordinateSpace")] PjskUnityRuntimeCoordinateSpace CoordinateSpace,
     [property: JsonPropertyName("prefabGraphs")] IReadOnlyList<SpringPrefabGraph> PrefabGraphs,
-    [property: JsonPropertyName("bodyHeadAssembly")] PjskUnityRuntimeBodyHeadAssembly BodyHeadAssembly,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [property: JsonPropertyName("bodyHeadAssembly")] PjskUnityRuntimeBodyHeadAssembly? BodyHeadAssembly,
     [property: JsonPropertyName("rootSelectionProfile")] PjskSpringBoneRootSelectionProfile RootSelectionProfile,
     [property: JsonPropertyName("setupPlan")] PjskSpringBoneSetupPlan SetupPlan,
     [property: JsonPropertyName("bindingDecisions")] IReadOnlyList<PjskSpringBoneBindingDecision> BindingDecisions,
@@ -357,7 +358,6 @@ public sealed record PjskUnityRuntimeBodyHeadAssembly(
     [property: JsonPropertyName("parentAttachPath")] string? ParentAttachPath,
     [property: JsonPropertyName("childRootPath")] string? ChildRootPath,
     [property: JsonPropertyName("childOriginPath")] string? ChildOriginPath,
-    [property: JsonPropertyName("runtimeMountPath")] string? RuntimeMountPath,
     [property: JsonPropertyName("parentingMode")] string ParentingMode,
     [property: JsonPropertyName("coordinateSpace")] string CoordinateSpace,
     [property: JsonPropertyName("notes")] IReadOnlyList<string> Notes,

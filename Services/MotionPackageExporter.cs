@@ -59,8 +59,7 @@ public sealed class MotionPackageExporter
     public MotionExportResult Export(
         string? motionPath,
         string outputDirectory,
-        IImported? bodyModel = null,
-        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
+        IImported? bodyModel = null
     )
     {
         if (string.IsNullOrWhiteSpace(motionPath))
@@ -73,7 +72,7 @@ public sealed class MotionPackageExporter
 
         if (Directory.Exists(normalized))
         {
-            return ExportFromFolder(normalized, outputDirectory, bodyModel, runtimeJsonOutput);
+            return ExportFromFolder(normalized, outputDirectory, bodyModel);
         }
 
         if (!File.Exists(normalized))
@@ -86,7 +85,7 @@ public sealed class MotionPackageExporter
             throw new InvalidOperationException("Direct motion bundle export requires the body model hierarchy.");
         }
 
-        return ExportFromBundle(normalized, outputDirectory, bodyModel, runtimeJsonOutput);
+        return ExportFromBundle(normalized, outputDirectory, bodyModel);
     }
 
     public string ExportFaceMotion(
@@ -129,8 +128,7 @@ public sealed class MotionPackageExporter
     private static MotionExportResult ExportFromFolder(
         string motionFolder,
         string outputDirectory,
-        IImported? bodyModel,
-        string runtimeJsonOutput
+        IImported? bodyModel
     )
     {
         var unityMotionJson = FindFile(motionFolder, "unity-motion.json");
@@ -150,10 +148,9 @@ public sealed class MotionPackageExporter
                 unityMotionOutput,
                 runtime,
                 JsonOptions,
-                runtimeJsonOutput,
                 binaryArraySchema: RuntimeBinaryArraySchema.UnityMotion
             );
-            unityMotionOutput = RuntimeJsonWriter.PrimaryPath(unityMotionOutput, runtimeJsonOutput);
+            unityMotionOutput = RuntimeJsonWriter.PrimaryPath(unityMotionOutput);
         }
         else
         {
@@ -169,8 +166,7 @@ public sealed class MotionPackageExporter
                     decodedClips,
                     motionFolder,
                     outputDirectory,
-                    bodyModel,
-                    runtimeJsonOutput
+                    bodyModel
                 );
 
                 return new MotionExportResult(
@@ -208,13 +204,12 @@ public sealed class MotionPackageExporter
     private static MotionExportResult ExportFromBundle(
         string bundlePath,
         string outputDirectory,
-        IImported bodyModel,
-        string runtimeJsonOutput
+        IImported bodyModel
     )
     {
         var decodedClips = DecodeUnityClipsFromBundle(bundlePath);
         (var unityMotionOutput, var bodyMotionBindings, var faceMotion, var lightMotion) =
-            ExportDecodedClips(decodedClips, bundlePath, outputDirectory, bodyModel, runtimeJsonOutput);
+            ExportDecodedClips(decodedClips, bundlePath, outputDirectory, bodyModel);
 
         return new MotionExportResult(
             SourcePath: bundlePath,
@@ -234,8 +229,7 @@ public sealed class MotionPackageExporter
         IReadOnlyList<DecodedUnityClip> decodedClips,
         string sourcePath,
         string outputDirectory,
-        IImported bodyModel,
-        string runtimeJsonOutput
+        IImported bodyModel
     )
     {
         var bodyClips = decodedClips
@@ -249,10 +243,9 @@ public sealed class MotionPackageExporter
             bodyMotionBindings = WriteUnityBodyMotionRuntime(
                 bodyClips,
                 bodyModel.RootFrame,
-                unityMotionOutput,
-                runtimeJsonOutput
+                unityMotionOutput
             );
-            unityMotionOutput = RuntimeJsonWriter.PrimaryPath(unityMotionOutput, runtimeJsonOutput);
+            unityMotionOutput = RuntimeJsonWriter.PrimaryPath(unityMotionOutput);
         }
 
         var faceClips = decodedClips
@@ -596,8 +589,7 @@ public sealed class MotionPackageExporter
     private static PjskBodyMotionBindingSet WriteUnityBodyMotionRuntime(
         IReadOnlyList<DecodedUnityClip> clips,
         ImportedFrame rootFrame,
-        string outputUnityJsonPath,
-        string runtimeJsonOutput
+        string outputUnityJsonPath
     )
     {
         var crcToBinding = BuildCrcToBodyMotionBinding(rootFrame);
@@ -611,7 +603,7 @@ public sealed class MotionPackageExporter
             throw new InvalidDataException("Motion bundle did not produce any bindable body animation tracks.");
         }
 
-        WriteUnityMotionRuntimeJson(bakedClips, outputUnityJsonPath, runtimeJsonOutput);
+        WriteUnityMotionRuntimeJson(bakedClips, outputUnityJsonPath);
         var usedPathCrcs = bakedClips
             .SelectMany(clip => clip.Tracks)
             .Select(track => track.PathCrc)
@@ -641,8 +633,7 @@ public sealed class MotionPackageExporter
 
     private static void WriteUnityMotionRuntimeJson(
         IReadOnlyList<BakedAnimationClip> clips,
-        string outputPath,
-        string runtimeJsonOutput
+        string outputPath
     )
     {
         var runtime = new PjskUnityMotionRuntime(
@@ -681,7 +672,6 @@ public sealed class MotionPackageExporter
             outputPath,
             runtime,
             new JsonSerializerOptions { WriteIndented = true },
-            runtimeJsonOutput,
             binaryArraySchema: RuntimeBinaryArraySchema.UnityMotion
         );
     }
@@ -1188,164 +1178,6 @@ public sealed class MotionPackageExporter
         return keyframes.All(keyframe => MathF.Abs(keyframe.Value - value) <= 1e-5f);
     }
 
-    private static void WriteAnimationGlb(
-        IReadOnlyList<BakedAnimationClip> clips,
-        string outputGlbPath
-    )
-    {
-        var nodeIndices = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var nodeName in clips.SelectMany(clip => clip.Tracks).Select(track => track.NodeName).Distinct(StringComparer.Ordinal))
-        {
-            nodeIndices[nodeName] = nodeIndices.Count;
-        }
-
-        var nodes = new JsonArray(nodeIndices
-            .OrderBy(pair => pair.Value)
-            .Select(pair => new JsonObject { ["name"] = pair.Key })
-            .Cast<JsonNode>()
-            .ToArray());
-        var accessors = new JsonArray();
-        var bufferViews = new JsonArray();
-        var binary = new List<byte>();
-        var animations = new JsonArray();
-
-        foreach (var clip in clips)
-        {
-            var samplers = new JsonArray();
-            var channels = new JsonArray();
-            var timeAccessorBySignature = new Dictionary<string, int>(StringComparer.Ordinal);
-
-            foreach (var track in clip.Tracks)
-            {
-                var timeSignature = string.Join('|', track.Times.Select(time => time.ToString("R", System.Globalization.CultureInfo.InvariantCulture)));
-                if (!timeAccessorBySignature.TryGetValue(timeSignature, out var inputAccessor))
-                {
-                    inputAccessor = AddFloatAccessor(
-                        binary,
-                        bufferViews,
-                        accessors,
-                        track.Times,
-                        "SCALAR",
-                        min: track.Times.Min(),
-                        max: track.Times.Max()
-                    );
-                    timeAccessorBySignature[timeSignature] = inputAccessor;
-                }
-
-                var outputAccessor = AddFloatAccessor(
-                    binary,
-                    bufferViews,
-                    accessors,
-                    track.Values,
-                    track.ComponentCount == 4 ? "VEC4" : "VEC3"
-                );
-                var samplerIndex = samplers.Count;
-                samplers.Add(new JsonObject
-                {
-                    ["input"] = inputAccessor,
-                    ["output"] = outputAccessor,
-                    ["interpolation"] = "LINEAR",
-                });
-                channels.Add(new JsonObject
-                {
-                    ["sampler"] = samplerIndex,
-                    ["target"] = new JsonObject
-                    {
-                        ["node"] = nodeIndices[track.NodeName],
-                        ["path"] = track.TargetPath,
-                    },
-                });
-            }
-
-            animations.Add(new JsonObject
-            {
-                ["name"] = clip.Name,
-                ["samplers"] = samplers,
-                ["channels"] = channels,
-            });
-        }
-
-        var rootNodes = new JsonArray(nodeIndices
-            .OrderBy(pair => pair.Value)
-            .Select(pair => (JsonNode)JsonValue.Create(pair.Value)!)
-            .ToArray());
-        var root = new JsonObject
-        {
-            ["asset"] = new JsonObject
-            {
-                ["version"] = "2.0",
-                ["generator"] = "PjskBundle2Parts Unity Hermite motion baker",
-            },
-            ["scene"] = 0,
-            ["scenes"] = new JsonArray(new JsonObject { ["nodes"] = rootNodes }),
-            ["nodes"] = nodes,
-            ["animations"] = animations,
-            ["buffers"] = new JsonArray(new JsonObject { ["byteLength"] = Align4(binary.Count) }),
-            ["bufferViews"] = bufferViews,
-            ["accessors"] = accessors,
-        };
-
-        while ((binary.Count & 3) != 0)
-        {
-            binary.Add(0);
-        }
-        GltfJsonEditor.WriteDocumentToGlb(root, binary.ToArray(), outputGlbPath);
-    }
-
-    private static int AddFloatAccessor(
-        List<byte> binary,
-        JsonArray bufferViews,
-        JsonArray accessors,
-        IReadOnlyList<float> values,
-        string type,
-        float? min = null,
-        float? max = null
-    )
-    {
-        while ((binary.Count & 3) != 0)
-        {
-            binary.Add(0);
-        }
-        var byteOffset = binary.Count;
-        var bytes = new byte[4];
-        foreach (var value in values)
-        {
-            BinaryPrimitives.WriteInt32LittleEndian(bytes, BitConverter.SingleToInt32Bits(value));
-            binary.AddRange(bytes);
-        }
-
-        var bufferViewIndex = bufferViews.Count;
-        bufferViews.Add(new JsonObject
-        {
-            ["buffer"] = 0,
-            ["byteOffset"] = byteOffset,
-            ["byteLength"] = values.Count * sizeof(float),
-        });
-
-        var componentCount = type switch
-        {
-            "SCALAR" => 1,
-            "VEC3" => 3,
-            "VEC4" => 4,
-            _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Unsupported accessor type."),
-        };
-        var accessor = new JsonObject
-        {
-            ["bufferView"] = bufferViewIndex,
-            ["componentType"] = 5126,
-            ["count"] = values.Count / componentCount,
-            ["type"] = type,
-        };
-        if (min.HasValue && max.HasValue)
-        {
-            accessor["min"] = new JsonArray(min.Value);
-            accessor["max"] = new JsonArray(max.Value);
-        }
-        var accessorIndex = accessors.Count;
-        accessors.Add(accessor);
-        return accessorIndex;
-    }
-
     private static uint CalculateCrc32(string value)
     {
         var crc = 0xffffffffu;
@@ -1393,268 +1225,4 @@ public sealed class MotionPackageExporter
             .FirstOrDefault();
     }
 
-    private static void MergeBodyMotionGlbs(
-        IEnumerable<string> inputGlbPaths,
-        string outputGlbPath
-    )
-    {
-        var inputs = inputGlbPaths.ToList();
-        if (inputs.Count == 0)
-        {
-            return;
-        }
-
-        var baseDoc = GltfJsonEditor.ReadDocument(File.ReadAllBytes(inputs[0]));
-        var mergedJson = baseDoc.Root;
-        var mergedBin = new List<byte>(baseDoc.BinaryChunk);
-        var mergedAnimations = new List<JsonNode>();
-        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var input in inputs.Select((path, index) => new { path, index }))
-        {
-            var doc = GltfJsonEditor.ReadDocument(File.ReadAllBytes(input.path));
-            var root = doc.Root;
-            if (root["animations"] is not System.Text.Json.Nodes.JsonArray animations)
-            {
-                continue;
-            }
-
-            var nodeIndexMap = EnsureMergedAnimationNodes(mergedJson, root);
-            var accessorOffset = GetArrayCount(mergedJson, "accessors");
-            var bufferViewOffset = GetArrayCount(mergedJson, "bufferViews");
-            var binOffset = Align4(mergedBin.Count);
-            while (mergedBin.Count < binOffset)
-            {
-                mergedBin.Add(0);
-            }
-
-            if (input.index > 0)
-            {
-                AppendBufferViews(mergedJson, root, binOffset);
-                AppendAccessors(mergedJson, root, bufferViewOffset);
-                mergedBin.AddRange(doc.BinaryChunk);
-            }
-
-            foreach (var animation in animations)
-            {
-                if (animation is not System.Text.Json.Nodes.JsonObject obj)
-                {
-                    continue;
-                }
-
-                var name = obj["name"]?.GetValue<string>() ?? Path.GetFileNameWithoutExtension(input.path);
-                if (!usedNames.Add(name))
-                {
-                    continue;
-                }
-
-                var clone = obj.DeepClone().AsObject();
-                if (input.index > 0)
-                {
-                    RemapAnimationAccessors(clone, accessorOffset);
-                }
-                RemapAnimationChannelNodes(clone, nodeIndexMap);
-                mergedAnimations.Add(clone);
-            }
-        }
-
-        mergedJson["animations"] = new System.Text.Json.Nodes.JsonArray(mergedAnimations.ToArray());
-        if (mergedJson["buffers"] is JsonArray buffers && buffers[0] is JsonObject buffer)
-        {
-            buffer["byteLength"] = mergedBin.Count;
-        }
-        GltfJsonEditor.WriteDocumentToGlb(mergedJson, mergedBin.ToArray(), outputGlbPath);
-    }
-
-    private static int[] EnsureMergedAnimationNodes(JsonObject targetRoot, JsonObject sourceRoot)
-    {
-        var sourceNodes = sourceRoot["nodes"] as JsonArray;
-        if (sourceNodes is null || sourceNodes.Count == 0)
-        {
-            return Array.Empty<int>();
-        }
-
-        var targetNodes = EnsureArray(targetRoot, "nodes");
-        var targetNodeByName = new Dictionary<string, int>(StringComparer.Ordinal);
-        for (var i = 0; i < targetNodes.Count; i++)
-        {
-            if (targetNodes[i] is not JsonObject node)
-            {
-                continue;
-            }
-
-            var name = node["name"]?.GetValue<string>();
-            if (!string.IsNullOrEmpty(name) && !targetNodeByName.ContainsKey(name))
-            {
-                targetNodeByName[name] = i;
-            }
-        }
-
-        var map = new int[sourceNodes.Count];
-        for (var i = 0; i < sourceNodes.Count; i++)
-        {
-            var sourceNode = sourceNodes[i] as JsonObject;
-            var name = sourceNode?["name"]?.GetValue<string>();
-            if (string.IsNullOrEmpty(name))
-            {
-                name = $"animation_node_{targetNodes.Count}";
-            }
-
-            if (!targetNodeByName.TryGetValue(name, out var targetIndex))
-            {
-                targetIndex = targetNodes.Count;
-                targetNodes.Add(new JsonObject { ["name"] = name });
-                targetNodeByName[name] = targetIndex;
-                AddSceneRootNode(targetRoot, targetIndex);
-            }
-            map[i] = targetIndex;
-        }
-
-        return map;
-    }
-
-    private static void AddSceneRootNode(JsonObject root, int nodeIndex)
-    {
-        var scenes = EnsureArray(root, "scenes");
-        if (scenes.Count == 0 || scenes[0] is not JsonObject scene)
-        {
-            scene = new JsonObject();
-            scenes.Insert(0, scene);
-            root["scene"] = 0;
-        }
-
-        var sceneNodes = scene["nodes"] as JsonArray;
-        if (sceneNodes is null)
-        {
-            sceneNodes = new JsonArray();
-            scene["nodes"] = sceneNodes;
-        }
-
-        if (!sceneNodes.OfType<JsonValue>().Any(value =>
-            value.TryGetValue<int>(out var existing) && existing == nodeIndex))
-        {
-            sceneNodes.Add(nodeIndex);
-        }
-    }
-
-    private static int GetArrayCount(JsonObject root, string key)
-    {
-        return root[key] is JsonArray array ? array.Count : 0;
-    }
-
-    private static int Align4(int value)
-    {
-        return (value + 3) & ~3;
-    }
-
-    private static JsonArray EnsureArray(JsonObject root, string key)
-    {
-        if (root[key] is JsonArray array)
-        {
-            return array;
-        }
-        array = new JsonArray();
-        root[key] = array;
-        return array;
-    }
-
-    private static void AppendBufferViews(
-        JsonObject targetRoot,
-        JsonObject sourceRoot,
-        int byteOffsetDelta
-    )
-    {
-        if (sourceRoot["bufferViews"] is not JsonArray source)
-        {
-            return;
-        }
-
-        var target = EnsureArray(targetRoot, "bufferViews");
-        foreach (var item in source)
-        {
-            if (item is not JsonObject sourceBufferView)
-            {
-                continue;
-            }
-
-            var clone = sourceBufferView.DeepClone().AsObject();
-            clone["buffer"] = 0;
-            var currentOffset = clone["byteOffset"]?.GetValue<int>() ?? 0;
-            clone["byteOffset"] = currentOffset + byteOffsetDelta;
-            target.Add(clone);
-        }
-    }
-
-    private static void AppendAccessors(
-        JsonObject targetRoot,
-        JsonObject sourceRoot,
-        int bufferViewOffset
-    )
-    {
-        if (sourceRoot["accessors"] is not JsonArray source)
-        {
-            return;
-        }
-
-        var target = EnsureArray(targetRoot, "accessors");
-        foreach (var item in source)
-        {
-            if (item is not JsonObject sourceAccessor)
-            {
-                continue;
-            }
-
-            var clone = sourceAccessor.DeepClone().AsObject();
-            if (clone["bufferView"] is JsonValue bufferViewValue &&
-                bufferViewValue.TryGetValue<int>(out var bufferView))
-            {
-                clone["bufferView"] = bufferView + bufferViewOffset;
-            }
-            target.Add(clone);
-        }
-    }
-
-    private static void RemapAnimationAccessors(JsonObject animation, int accessorOffset)
-    {
-        if (animation["samplers"] is not JsonArray samplers)
-        {
-            return;
-        }
-
-        foreach (var sampler in samplers.OfType<JsonObject>())
-        {
-            if (sampler["input"] is JsonValue inputValue &&
-                inputValue.TryGetValue<int>(out var input))
-            {
-                sampler["input"] = input + accessorOffset;
-            }
-            if (sampler["output"] is JsonValue outputValue &&
-                outputValue.TryGetValue<int>(out var output))
-            {
-                sampler["output"] = output + accessorOffset;
-            }
-        }
-    }
-
-    private static void RemapAnimationChannelNodes(JsonObject animation, IReadOnlyList<int> nodeIndexMap)
-    {
-        if (nodeIndexMap.Count == 0 || animation["channels"] is not JsonArray channels)
-        {
-            return;
-        }
-
-        foreach (var channel in channels.OfType<JsonObject>())
-        {
-            if (channel["target"] is not JsonObject target ||
-                target["node"] is not JsonValue nodeValue ||
-                !nodeValue.TryGetValue<int>(out var sourceNode) ||
-                sourceNode < 0 ||
-                sourceNode >= nodeIndexMap.Count)
-            {
-                continue;
-            }
-
-            target["node"] = nodeIndexMap[sourceNode];
-        }
-    }
 }

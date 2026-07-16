@@ -1,13 +1,8 @@
 namespace PjskBundle2Parts.Models;
 
 public sealed record ConversionOptions(
-    string? BodyPath,
-    string? HeadPath,
     string OutputDirectory,
     string? MotionPath,
-    string? HeadRootName,
-    bool KeepIntermediate,
-    int? Character3dId,
     string? MasterDirectory,
     string? AssetRoot,
     bool EmitCostumeRegistries,
@@ -25,7 +20,6 @@ public sealed record ConversionOptions(
     int PartPackageShardIndex,
     string? PartPackageClaimDirectory,
     string AssetStudioLogLevel,
-    string RuntimeJsonOutput,
     bool CompactTextures,
     bool OptimizeTextureStore,
     string? SharedContentStore,

@@ -21,87 +21,33 @@ public static class RuntimeJsonWriter
 {
     public const byte BinaryArrayExtensionType = 42;
     public const int DefaultBrotliQuality = 6;
-    public const string MessagePackBrotli = "msgpack-br";
-    public const string Gzip = "gzip";
-    public const string Json = "json";
-    public const string Both = "both";
+    public static string PrimaryPath(string jsonPath) => MessagePackBrotliPath(jsonPath);
 
-    public static bool IsValidMode(string value)
-    {
-        return NormalizeMode(value) is MessagePackBrotli or Gzip or Json or Both;
-    }
-
-    public static string NormalizeMode(string value)
-    {
-        var normalized = value.Trim().ToLowerInvariant();
-        return normalized is "br" or "msgpack" or "messagepack-br" ? MessagePackBrotli : normalized;
-    }
-
-    public static string PrimaryPath(string jsonPath, string mode)
-    {
-        return NormalizeMode(mode) switch
-        {
-            Json => jsonPath,
-            MessagePackBrotli => MessagePackBrotliPath(jsonPath),
-            _ => GzipPath(jsonPath),
-        };
-    }
-
-    public static bool OutputsExist(string jsonPath, string mode)
-    {
-        return NormalizeMode(mode) switch
-        {
-            Json => File.Exists(jsonPath),
-            Both => File.Exists(jsonPath) && File.Exists(GzipPath(jsonPath)),
-            MessagePackBrotli => File.Exists(MessagePackBrotliPath(jsonPath)),
-            _ => File.Exists(GzipPath(jsonPath)),
-        };
-    }
+    public static bool OutputsExist(string jsonPath) => File.Exists(MessagePackBrotliPath(jsonPath));
 
     public static void Write<T>(
         string jsonPath,
         T value,
         JsonSerializerOptions options,
-        string mode,
         CompressionLevel? brotliCompressionLevel = null,
         RuntimeBinaryArraySchema binaryArraySchema = RuntimeBinaryArraySchema.None
     )
     {
-        var normalizedMode = NormalizeMode(mode);
         var parent = Path.GetDirectoryName(jsonPath);
         if (!string.IsNullOrWhiteSpace(parent))
         {
             Directory.CreateDirectory(parent);
         }
 
-        byte[]? bytes = null;
-        if (normalizedMode is Json or Both)
-        {
-            bytes ??= JsonSerializer.SerializeToUtf8Bytes(value, options);
-            WriteAllBytesAtomic(jsonPath, bytes);
-        }
-        if (normalizedMode is Gzip or Both)
-        {
-            bytes ??= JsonSerializer.SerializeToUtf8Bytes(value, options);
-            using var compressed = new MemoryStream();
-            using (var gzip = new GZipStream(compressed, CompressionLevel.Optimal, leaveOpen: true))
-            {
-                gzip.Write(bytes);
-            }
-            WriteAllBytesAtomic(GzipPath(jsonPath), compressed.ToArray());
-        }
-        if (normalizedMode == MessagePackBrotli)
-        {
-            WriteMessagePackBrotli(
-                jsonPath,
-                value,
-                options,
-                brotliCompressionLevel is null
-                    ? DefaultBrotliQuality
-                    : BrotliQuality(brotliCompressionLevel.Value),
-                binaryArraySchema
-            );
-        }
+        WriteMessagePackBrotli(
+            jsonPath,
+            value,
+            options,
+            brotliCompressionLevel is null
+                ? DefaultBrotliQuality
+                : BrotliQuality(brotliCompressionLevel.Value),
+            binaryArraySchema
+        );
     }
 
     public static JsonObject ReadJsonObject(string jsonPath)
@@ -110,18 +56,17 @@ public static class RuntimeJsonWriter
             ?? throw new InvalidOperationException($"Runtime JSON is empty: {jsonPath}");
     }
 
-    public static JsonDocument ReadJsonDocument(string jsonPath, string mode)
+    public static JsonDocument ReadJsonDocument(string jsonPath)
     {
-        return JsonDocument.Parse(ReadJsonBytes(PrimaryPath(jsonPath, mode)));
-    }
-
-    public static string GzipPath(string jsonPath)
-    {
-        return jsonPath + ".gz";
+        return JsonDocument.Parse(ReadJsonBytes(PrimaryPath(jsonPath)));
     }
 
     public static string MessagePackBrotliPath(string jsonPath)
     {
+        if (jsonPath.EndsWith(".msgpack.br", StringComparison.OrdinalIgnoreCase))
+        {
+            return jsonPath;
+        }
         return jsonPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
             ? jsonPath[..^".json".Length] + ".msgpack.br"
             : jsonPath + ".msgpack.br";
@@ -133,27 +78,7 @@ public static class RuntimeJsonWriter
         {
             return DecodeMessagePackBrotli(File.ReadAllBytes(path));
         }
-        if (path.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
-        {
-            using var input = File.OpenRead(path);
-            using var gzip = new GZipStream(input, CompressionMode.Decompress);
-            using var output = new MemoryStream();
-            gzip.CopyTo(output);
-            return output.ToArray();
-        }
-        if (File.Exists(MessagePackBrotliPath(path)))
-        {
-            return DecodeMessagePackBrotli(File.ReadAllBytes(MessagePackBrotliPath(path)));
-        }
-        if (File.Exists(GzipPath(path)))
-        {
-            using var input = File.OpenRead(GzipPath(path));
-            using var gzip = new GZipStream(input, CompressionMode.Decompress);
-            using var output = new MemoryStream();
-            gzip.CopyTo(output);
-            return output.ToArray();
-        }
-        return File.ReadAllBytes(path);
+        return DecodeMessagePackBrotli(File.ReadAllBytes(MessagePackBrotliPath(path)));
     }
 
     private static void WriteMessagePackBrotli<T>(

@@ -47,17 +47,13 @@ public sealed class ContentAddressedStore
             UnchangedFileCount: unchangedFileCount,
             ReusedBytes: reusedBytes
         );
-        RuntimeJsonWriter.Write(
+        File.WriteAllBytes(
             Path.Combine(outputDirectory, StateFileName),
-            nextState,
-            JsonOptions,
-            RuntimeJsonWriter.Json
+            JsonSerializer.SerializeToUtf8Bytes(nextState, JsonOptions)
         );
-        RuntimeJsonWriter.Write(
+        File.WriteAllBytes(
             Path.Combine(outputDirectory, "content-addressed-store-report.json"),
-            report,
-            JsonOptions,
-            RuntimeJsonWriter.Json
+            JsonSerializer.SerializeToUtf8Bytes(report, JsonOptions)
         );
         return report;
 

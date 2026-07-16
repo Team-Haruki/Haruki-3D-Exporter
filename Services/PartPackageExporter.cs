@@ -40,7 +40,6 @@ public sealed class PartPackageExporter
         string? manifestPath = null,
         int shardCount = 1,
         int shardIndex = 0,
-        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli,
         string? claimDirectory = null,
         string? compiledContentStore = null,
         string? sharedContentStore = null,
@@ -59,8 +58,7 @@ public sealed class PartPackageExporter
             ? null
             : new PartPackageWorkClaims(claimDirectory);
         var compiledCache = string.IsNullOrWhiteSpace(compiledContentStore) ||
-            string.IsNullOrWhiteSpace(sharedContentStore) ||
-            runtimeJsonOutput != RuntimeJsonWriter.MessagePackBrotli
+            string.IsNullOrWhiteSpace(sharedContentStore)
                 ? null
                 : new CompiledPartCache(compiledContentStore, sharedContentStore, assetRoot, bundleHashIndex);
         var built = 0;
@@ -79,10 +77,10 @@ public sealed class PartPackageExporter
             {
                 var packageDirectory = Path.Combine(outputDirectory, entry.PackagePath.Replace('/', Path.DirectorySeparatorChar));
                 var runtimePath = Path.Combine(packageDirectory, "part-runtime.json");
-                var runtimeOutputPath = RuntimeJsonWriter.PrimaryPath(runtimePath, runtimeJsonOutput);
+                var runtimeOutputPath = RuntimeJsonWriter.PrimaryPath(runtimePath);
                 var stamp = PartPackageInputStamp.From(entry);
                 if (manifest.CanSkip(entry.PackagePath, runtimeOutputPath, stamp) &&
-                    RuntimePackageCanSkip(runtimePath, outputDirectory, runtimeJsonOutput))
+                    RuntimePackageCanSkip(runtimePath, outputDirectory))
                 {
                     DeletePartExportError(packageDirectory);
                     results.Add(new PartPackageExportResult(entry, runtimeOutputPath, Array.Empty<string>()));
@@ -116,8 +114,7 @@ public sealed class PartPackageExporter
                         outputDirectory,
                         characterHeightMetersById,
                         ref cachedBundle,
-                        ref cachedCore,
-                        runtimeJsonOutput
+                        ref cachedCore
                     );
                     compiledCache?.Store(
                         entry,
@@ -251,8 +248,7 @@ public sealed class PartPackageExporter
         string outputDirectory,
         int costume3dId,
         string partType,
-        string? unit,
-        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
+        string? unit
     )
     {
         var characterHeightMetersById = CharacterHeightResolver.LoadMetersByCharacterId(masterDirectory);
@@ -270,15 +266,14 @@ public sealed class PartPackageExporter
             throw new InvalidOperationException($"Matched part has no bundle path: costume3dId={costume3dId}, partType={partType}.");
         }
 
-        return Export(entry, assetRoot, outputDirectory, characterHeightMetersById, runtimeJsonOutput);
+        return Export(entry, assetRoot, outputDirectory, characterHeightMetersById);
     }
 
     public PartPackageExportResult Export(
         PartRegistryEntry entry,
         string assetRoot,
         string outputDirectory,
-        IReadOnlyDictionary<string, float>? characterHeightMetersById = null,
-        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
+        IReadOnlyDictionary<string, float>? characterHeightMetersById = null
     )
     {
         var input = ResolveInput(entry);
@@ -286,13 +281,13 @@ public sealed class PartPackageExporter
         PartBuildCore? core = null;
         try
         {
-            return Export(entry, assetRoot, outputDirectory, characterHeightMetersById, loadedBundle, ref core, runtimeJsonOutput);
+            return Export(entry, assetRoot, outputDirectory, characterHeightMetersById, loadedBundle, ref core);
         }
         catch (MissingMaterialReferenceException ex)
         {
             using var fallbackBundle = AssetStudioLoadedBundle.Load(input, BundleLoadDependencyMode.FullDirectory);
             core = null;
-            var result = Export(entry, assetRoot, outputDirectory, characterHeightMetersById, fallbackBundle, ref core, runtimeJsonOutput);
+            var result = Export(entry, assetRoot, outputDirectory, characterHeightMetersById, fallbackBundle, ref core);
             return AddWarning(result, BuildMaterialDependencyFallbackWarning(ex));
         }
     }
@@ -303,8 +298,7 @@ public sealed class PartPackageExporter
         string outputDirectory,
         IReadOnlyDictionary<string, float> characterHeightMetersById,
         ref AssetStudioLoadedBundle? cachedBundle,
-        ref PartBuildCore? cachedCore,
-        string runtimeJsonOutput
+        ref PartBuildCore? cachedCore
     )
     {
         var input = ResolveInput(entry);
@@ -317,7 +311,7 @@ public sealed class PartPackageExporter
 
         try
         {
-            return Export(entry, assetRoot, outputDirectory, characterHeightMetersById, cachedBundle, ref cachedCore, runtimeJsonOutput);
+            return Export(entry, assetRoot, outputDirectory, characterHeightMetersById, cachedBundle, ref cachedCore);
         }
         catch (MissingMaterialReferenceException ex) when (cachedBundle.DependencyMode != BundleLoadDependencyMode.FullDirectory)
         {
@@ -327,7 +321,7 @@ public sealed class PartPackageExporter
             PartPackageExportResult result;
             try
             {
-                result = Export(entry, assetRoot, outputDirectory, characterHeightMetersById, cachedBundle, ref cachedCore, runtimeJsonOutput);
+                result = Export(entry, assetRoot, outputDirectory, characterHeightMetersById, cachedBundle, ref cachedCore);
             }
             catch (MissingMaterialReferenceException fallbackEx)
             {
@@ -346,8 +340,7 @@ public sealed class PartPackageExporter
         string outputDirectory,
         IReadOnlyDictionary<string, float>? characterHeightMetersById,
         AssetStudioLoadedBundle loadedBundle,
-        ref PartBuildCore? cachedCore,
-        string runtimeJsonOutput
+        ref PartBuildCore? cachedCore
     )
     {
         var packageDirectory = Path.Combine(outputDirectory, entry.PackagePath.Replace('/', Path.DirectorySeparatorChar));
@@ -438,12 +431,12 @@ public sealed class PartPackageExporter
         var coreKey = Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(ShardKey(entry)))
         ).ToLowerInvariant();
-        var coreRuntimeRelativePath = $"parts/_cores/{normalizedType}/{coreKey}/part-runtime-core.json";
+        var coreRuntimeRelativePath = $"parts/_cores/{normalizedType}/{coreKey}/part-runtime-core.msgpack.br";
         var coreRuntimePath = Path.Combine(
             outputDirectory,
             coreRuntimeRelativePath.Replace('/', Path.DirectorySeparatorChar)
         );
-        if (rebuiltCore || !RuntimeJsonWriter.OutputsExist(coreRuntimePath, runtimeJsonOutput))
+        if (rebuiltCore || !RuntimeJsonWriter.OutputsExist(coreRuntimePath))
         {
             WriteJson(
                 coreRuntimePath,
@@ -453,8 +446,7 @@ public sealed class PartPackageExporter
                     SpringBone: core.RuntimeSpringBone,
                     MorphChannelBindings: core.MorphChannelBindings,
                     Warnings: coreWarnings
-                ),
-                runtimeJsonOutput
+                )
             );
         }
         var package = new PartRuntimeDeltaPackage(
@@ -486,13 +478,13 @@ public sealed class PartPackageExporter
         );
 
         var runtimePath = Path.Combine(packageDirectory, "part-runtime.json");
-        WriteJson(runtimePath, package, runtimeJsonOutput);
+        WriteJson(runtimePath, package);
         DeletePartExportError(packageDirectory);
         return new PartPackageExportResult(
             entry,
-            RuntimeJsonWriter.PrimaryPath(runtimePath, runtimeJsonOutput),
+            RuntimeJsonWriter.PrimaryPath(runtimePath),
             coreWarnings.Concat(deltaWarnings).Distinct(StringComparer.Ordinal).ToList(),
-            CoreRuntimePath: RuntimeJsonWriter.PrimaryPath(coreRuntimePath, runtimeJsonOutput),
+            CoreRuntimePath: RuntimeJsonWriter.PrimaryPath(coreRuntimePath),
             TextureHashes: textures.Values
                 .Select(path => Path.GetFileNameWithoutExtension(path) ?? string.Empty)
                 .Where(hash => hash.Length == 64 && hash.All(Uri.IsHexDigit))
@@ -624,22 +616,7 @@ public sealed class PartPackageExporter
                 Notes: new[] { "Single-part package; viewer composer must merge active parts before simulation." }
             ),
             PrefabGraphs: new[] { springBone.PrefabGraph },
-            BodyHeadAssembly: new PjskUnityRuntimeBodyHeadAssembly(
-                Version: "0414-part-1",
-                SourceKind: "single_part",
-                ParentRootPath: null,
-                ParentAttachPath: null,
-                ChildRootPath: null,
-                ChildOriginPath: null,
-                RuntimeMountPath: null,
-                ParentingMode: "viewer_composer",
-                CoordinateSpace: "unity-left-handed",
-                Notes: new[] { "Resolved by viewer runtime composer." },
-                FaceRendererName: "Face",
-                CombineNodeAName: "Neck",
-                CombineNodeBName: "Head",
-                ChildMoveSuffix: "_target"
-            ),
+            BodyHeadAssembly: null,
             RootSelectionProfile: new PjskSpringBoneRootSelectionProfile(
                 Policy: "single_part_active_roots",
                 DefaultBodyRoot: defaultRoot,
@@ -657,7 +634,7 @@ public sealed class PartPackageExporter
             ),
             SetupPlan: new PjskSpringBoneSetupPlan(
                 DiscoveryMode: "single_part_runtime_package",
-                RootPolicy: "viewer_composer_merge; manager ownership is rebuilt from composed hierarchy",
+                RootPolicy: "official_model_combine_setup; manager ownership is rebuilt from composed hierarchy",
                 ManagerPathIds: managers.Select(manager => manager.PathId).ToList(),
                 OrderedSteps: new[] { "mount part graph", "merge active part springbone", "rebuild SpringManager ownership from composed hierarchy", "repair constraints after composition", "rebind current body colliders", "reset spring runtime" },
                 DirectBindingCount: bindings.Count(binding => binding.SourceKind == "direct"),
@@ -1183,8 +1160,8 @@ public sealed class PartPackageExporter
             source = new
             {
                 bundleRoot = input.ResolvedBundlePath,
-                meshUrl = "part-runtime.json",
-                manifestUrl = "part-runtime.json",
+                meshUrl = "part-runtime.msgpack.br",
+                manifestUrl = "part-runtime.msgpack.br",
             },
             rootNodeName = inventory.Roots.FirstOrDefault()?.Name,
             attachNode = entry.AttachNode,
@@ -1196,18 +1173,17 @@ public sealed class PartPackageExporter
 
     private static bool RuntimePackageCanSkip(
         string runtimePath,
-        string outputDirectory,
-        string runtimeJsonOutput
+        string outputDirectory
     )
     {
-        if (!RuntimeJsonWriter.OutputsExist(runtimePath, runtimeJsonOutput))
+        if (!RuntimeJsonWriter.OutputsExist(runtimePath))
         {
             return false;
         }
 
         try
         {
-            using var document = RuntimeJsonWriter.ReadJsonDocument(runtimePath, runtimeJsonOutput);
+            using var document = RuntimeJsonWriter.ReadJsonDocument(runtimePath);
             if (!document.RootElement.TryGetProperty("version", out var version) ||
                 version.GetString() != "0415-part-delta-1" ||
                 !document.RootElement.TryGetProperty("corePath", out var corePathNode) ||
@@ -1216,7 +1192,8 @@ public sealed class PartPackageExporter
                 return false;
             }
             var coreRelativePath = corePathNode.GetString()!;
-            if (Path.IsPathRooted(coreRelativePath) ||
+            if (!coreRelativePath.EndsWith(".msgpack.br", StringComparison.OrdinalIgnoreCase) ||
+                Path.IsPathRooted(coreRelativePath) ||
                 coreRelativePath.Split('/', '\\').Any(segment => segment is "." or ".."))
             {
                 return false;
@@ -1225,7 +1202,7 @@ public sealed class PartPackageExporter
                 outputDirectory,
                 coreRelativePath.Replace('/', Path.DirectorySeparatorChar)
             );
-            return RuntimeJsonWriter.OutputsExist(corePath, runtimeJsonOutput) &&
+            return RuntimeJsonWriter.OutputsExist(corePath) &&
                 document.RootElement.TryGetProperty("manifest", out var manifest) &&
                 manifest.TryGetProperty("characterHeightMeters", out var height) &&
                 height.ValueKind == JsonValueKind.Number &&
@@ -1770,21 +1747,12 @@ public sealed class PartPackageExporter
         return vector is null ? new[] { 0f, -1f, 0f } : new[] { vector.X, vector.Y, vector.Z };
     }
 
-    private static Stream OpenRuntimeJsonForRead(string path)
-    {
-        var stream = File.OpenRead(path);
-        return path.EndsWith(".gz", StringComparison.OrdinalIgnoreCase)
-            ? new System.IO.Compression.GZipStream(stream, System.IO.Compression.CompressionMode.Decompress)
-            : stream;
-    }
-
-    private static void WriteJson<T>(string path, T value, string runtimeJsonOutput)
+    private static void WriteJson<T>(string path, T value)
     {
         RuntimeJsonWriter.Write(
             path,
             value,
             WriteJsonOptions,
-            runtimeJsonOutput,
             binaryArraySchema: RuntimeBinaryArraySchema.PartRuntime
         );
     }
@@ -1901,7 +1869,6 @@ public sealed class PartPackageExportManifest
     public static void Rebuild(
         string manifestPath,
         string outputDirectory,
-        string runtimeJsonOutput,
         IEnumerable<PartRegistryEntry> entries
     )
     {
@@ -1915,8 +1882,7 @@ public sealed class PartPackageExportManifest
                     outputDirectory,
                     entry.PackagePath.Replace('/', Path.DirectorySeparatorChar),
                     "part-runtime.json"
-                ),
-                runtimeJsonOutput
+                )
             ))
             .ToDictionary(
                 entry => entry.PackagePath,

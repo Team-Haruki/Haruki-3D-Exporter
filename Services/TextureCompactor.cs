@@ -16,7 +16,6 @@ public sealed class TextureCompactor
 
     public TextureStoreOptimizationReport OptimizeStore(
         string outputDirectory,
-        string runtimeJsonOutput,
         string pngOptimizeMode,
         int workers
     )
@@ -96,7 +95,6 @@ public sealed class TextureCompactor
                 runtimeFiles,
                 outputDirectory,
                 replacements,
-                runtimeJsonOutput,
                 workerCount
             );
             ValidateRuntimeTexturePaths(runtimeFiles, outputDirectory, workerCount);
@@ -128,7 +126,6 @@ public sealed class TextureCompactor
 
     public TextureCompactionReport Compact(
         string outputDirectory,
-        string runtimeJsonOutput,
         string pngOptimizeMode,
         int workers
     )
@@ -162,7 +159,6 @@ public sealed class TextureCompactor
             runtimeFiles,
             outputDirectory,
             pathMap,
-            runtimeJsonOutput,
             workerCount
         );
         DeleteReplacedTextureFiles(entries.Select(entry => entry.Path), outputDirectory, workerCount);
@@ -215,16 +211,8 @@ public sealed class TextureCompactor
         {
             return Array.Empty<string>();
         }
-        return Directory.EnumerateFiles(sourcesRoot, "part-runtime.*", SearchOption.AllDirectories)
-            .Where(path =>
-                path.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ||
-                path.EndsWith(".json.gz", StringComparison.OrdinalIgnoreCase) ||
-                path.EndsWith(".msgpack.br", StringComparison.OrdinalIgnoreCase))
-            .Select(path => path.EndsWith(".json.gz", StringComparison.OrdinalIgnoreCase)
-                ? path[..^3]
-                : path.EndsWith(".msgpack.br", StringComparison.OrdinalIgnoreCase)
-                    ? path[..^".msgpack.br".Length] + ".json"
-                    : path)
+        return Directory.EnumerateFiles(sourcesRoot, "part-runtime.msgpack.br", SearchOption.AllDirectories)
+            .Select(path => path[..^".msgpack.br".Length] + ".json")
             .Distinct(StringComparer.Ordinal)
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToList();
@@ -314,7 +302,6 @@ public sealed class TextureCompactor
         IReadOnlyList<string> runtimeFiles,
         string outputDirectory,
         IReadOnlyDictionary<string, string> pathMap,
-        string runtimeJsonOutput,
         int workers
     )
     {
@@ -327,7 +314,7 @@ public sealed class TextureCompactor
             {
                 Interlocked.Add(
                     ref rewritten,
-                    RewriteRuntimeJson(runtimePath, outputDirectory, pathMap, runtimeJsonOutput)
+                    RewriteRuntimeJson(runtimePath, outputDirectory, pathMap)
                 );
             }
             catch (Exception ex)
@@ -342,8 +329,7 @@ public sealed class TextureCompactor
     private static int RewriteRuntimeJson(
         string runtimeJsonPath,
         string outputDirectory,
-        IReadOnlyDictionary<string, string> pathMap,
-        string runtimeJsonOutput
+        IReadOnlyDictionary<string, string> pathMap
     )
     {
         var packageDirectory = Path.GetDirectoryName(runtimeJsonPath)
@@ -405,7 +391,6 @@ public sealed class TextureCompactor
             runtimeJsonPath,
             node,
             JsonOptions,
-            runtimeJsonOutput,
             binaryArraySchema: RuntimeBinaryArraySchema.PartRuntime
         );
         return rewritten;

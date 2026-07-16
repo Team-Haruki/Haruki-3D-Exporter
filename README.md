@@ -4,151 +4,33 @@ Offline converter for Project SEKAI character bundles.
 
 The converter reads Unity AssetBundles with AssetStudio and writes a browser-friendly runtime package for Haruki 3D Engine.
 
-## Quick Start
+## Final Pipeline
 
-Use the repository wrapper, not system `dotnet`:
+The exporter has one production package format: role-scoped registries, core+delta part packages, role runtimes, and Brotli-compressed MessagePack metadata.
 
-```bash
-./scripts/dotnet.sh run -- \
-  --character3d-id 5 \
-  --master <master-data-directory> \
-  --asset-root <assetbundle-root> \
-  --out <output-directory>
-```
-
-The wrapper uses the SDK pinned by `global.json` and redirects build intermediates away from the checkout.
-
-Most command defaults can also be stored in a local config file:
+Build the package in three stages:
 
 ```bash
-cp haruki-3d-exporter.config.example.json haruki-3d-exporter.config.json
+dotnet run -- \\
+  --emit-costume-registries \\
+  --master /path/to/master \\
+  --asset-root /path/to/AssetBundles \\
+  --out /path/to/output
 
-./scripts/dotnet.sh run -- \
-  --config haruki-3d-exporter.config.json \
-  --character3d-id 5
+dotnet run -- \\
+  --emit-part-packages \\
+  --master /path/to/master \\
+  --asset-root /path/to/AssetBundles \\
+  --out /path/to/output
+
+dotnet run -- \\
+  --emit-role-runtimes \\
+  --master /path/to/master \\
+  --asset-root /path/to/AssetBundles \\
+  --out /path/to/output
 ```
 
-`haruki-3d-exporter.config.json` is ignored by git. The tracked `.example.json` is the public template and should only contain placeholder paths. CLI flags override values loaded from config.
-
-Direct bundle mode is also available:
-
-```bash
-./scripts/dotnet.sh run -- \
-  --body /path/to/body.bundle-or-directory \
-  --head /path/to/head.bundle \
-  --out /path/to/output-directory
-```
-
-## Inputs
-
-Preferred input:
-
-- `--character3d-id <id>`
-- `--master <master-directory>`
-- `--asset-root <AssetBundles-root>`
-- `--out <directory>`
-
-The character3d resolver uses master data to pick body, head, hair/head composition, and accessory head data when needed.
-
-Motion input:
-
-- Explicit: `--motion <costume_setting.bundle-or-export-folder>`
-- Automatic for character3d mode:
-  - `character/motion/costume_setting/<characterId>_00.bundle`
-  - `motion/costume_setting/<characterId>_00.bundle`
-  - `costume_setting/<characterId>_00.bundle`
-
-An exported motion folder may contain:
-
-- `motion.glb`
-- `motion_loop.glb`
-- `face_motion.json`
-- `light_motion.json`
-
-To generate only `face_motion.json` from a motion bundle or decoded
-AnimationClip JSON output:
-
-```bash
-./scripts/dotnet.sh run -- \
-  --export-face-motion \
-  --motion <costume_setting.bundle-or-decoded-folder-or-json> \
-  --out <face_motion.json-or-output-directory>
-```
-
-This path is implemented in C# through the same AssetStudio/AnimationClip
-decoder used by the main exporter. It does not require a Python-side animation
-helper on the local machine or remote server.
-
-## Lean Output
-
-By default the converter writes the runtime package and prunes intermediate/debug files:
-
-```text
-character/character.vrm
-character/textures/**
-pjsk-sekai-runtime.extension.msgpack.br
-motion/body_motion.glb                # when motion is resolved
-body.springbone.json
-head.springbone.json
-springbone.json
-vrm-springbone.candidate.json
-vrmc-springbone.extension.json
-vrmc-springbone.resolve-report.json
-```
-
-`character/character.vrm` is a VRM-style GLB container with extra PJSK runtime semantics. Generic VRM viewers may show an approximate model, but exact rendering requires `PJSK_sekai_runtime` and the WebGL viewer.
-
-## Debug Output
-
-Use `--keep-intermediate` when debugging converter internals:
-
-```bash
-./scripts/dotnet.sh run -- \
-  --character3d-id 5 \
-  --master <master-data-directory> \
-  --asset-root <assetbundle-root> \
-  --out <debug-output-directory> \
-  --keep-intermediate
-```
-
-This keeps older full export artifacts such as:
-
-- split `body/body.glb` and `head/head.glb`
-- intermediate character GLBs
-- VRM/VRMC extension JSONs
-- manifest templates
-- bundle inventories
-- conversion plan JSON
-- resolve reports
-
-## Runtime Extension
-
-The final package contains `PJSK_sekai_runtime`, written into `character/character.vrm` and as `pjsk-sekai-runtime.extension.msgpack.br` by default. Use `--runtime-json-output gzip`, `json`, or `both` only for compatibility/debug output.
-
-It preserves PJSK-specific data that standard VRM cannot represent cleanly:
-
-- C/S/H texture roles
-- face SDF texture role
-- material kinds and render order
-- body/head assembly metadata
-- body/head manifests after texture path rewrite
-- character texture map relative to output root
-- morph hash/channel bindings
-- embedded face and light motion
-- raw SpringBone metadata
-- VRM SpringBone candidate data
-
-## SpringBone State
-
-The converter exports SpringBone metadata, but the current viewer disables UTJ runtime simulation by default.
-
-Important SpringBone facts:
-
-- `SpringManager.springBones` references are authoritative.
-- PJSK SpringBone components may be named `SekaiSpringBone`.
-- `SekaiSpringBone.colliderFlag` is required to reproduce runtime body-collider binding.
-- `ModelUtility.SpringBoneSetup` appends body colliders by `CL_*` name prefixes at runtime.
-- Raw, candidate, and VRMC springbone files are retained for reverse-engineering and future runtime work.
+The asset root must contain `live_pv/model/characterv2`. Runtime metadata is always emitted as `.msgpack.br`; JSON, gzip, self-contained part runtimes, legacy `character` roots, and direct VRM/GLB full exports are not supported.
 
 ## Build
 
@@ -203,7 +85,8 @@ docker run --rm \
   -v <output-dir>:/data/out \
   haruki-3d-exporter \
   --config /app/haruki-3d-exporter.config.json \
-  --character3d-id 5 \
+  --emit-role-runtimes \
+  --role-character3d-id 5 \
   --master /data/master \
   --asset-root /data/assets \
   --out /data/out
@@ -249,16 +132,16 @@ mirror:
 
 This writes:
 
-- `character3d-index.json` for official preset packages keyed by `character3ds.id`
-- `parts/part-registry.json` for body, hair, and head/head_optional rows
+- `character3d-index.msgpack.br` for official preset packages keyed by `character3ds.id`
+- `parts/part-registry.msgpack.br` for body, hair, and head/head_optional rows
 - `parts/part-registry-compact.msgpack.br` as the field-name-free global
   registry consumed by Cloud
-- `parts/head-hair-compatibility.json` for custom-mode head/hair rules
+- `parts/head-hair-compatibility.msgpack.br` for custom-mode head/hair rules
 - `parts/head-hair-compatibility-compact.msgpack.br` as the field-name-free
   compatibility registry consumed by Cloud
-- `parts/compat/by-unit/*/head-hair-compatibility.json` as a runtime-sized
+- `parts/compat/by-unit/*/head-hair-compatibility.msgpack.br` as a runtime-sized
   per-unit deny list; the full registry above remains available for audits
-- `parts/card-costume-unlocks.json` for card unlock/source metadata
+- `parts/card-costume-unlocks.msgpack.br` for card unlock/source metadata
 
 Registry generation does not scan the bundle mirror for every row. Part entries
 therefore use `status: "planned"` when masterdata can produce a deterministic
@@ -316,17 +199,14 @@ smaller. It stores the optimized bytes under their new exact hash, rewrites
 part-runtime references, and only then removes the old object, so exports do not
 wait for oxipng and CAS paths remain truthful.
 
-`msgpack-br` uses direct object-to-MessagePack serialization and Brotli quality
+Runtime metadata uses direct object-to-MessagePack serialization and Brotli quality
 6. It avoids the former JSON UTF-8 and DOM intermediate while retaining a good
-size/speed balance. JSON and gzip modes remain available for diagnostics and
-compatibility.
+size/speed balance.
 
-In `msgpack-br` mode, large arrays on the explicit native-mesh and Unity-motion
+Large arrays on the explicit native-mesh and Unity-motion
 schemas use runtime extension type `42`: float data is little-endian float32 and
 mesh indexes are little-endian uint16/uint32. Unrelated arrays with the same
-property names remain ordinary MessagePack arrays. Older ordinary arrays remain
-valid. Deploy an Engine version with extension-42 support before exporting or
-serving packages produced by this version.
+property names remain ordinary MessagePack arrays.
 
 Viewer custom mode must merge the active part SpringBone records, rebind current
 body colliders, and reset simulation whenever body/head/hair/accessory selection

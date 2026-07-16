@@ -1,7 +1,5 @@
 using AssetStudio;
 using PjskBundle2Parts.Models;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Processing;
 using Object = AssetStudio.Object;
 
 namespace PjskBundle2Parts.Services;
@@ -88,26 +86,7 @@ public sealed class AssetStudioImportedModelFactory
                 $"Root GameObject '{preferredRootName}' was not found in {input.ResolvedBundlePath}. Available roots: {string.Join(", ", rootGameObjects.Select(gameObject => gameObject.m_Name))}"
             );
 
-        var noTextureConstructor = typeof(ModelConverter).GetConstructor(new[]
-        {
-            typeof(GameObject),
-            typeof(ImageFormat),
-            typeof(List<AnimationClip>),
-            typeof(bool),
-        });
-        if (noTextureConstructor is null)
-        {
-            var legacyImported = new ModelConverter(preferredRoot, ImageFormat.Png);
-            NormalizeTextureOrientation(legacyImported.TextureList);
-            return legacyImported;
-        }
-        return (IImported)noTextureConstructor.Invoke(new object?[]
-            {
-                preferredRoot,
-                ImageFormat.Png,
-                null,
-                convertModelTextures,
-            });
+        return new ModelConverter(preferredRoot, ImageFormat.Png, null, convertModelTextures);
     }
 
     public IReadOnlyList<ImportedTexture> CreateImportedTextures(string bundlePath)
@@ -135,15 +114,4 @@ public sealed class AssetStudioImportedModelFactory
         return textures;
     }
 
-    private static void NormalizeTextureOrientation(IReadOnlyList<ImportedTexture> textures)
-    {
-        foreach (var texture in textures)
-        {
-            using var image = Image.Load(texture.Data);
-            image.Mutate(x => x.Flip(FlipMode.Vertical));
-            using var stream = new MemoryStream();
-            image.SaveAsPng(stream);
-            texture.Data = stream.ToArray();
-        }
-    }
 }

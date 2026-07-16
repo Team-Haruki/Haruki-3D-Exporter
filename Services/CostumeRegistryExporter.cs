@@ -24,24 +24,23 @@ public sealed class CostumeRegistryExporter
     public CostumeRegistryExport Export(
         string masterDirectory,
         string assetRoot,
-        string outputDirectory,
-        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
+        string outputDirectory
     )
     {
-        var export = ExportInMemory(masterDirectory, assetRoot, runtimeJsonOutput);
+        var export = ExportInMemory(masterDirectory, assetRoot);
         var normalizedOutputDirectory = Path.GetFullPath(outputDirectory);
 
         Directory.CreateDirectory(normalizedOutputDirectory);
         Directory.CreateDirectory(Path.Combine(normalizedOutputDirectory, "parts"));
-        WriteJson(Path.Combine(normalizedOutputDirectory, "character3d-index.json"), export.Character3dIndex, runtimeJsonOutput);
-        WriteJson(Path.Combine(normalizedOutputDirectory, "parts", "part-registry.json"), export.PartRegistry, runtimeJsonOutput);
+        WriteJson(Path.Combine(normalizedOutputDirectory, "character3d-index.json"), export.Character3dIndex);
+        WriteJson(Path.Combine(normalizedOutputDirectory, "parts", "part-registry.json"), export.PartRegistry);
         WriteCompactPartRegistry(normalizedOutputDirectory, export.PartRegistry);
-        WriteJson(Path.Combine(normalizedOutputDirectory, "parts", "part-source-map.json"), export.PartSourceMap, runtimeJsonOutput);
-        WriteJson(Path.Combine(normalizedOutputDirectory, "parts", "head-hair-compatibility.json"), export.HeadHairCompatibility, runtimeJsonOutput);
+        WriteJson(Path.Combine(normalizedOutputDirectory, "parts", "part-source-map.json"), export.PartSourceMap);
+        WriteJson(Path.Combine(normalizedOutputDirectory, "parts", "head-hair-compatibility.json"), export.HeadHairCompatibility);
         WriteCompactHeadHairCompatibility(normalizedOutputDirectory, export.HeadHairCompatibility);
-        WriteJson(Path.Combine(normalizedOutputDirectory, "parts", "card-costume-unlocks.json"), export.CardCostumeUnlocks, runtimeJsonOutput);
-        WriteScopedPartRegistryIndexes(normalizedOutputDirectory, export, runtimeJsonOutput);
-        WriteScopedHeadHairCompatibilityIndexes(normalizedOutputDirectory, export, runtimeJsonOutput);
+        WriteJson(Path.Combine(normalizedOutputDirectory, "parts", "card-costume-unlocks.json"), export.CardCostumeUnlocks);
+        WriteScopedPartRegistryIndexes(normalizedOutputDirectory, export);
+        WriteScopedHeadHairCompatibilityIndexes(normalizedOutputDirectory, export);
 
         PrintSummary(export, normalizedOutputDirectory);
         return export;
@@ -73,7 +72,6 @@ public sealed class CostumeRegistryExporter
             Path.Combine(outputDirectory, "parts", "part-registry-compact.json"),
             new object?[] { CompactRegistrySchemaVersion, registry.Version, rows },
             WriteJsonOptions,
-            RuntimeJsonWriter.MessagePackBrotli,
             CompressionLevel.Fastest
         );
     }
@@ -97,15 +95,13 @@ public sealed class CostumeRegistryExporter
             Path.Combine(outputDirectory, "parts", "head-hair-compatibility-compact.json"),
             new object?[] { CompactRegistrySchemaVersion, rows },
             WriteJsonOptions,
-            RuntimeJsonWriter.MessagePackBrotli,
             CompressionLevel.Fastest
         );
     }
 
     private static void WriteScopedPartRegistryIndexes(
         string outputDirectory,
-        CostumeRegistryExport export,
-        string runtimeJsonOutput
+        CostumeRegistryExport export
     )
     {
         var partEntriesByRole = export.PartRegistry.Entries
@@ -144,15 +140,14 @@ public sealed class CostumeRegistryExporter
                 Entries: characterEntries ?? new List<Character3dIndexEntry>()
             );
 
-            WriteScopedJson(Path.Combine(roleDirectory, "part-registry.json"), partRegistry, runtimeJsonOutput);
-            WriteScopedJson(Path.Combine(roleDirectory, "character3d-index.json"), characterIndex, runtimeJsonOutput);
+            WriteJson(Path.Combine(roleDirectory, "part-registry.json"), partRegistry);
+            WriteJson(Path.Combine(roleDirectory, "character3d-index.json"), characterIndex);
         });
     }
 
     private static void WriteScopedHeadHairCompatibilityIndexes(
         string outputDirectory,
-        CostumeRegistryExport export,
-        string runtimeJsonOutput
+        CostumeRegistryExport export
     )
     {
         var rulesByUnit = export.HeadHairCompatibility.Rules
@@ -172,10 +167,9 @@ public sealed class CostumeRegistryExporter
                     .Where(rule => rule.State == "not_available")
                     .ToList()
             );
-            WriteScopedJson(
+            WriteJson(
                 Path.Combine(outputDirectory, "parts", "compat", "by-unit", RuntimePathUnitSegment(unit), "head-hair-compatibility.json"),
-                compatibility,
-                runtimeJsonOutput
+                compatibility
             );
         });
     }
@@ -190,8 +184,7 @@ public sealed class CostumeRegistryExporter
 
     public CostumeRegistryExport ExportInMemory(
         string masterDirectory,
-        string assetRoot,
-        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
+        string assetRoot
     )
     {
         var normalizedMasterDirectory = Path.GetFullPath(masterDirectory);
@@ -246,8 +239,7 @@ public sealed class CostumeRegistryExporter
                 modelsByCostumeId,
                 characterById,
                 normalizedAssetRoot,
-                source,
-                runtimeJsonOutput
+                source
             ),
             PartRegistry: partRegistry,
             HeadHairCompatibility: BuildHeadHairCompatibility(
@@ -274,8 +266,7 @@ public sealed class CostumeRegistryExporter
         IReadOnlyDictionary<int, IReadOnlyList<Costume3dModelMaster>> modelsByCostumeId,
         IReadOnlyDictionary<int, GameCharacterMaster> characterById,
         string assetRoot,
-        IReadOnlyDictionary<string, string> source,
-        string runtimeJsonOutput
+        IReadOnlyDictionary<string, string> source
     )
     {
         var entries = character3ds
@@ -299,7 +290,7 @@ public sealed class CostumeRegistryExporter
                     AssetBundleNames: assetBundles.Names,
                     AssetBundlePaths: assetBundles.Paths,
                     OutputPath: $"presets/{entry.Id}/",
-                    RoleRuntimePath: BuildRoleRuntimePath(entry.CharacterId, entry.Unit, runtimeJsonOutput),
+                    RoleRuntimePath: BuildRoleRuntimePath(entry.CharacterId, entry.Unit),
                     Status: warnings.Count == 0 ? "available" : "partial",
                     Warnings: warnings
                 );
@@ -1053,11 +1044,10 @@ public sealed class CostumeRegistryExporter
         return $"parts/{NormalizePackagePartType(partType)}/{costume3dId}/{unit ?? "default"}/";
     }
 
-    private static string BuildRoleRuntimePath(int characterId, string? unit, string runtimeJsonOutput)
+    private static string BuildRoleRuntimePath(int characterId, string? unit)
     {
         return RuntimeJsonWriter.PrimaryPath(
-            $"roles/{characterId}/{RuntimePathUnitSegment(unit)}/role-runtime.json",
-            runtimeJsonOutput
+            $"roles/{characterId}/{RuntimePathUnitSegment(unit)}/role-runtime.json"
         );
     }
 
@@ -1462,15 +1452,11 @@ public sealed class CostumeRegistryExporter
     private static IEnumerable<string> ResolveAssetBaseDirectoryCandidates(string assetRoot, string part)
     {
         yield return Path.Combine(assetRoot, "live_pv", "model", "characterv2", part);
-        yield return Path.Combine(assetRoot, "live_pv", "model", "character", part);
-        yield return Path.Combine(assetRoot, part);
     }
 
     private static IEnumerable<string> ResolveColorVariationBaseDirectoryCandidates(string assetRoot, string part)
     {
         yield return Path.Combine(assetRoot, "live_pv", "model", "characterv2", "color_variation", part);
-        yield return Path.Combine(assetRoot, "live_pv", "model", "character", "color_variation", part);
-        yield return Path.Combine(assetRoot, "color_variation", part);
     }
 
     private static string? ResolveExistingBundlePath(IEnumerable<string> baseDirectories, string relativePath)
@@ -1481,11 +1467,6 @@ public sealed class CostumeRegistryExporter
             if (File.Exists(candidate))
             {
                 return candidate;
-            }
-            var gzipCandidate = candidate + ".gz";
-            if (File.Exists(gzipCandidate))
-            {
-                return gzipCandidate;
             }
         }
 
@@ -1607,14 +1588,9 @@ public sealed class CostumeRegistryExporter
             ?? throw new InvalidOperationException($"Failed to parse master file: {path}");
     }
 
-    private static void WriteJson<T>(string path, T value, string runtimeJsonOutput)
+    private static void WriteJson<T>(string path, T value)
     {
-        RuntimeJsonWriter.Write(path, value, WriteJsonOptions, runtimeJsonOutput, CompressionLevel.Fastest);
-    }
-
-    private static void WriteScopedJson<T>(string path, T value, string runtimeJsonOutput)
-    {
-        WriteJson(path, value, runtimeJsonOutput);
+        RuntimeJsonWriter.Write(path, value, WriteJsonOptions, CompressionLevel.Fastest);
     }
 
     private static void PrintSummary(CostumeRegistryExport export, string outputDirectory)

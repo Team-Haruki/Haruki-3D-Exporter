@@ -233,13 +233,7 @@ public sealed class Character3dCostumeResolver
             ResolveAssetBaseDirectory(assetRoot, "face"),
             $"{ToSystemPath(assetbundleName)}.bundle"
         );
-        if (File.Exists(path))
-        {
-            return path;
-        }
-
-        var gzipPath = path + ".gz";
-        return File.Exists(gzipPath) ? gzipPath : null;
+        return File.Exists(path) ? path : null;
     }
 
     private static ResolvedFaceBundle? ResolveDefaultFaceBundleFallback(
@@ -459,8 +453,6 @@ public sealed class Character3dCostumeResolver
     private static IEnumerable<string> ResolveAssetBaseDirectoryCandidates(string assetRoot, string part)
     {
         yield return Path.Combine(assetRoot, "live_pv", "model", "characterv2", part);
-        yield return Path.Combine(assetRoot, "live_pv", "model", "character", part);
-        yield return Path.Combine(assetRoot, part);
     }
 
     private static IEnumerable<string> ResolveColorVariationBaseDirectoryCandidates(string assetRoot, string part)
@@ -473,15 +465,6 @@ public sealed class Character3dCostumeResolver
             "color_variation",
             part
         );
-        yield return Path.Combine(
-            assetRoot,
-            "live_pv",
-            "model",
-            "character",
-            "color_variation",
-            part
-        );
-        yield return Path.Combine(assetRoot, "color_variation", part);
     }
 
     private sealed record ResolvedAccessoryHead(

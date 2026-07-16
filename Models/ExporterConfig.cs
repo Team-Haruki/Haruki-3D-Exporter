@@ -1,15 +1,10 @@
 namespace PjskBundle2Parts.Models;
 
 public sealed record ExporterConfig(
-    string? Body,
-    string? Head,
     string? Output,
     string? Motion,
-    string? HeadRoot,
     string? Master,
     string? AssetRoot,
-    int? Character3dId,
-    bool? KeepIntermediate,
     bool? EmitCostumeRegistries,
     bool? EmitPartPackages,
     bool? EmitRoleRuntimes,
@@ -27,7 +22,6 @@ public sealed record ExporterConfig(
     int? PartPackageShardIndex,
     string? PartPackageClaimDirectory,
     string? AssetStudioLogLevel,
-    string? RuntimeJsonOutput,
     bool? CompactTextures,
     bool? OptimizeTextureStore,
     string? SharedContentStore,

@@ -45,12 +45,11 @@ public sealed class RoleRuntimeExporter
         string assetRoot,
         string outputDirectory,
         IReadOnlyList<int> character3dIds,
-        string? motionPath = null,
-        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
+        string? motionPath = null
     )
     {
         return ResolveExportCharacter3dIds(masterDirectory, character3dIds)
-            .Select(id => ExportOne(masterDirectory, assetRoot, outputDirectory, id, motionPath, runtimeJsonOutput))
+            .Select(id => ExportOne(masterDirectory, assetRoot, outputDirectory, id, motionPath))
             .ToList();
     }
 
@@ -129,8 +128,7 @@ public sealed class RoleRuntimeExporter
         string assetRoot,
         string outputDirectory,
         int character3dId,
-        string? motionPath = null,
-        string runtimeJsonOutput = RuntimeJsonWriter.MessagePackBrotli
+        string? motionPath = null
     )
     {
         var resolvedCostume = character3dCostumeResolver.Resolve(
@@ -169,8 +167,7 @@ public sealed class RoleRuntimeExporter
         var motionExport = motionPackageExporter.Export(
             resolvedMotionPath,
             motionDirectory,
-            importedBody,
-            runtimeJsonOutput
+            importedBody
         );
         var runtimeBuild = runtimeExtensionBuilder.Build(
             plan,
@@ -205,12 +202,12 @@ public sealed class RoleRuntimeExporter
             Warnings: warnings.Distinct().ToList()
         );
         var runtimePath = Path.Combine(roleDirectory, "role-runtime.json");
-        RuntimeJsonWriter.Write(runtimePath, runtime, WriteJsonOptions, runtimeJsonOutput);
+        RuntimeJsonWriter.Write(runtimePath, runtime, WriteJsonOptions);
         return new RoleRuntimeExportResult(
             Character3dId: resolvedCostume.Character3dId,
             CharacterId: resolvedCostume.CharacterId,
             Unit: resolvedCostume.Unit,
-            RuntimePath: RuntimeJsonWriter.PrimaryPath(runtimePath, runtimeJsonOutput),
+            RuntimePath: RuntimeJsonWriter.PrimaryPath(runtimePath),
             Warnings: runtime.Warnings
         );
     }

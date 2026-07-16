@@ -112,7 +112,6 @@ public sealed class CompiledPartCache
             runtimePath,
             delta,
             new JsonSerializerOptions(),
-            RuntimeJsonWriter.MessagePackBrotli,
             binaryArraySchema: RuntimeBinaryArraySchema.PartRuntime
         );
         var warnings = delta["warnings"] is JsonArray warningArray
@@ -258,7 +257,7 @@ public sealed class CompiledPartCache
     {
         var baseKey = entry.BaseSourceKey ?? entry.SourceKey ?? entry.PackagePath;
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(baseKey))).ToLowerInvariant();
-        return $"parts/_cores/{ResolvePartType(entry)}/{hash}/part-runtime-core.json";
+        return $"parts/_cores/{ResolvePartType(entry)}/{hash}/part-runtime-core.msgpack.br";
     }
 
     private static string ResolvePartType(PartRegistryEntry entry)
