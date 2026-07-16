@@ -184,6 +184,11 @@ var fullHeadDependencies = BundleDependencyResolver.ResolveLoadBundlePaths(headI
     .Select(Path.GetFileName)
     .ToArray();
 Expect(fullHeadDependencies.Contains("0509.bundle"), "full-directory dependency resolver includes unrelated sibling bundles");
+Expect(
+    RuntimeMaterialIdentityResolver.BuildSyntheticMaterialKey("Accessory", "mtl_acc_00") ==
+    RuntimeMaterialIdentityResolver.BuildSyntheticMaterialKey("head_optional", "mtl_acc_00"),
+    "accessory native meshes and head_optional material slots share synthetic material identity"
+);
 
 var headAllRoot = Path.Combine(tempDir, "dependencies", "face", "12");
 Directory.CreateDirectory(headAllRoot);

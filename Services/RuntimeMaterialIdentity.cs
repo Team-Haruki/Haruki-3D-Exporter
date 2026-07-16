@@ -45,7 +45,12 @@ public static class RuntimeMaterialIdentityResolver
 
     public static string BuildSyntheticMaterialKey(string partKind, string materialName)
     {
-        return $"synthetic:{Normalize(partKind)}:{Normalize(materialName)}";
+        var normalizedPartKind = Normalize(partKind);
+        if (normalizedPartKind == "accessory")
+        {
+            normalizedPartKind = "head_optional";
+        }
+        return $"synthetic:{normalizedPartKind}:{Normalize(materialName)}";
     }
 
     private static string Normalize(string value)

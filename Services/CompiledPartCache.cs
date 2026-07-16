@@ -9,7 +9,7 @@ namespace PjskBundle2Parts.Services;
 
 public sealed class CompiledPartCache
 {
-    private const string Schema = "0415-compiled-part-3";
+    private const string Schema = "0415-compiled-part-4";
     private readonly string cacheRoot;
     private readonly string sharedContentRoot;
     private readonly string assetRoot;
