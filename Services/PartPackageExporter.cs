@@ -441,9 +441,13 @@ public sealed class PartPackageExporter
             WriteJson(
                 coreRuntimePath,
                 new PartRuntimeCorePackage(
-                    Version: "0415-part-core-1",
+                    Version: "0415-part-core-2",
                     NativeMeshes: core.NativeMeshes,
                     SpringBone: core.RuntimeSpringBone,
+                    CharacterControllers: new PjskSekaiRuntimeCharacterControllers(
+                        Hair: core.SpringBone.CharacterHair,
+                        Eye: core.SpringBone.CharacterEye
+                    ),
                     MorphChannelBindings: core.MorphChannelBindings,
                     Warnings: coreWarnings
                 )
@@ -1202,11 +1206,27 @@ public sealed class PartPackageExporter
                 outputDirectory,
                 coreRelativePath.Replace('/', Path.DirectorySeparatorChar)
             );
-            return RuntimeJsonWriter.OutputsExist(corePath) &&
-                document.RootElement.TryGetProperty("manifest", out var manifest) &&
-                manifest.TryGetProperty("characterHeightMeters", out var height) &&
-                height.ValueKind == JsonValueKind.Number &&
-                height.GetSingle() > 0f;
+            if (!RuntimeJsonWriter.OutputsExist(corePath) ||
+                !document.RootElement.TryGetProperty("manifest", out var manifest) ||
+                !manifest.TryGetProperty("characterHeightMeters", out var height) ||
+                height.ValueKind != JsonValueKind.Number ||
+                height.GetSingle() <= 0f)
+            {
+                return false;
+            }
+            if (!document.RootElement.TryGetProperty("part", out var part) ||
+                !part.TryGetProperty("partType", out var partTypeNode))
+            {
+                return false;
+            }
+            var partType = partTypeNode.GetString();
+            if (partType is not ("head" or "hair"))
+            {
+                return true;
+            }
+            using var coreDocument = RuntimeJsonWriter.ReadJsonDocument(corePath);
+            return coreDocument.RootElement.TryGetProperty("version", out var coreVersion) &&
+                coreVersion.GetString() == "0415-part-core-2";
         }
         catch (Exception)
         {

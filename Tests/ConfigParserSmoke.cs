@@ -1295,6 +1295,10 @@ var bundleInputResolverSource = File.ReadAllText(Path.Combine(repoRoot, "Service
 var sekaiBundleDecryptorSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "SekaiBundleDecryptor.cs"));
 var character3dCostumeResolverSource = File.ReadAllText(Path.Combine(repoRoot, "Services", "Character3dCostumeResolver.cs"));
 Expect(partPackageExporterSource.Contains("part-runtime-core.msgpack.br"), "part package corePath uses the final MessagePack Brotli filename");
+Expect(partPackageExporterSource.Contains("CharacterControllers: new PjskSekaiRuntimeCharacterControllers("), "part package core preserves character material controllers");
+Expect(partPackageExporterSource.Contains("Hair: core.SpringBone.CharacterHair"), "part package core preserves the serialized SekaiCharacterHair offset");
+Expect(partPackageExporterSource.Contains("partType is not (\"head\" or \"hair\")"), "incremental export invalidates only head and hair packages for controller metadata");
+Expect(partPackageExporterSource.Contains("coreVersion.GetString() == \"0415-part-core-2\""), "incremental head and hair export requires the controller-aware core schema");
 Expect(compiledPartCacheSource.Contains("part-runtime-core.msgpack.br"), "compiled part cache restores the final MessagePack Brotli corePath");
 Expect(compiledPartCacheSource.Contains("Append(hash, Path.GetFileName(input.ResolvedBundlePath))"), "compiled part cache fingerprints the primary bundle among sibling dependencies");
 Expect(!partPackageExporterSource.Contains("part-runtime-core.json"), "part package exporter omits logical JSON core paths");

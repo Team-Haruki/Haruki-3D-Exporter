@@ -12,6 +12,7 @@ public sealed record PartRuntimePackage(
     [property: JsonPropertyName("materialSlots")] IReadOnlyList<PjskSekaiRuntimeMaterialSlot> MaterialSlots,
     [property: JsonPropertyName("textureRoles")] IReadOnlyList<PjskSekaiRuntimeTextureRole> TextureRoles,
     [property: JsonPropertyName("characterTextures")] IReadOnlyDictionary<string, string> CharacterTextures,
+    [property: JsonPropertyName("characterControllers")] PjskSekaiRuntimeCharacterControllers CharacterControllers,
     [property: JsonPropertyName("springBone")] PartRuntimeSpringBone SpringBone,
     [property: JsonPropertyName("morphChannelBindings")] IReadOnlyList<HeadMorphChannel> MorphChannelBindings,
     [property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings
@@ -21,6 +22,7 @@ public sealed record PartRuntimeCorePackage(
     [property: JsonPropertyName("version")] string Version,
     [property: JsonPropertyName("nativeMeshes")] PjskUnityRuntimeNativeMeshSet NativeMeshes,
     [property: JsonPropertyName("springBone")] PartRuntimeSpringBone SpringBone,
+    [property: JsonPropertyName("characterControllers")] PjskSekaiRuntimeCharacterControllers CharacterControllers,
     [property: JsonPropertyName("morphChannelBindings")] IReadOnlyList<HeadMorphChannel> MorphChannelBindings,
     [property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings
 );
