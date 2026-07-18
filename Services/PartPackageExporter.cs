@@ -558,6 +558,7 @@ public sealed class PartPackageExporter
             ManagerColliderCaches: setup.ManagerColliderCaches,
             ActiveRootProfile: setup.ActiveRootProfile,
             FUnit: springBone.FUnit,
+            ConstraintSetup: setup.ConstraintSetup,
             Warnings: springBone.Warnings.Concat(candidate.Warnings).Distinct(StringComparer.Ordinal).ToList()
         );
     }
@@ -1325,7 +1326,7 @@ public sealed class PartPackageExporter
             Friction: ReadFloat(manager.Raw, "friction", 0f),
             AnimatedBoneNames: Array.Empty<string>(),
             RawGravity: ReadVector(manager.Raw, "gravity"),
-            ForceProviders: Array.Empty<VrmSpringBoneForceProviderCandidate>(),
+            ForceProviders: PjskSekaiRuntimeExtensionBuilder.BuildRuntimeForceProviders(part, manager),
             BonePathIds: bonePathIds
         );
     }

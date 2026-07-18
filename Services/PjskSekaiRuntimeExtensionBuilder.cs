@@ -539,6 +539,10 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
             OwnerName: constraint.OwnerName,
             Enabled: constraint.Enabled,
             Active: constraint.Active,
+            Weight: constraint.Weight,
+            Locked: constraint.Locked,
+            TranslationAxis: constraint.TranslationAxis,
+            RotationAxis: constraint.RotationAxis,
             TranslationAtRest: constraint.TranslationAtRest,
             RotationAtRest: constraint.RotationAtRest,
             TranslationOffset: constraint.TranslationOffset,
@@ -988,7 +992,7 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
         );
     }
 
-    private static IReadOnlyList<VrmSpringBoneForceProviderCandidate> BuildRuntimeForceProviders(
+    public static IReadOnlyList<VrmSpringBoneForceProviderCandidate> BuildRuntimeForceProviders(
         SpringBoneExport part,
         SpringMonoBehaviourEntry manager
     )
@@ -998,6 +1002,9 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
             {
                 var managerPathId = ReadObjectPathIds(provider.Raw, "springManager")
                     .Concat(ReadObjectPathIds(provider.Raw, "springManagers"))
+                    .Concat(ReadObjectPathIds(provider.Raw, "SpringManager"))
+                    .Concat(ReadObjectPathIds(provider.Raw, "<SpringManager>k__BackingField"))
+                    .Concat(ReadObjectPathIds(provider.Raw, "_SpringManager_k__BackingField"))
                     .FirstOrDefault();
                 return managerPathId == manager.PathId ||
                     (managerPathId == 0 && string.Equals(

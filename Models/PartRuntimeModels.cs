@@ -86,5 +86,6 @@ public sealed record PartRuntimeSpringBone(
     [property: JsonPropertyName("managerColliderCaches")] IReadOnlyList<PjskSpringBoneRuntimeManagerColliderCache> ManagerColliderCaches,
     [property: JsonPropertyName("activeRootProfile")] PjskSpringBoneActiveRootProfile ActiveRootProfile,
     [property: JsonPropertyName("funit")] SpringFUnitSummary FUnit,
+    [property: JsonPropertyName("constraintSetup")] PjskUnityRuntimeConstraintSetup ConstraintSetup,
     [property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings
 );
