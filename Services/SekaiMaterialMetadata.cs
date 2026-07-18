@@ -81,8 +81,43 @@ public static class SekaiMaterialMetadata
             DistortionTexTilingY: FindFloatProperty(material, "_DistortionTexTilingY") ?? 1f,
             Threshold: FindFloatProperty(material, "_Threshold") ?? 0.5f,
             LightInfluence: FindFloatProperty(material, "_LightInfluence") ?? 1f,
-            LightInfluenceForEyeHighlight: FindFloatProperty(material, "_LightInfluenceForEyeHighlight") ?? 1f
+            LightInfluenceForEyeHighlight: FindFloatProperty(material, "_LightInfluenceForEyeHighlight") ?? 1f,
+            SekaiShadowThreshold: FindFloatProperty(material, "_SekaiShadowThreshold"),
+            UseLambert: FindFeature(material, "_UseLambert", "_LAMBERT"),
+            UseValueTex: FindBoolProperty(material, "_UseValueTex"),
+            UseFaceSdf: FindBoolProperty(material, "_UseFaceSDF"),
+            UseSkinColor: FindBoolProperty(material, "_UseSkinColor"),
+            SkinMaskMode: (int?)FindFloatProperty(material, "_SkinMaskMode"),
+            FaceSdfMirror: FindFloatProperty(material, "_FaceSdfMirror"),
+            FaceSdfBias: FindFloatProperty(material, "_FaceSdfBias"),
+            UseFaceShadowLimiter: FindBoolProperty(material, "_UseFaceShadowLimiter"),
+            RangeLimit: FindFloatProperty(material, "_RangeLimit"),
+            FaceSkinShadowStrength: FindFloatProperty(material, "_FaceSkinShadowStrength"),
+            FaceSphereShadowEdge: FindFloatProperty(material, "_FaceSphereShadowEdge"),
+            FaceSphereShadowSmoothness: FindFloatProperty(material, "_FaceSphereShadowSmoothness"),
+            FaceSphereShadowWeight: FindFloatProperty(material, "_FaceSphereShadowWeight"),
+            HairShadow: FindKeywordFeature(material, "_HAIR_SHADOW")
         );
+    }
+
+    private static bool? FindBoolProperty(MaterialInventory? material, string propertyName)
+    {
+        var value = FindFloatProperty(material, propertyName);
+        return value is null ? null : value > 0.5f;
+    }
+
+    private static bool? FindFeature(MaterialInventory? material, string propertyName, string keyword)
+    {
+        return FindBoolProperty(material, propertyName) ?? FindKeywordFeature(material, keyword);
+    }
+
+    private static bool? FindKeywordFeature(MaterialInventory? material, string keyword)
+    {
+        if (material?.ValidKeywords is null)
+        {
+            return null;
+        }
+        return material.ValidKeywords.Contains(keyword, StringComparer.OrdinalIgnoreCase);
     }
 
     public static string? FindTextureSlot(MaterialInventory? material, string slotName)

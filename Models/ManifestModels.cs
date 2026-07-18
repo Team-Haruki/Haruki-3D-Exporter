@@ -45,7 +45,22 @@ public sealed record MaterialLightingSettings(
     float DistortionTexTilingY,
     float Threshold,
     float LightInfluence,
-    float LightInfluenceForEyeHighlight
+    float LightInfluenceForEyeHighlight,
+    float? SekaiShadowThreshold = null,
+    bool? UseLambert = null,
+    bool? UseValueTex = null,
+    bool? UseFaceSdf = null,
+    bool? UseSkinColor = null,
+    int? SkinMaskMode = null,
+    float? FaceSdfMirror = null,
+    float? FaceSdfBias = null,
+    bool? UseFaceShadowLimiter = null,
+    float? RangeLimit = null,
+    float? FaceSkinShadowStrength = null,
+    float? FaceSphereShadowEdge = null,
+    float? FaceSphereShadowSmoothness = null,
+    float? FaceSphereShadowWeight = null,
+    bool? HairShadow = null
 );
 
 public sealed record BodyMaterialSlot(

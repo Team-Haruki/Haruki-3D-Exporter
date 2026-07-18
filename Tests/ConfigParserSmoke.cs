@@ -400,6 +400,43 @@ using (var document = RuntimeJsonWriter.ReadJsonDocument(directWriterPath))
     Expect(!document.RootElement.TryGetProperty("optional", out _), "direct MessagePack writer honors null ignore conditions");
 }
 
+var lightingWriterPath = Path.Combine(writerDir, "material-lighting.json");
+var lightingMaterial = new MaterialInventory(
+    MaterialFileId: 0,
+    MaterialPathId: 1,
+    MaterialKey: "material:0:1",
+    Name: "lighting",
+    ShaderName: "Sekai/Character",
+    TextureSlots: Array.Empty<TextureSlotInventory>(),
+    ColorProperties: Array.Empty<ColorPropertyInventory>(),
+    FloatProperties: new[]
+    {
+        new FloatPropertyInventory("_SekaiShadowThreshold", 0.40625f),
+    }
+);
+RuntimeJsonWriter.Write(
+    lightingWriterPath,
+    new
+    {
+        lighting = SekaiMaterialMetadata.BuildLightingSettings(lightingMaterial),
+        unknownLighting = SekaiMaterialMetadata.BuildLightingSettings(null),
+    },
+    new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    }
+);
+using (var document = RuntimeJsonWriter.ReadJsonDocument(lightingWriterPath))
+{
+    var lighting = document.RootElement.GetProperty("lighting");
+    var unknownLighting = document.RootElement.GetProperty("unknownLighting");
+    Expect(lighting.TryGetProperty("shadowWidth", out _), "nested material lighting uses the engine's camelCase schema");
+    Expect(Math.Abs(lighting.GetProperty("sekaiShadowThreshold").GetSingle() - 0.40625f) < 0.0001f, "known official shader metadata uses the engine's camelCase schema");
+    Expect(!unknownLighting.TryGetProperty("sekaiShadowThreshold", out _), "unknown official shader metadata stays absent instead of bloating every material");
+    Expect(!lighting.TryGetProperty("ShadowWidth", out _), "nested material lighting does not leak PascalCase keys");
+}
+
 var binaryWriterPath = Path.Combine(writerDir, "binary-arrays.json");
 var binaryPositions = Enumerable.Range(0, 12).Select(index => index / 10f).ToArray();
 var binaryIndices = Enumerable.Range(0, 20).Select(index => index == 19 ? 70_000 : index * 2).ToArray();
@@ -1297,9 +1334,23 @@ var character3dCostumeResolverSource = File.ReadAllText(Path.Combine(repoRoot, "
 Expect(partPackageExporterSource.Contains("part-runtime-core.msgpack.br"), "part package corePath uses the final MessagePack Brotli filename");
 Expect(partPackageExporterSource.Contains("CharacterControllers: new PjskSekaiRuntimeCharacterControllers("), "part package core preserves character material controllers");
 Expect(partPackageExporterSource.Contains("Hair: core.SpringBone.CharacterHair"), "part package core preserves the serialized SekaiCharacterHair offset");
+Expect(
+    partPackageExporterSource.Contains("PropertyNamingPolicy = JsonNamingPolicy.CamelCase"),
+    "part package runtime metadata uses the camelCase schema consumed by the engine"
+);
+Expect(
+    partPackageExporterSource.Contains("DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull"),
+    "part package runtime metadata omits unknown optional shader fields"
+);
 Expect(partPackageExporterSource.Contains("partType is not (\"head\" or \"hair\")"), "incremental export invalidates only head and hair packages for controller metadata");
-Expect(partPackageExporterSource.Contains("coreVersion.GetString() == \"0415-part-core-2\""), "incremental head and hair export requires the controller-aware core schema");
+Expect(partPackageExporterSource.Contains("coreVersion.GetString() == \"0415-part-core-3\""), "incremental export requires the camelCase material metadata core schema");
+Expect(partPackageExporterSource.Contains("version.GetString() != \"0415-part-delta-2\""), "incremental export rejects old PascalCase material metadata deltas");
 Expect(compiledPartCacheSource.Contains("part-runtime-core.msgpack.br"), "compiled part cache restores the final MessagePack Brotli corePath");
+Expect(compiledPartCacheSource.Contains("0415-compiled-part-6"), "compiled part cache invalidates PascalCase material metadata objects");
+Expect(compiledPartCacheSource.Contains("delta[\"version\"] = \"0415-part-delta-2\""), "compiled part cache restores the camelCase delta schema version");
+Expect(compiledPartCacheSource.Contains("PropertyNamingPolicy = JsonNamingPolicy.CamelCase"), "compiled part cache patches runtime metadata with camelCase keys");
+Expect(compiledPartCacheSource.Contains("DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull"), "compiled part cache does not restore unknown optional shader fields");
+Expect(compiledPartCacheSource.Contains("JsonSerializer.SerializeToNode(BuildIdentity(entry), RuntimeJsonOptions)"), "compiled part cache keeps patched part identity keys camelCase");
 Expect(compiledPartCacheSource.Contains("Append(hash, Path.GetFileName(input.ResolvedBundlePath))"), "compiled part cache fingerprints the primary bundle among sibling dependencies");
 Expect(!partPackageExporterSource.Contains("part-runtime-core.json"), "part package exporter omits logical JSON core paths");
 Expect(!compiledPartCacheSource.Contains("part-runtime-core.json"), "compiled part cache omits logical JSON core paths");

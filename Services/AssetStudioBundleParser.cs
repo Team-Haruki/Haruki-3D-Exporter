@@ -162,7 +162,9 @@ public sealed class AssetStudioBundleParser
             ShaderName: shaderName,
             TextureSlots: slots,
             ColorProperties: colorProperties,
-            FloatProperties: floatProperties
+            FloatProperties: floatProperties,
+            ValidKeywords: material.m_ValidKeywords,
+            InvalidKeywords: material.m_InvalidKeywords
         );
     }
 

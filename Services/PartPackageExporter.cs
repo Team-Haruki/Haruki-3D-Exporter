@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -14,6 +15,8 @@ public sealed class PartPackageExporter
     private static readonly JsonSerializerOptions WriteJsonOptions = new()
     {
         WriteIndented = false,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
     private readonly BundleInputResolver resolver = new();
@@ -441,7 +444,7 @@ public sealed class PartPackageExporter
             WriteJson(
                 coreRuntimePath,
                 new PartRuntimeCorePackage(
-                    Version: "0415-part-core-2",
+                    Version: "0415-part-core-3",
                     NativeMeshes: core.NativeMeshes,
                     SpringBone: core.RuntimeSpringBone,
                     CharacterControllers: new PjskSekaiRuntimeCharacterControllers(
@@ -454,7 +457,7 @@ public sealed class PartPackageExporter
             );
         }
         var package = new PartRuntimeDeltaPackage(
-            Version: "0415-part-delta-1",
+            Version: "0415-part-delta-2",
             CorePath: coreRuntimeRelativePath,
             Part: new PartRuntimeIdentity(
                 Costume3dId: entry.Costume3dId,
@@ -1189,7 +1192,7 @@ public sealed class PartPackageExporter
         {
             using var document = RuntimeJsonWriter.ReadJsonDocument(runtimePath);
             if (!document.RootElement.TryGetProperty("version", out var version) ||
-                version.GetString() != "0415-part-delta-1" ||
+                version.GetString() != "0415-part-delta-2" ||
                 !document.RootElement.TryGetProperty("corePath", out var corePathNode) ||
                 string.IsNullOrWhiteSpace(corePathNode.GetString()))
             {
@@ -1226,7 +1229,7 @@ public sealed class PartPackageExporter
             }
             using var coreDocument = RuntimeJsonWriter.ReadJsonDocument(corePath);
             return coreDocument.RootElement.TryGetProperty("version", out var coreVersion) &&
-                coreVersion.GetString() == "0415-part-core-2";
+                coreVersion.GetString() == "0415-part-core-3";
         }
         catch (Exception)
         {

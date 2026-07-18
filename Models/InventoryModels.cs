@@ -32,7 +32,9 @@ public sealed record MaterialInventory(
     string? ShaderName,
     IReadOnlyList<TextureSlotInventory> TextureSlots,
     IReadOnlyList<ColorPropertyInventory> ColorProperties,
-    IReadOnlyList<FloatPropertyInventory> FloatProperties
+    IReadOnlyList<FloatPropertyInventory> FloatProperties,
+    IReadOnlyList<string>? ValidKeywords = null,
+    IReadOnlyList<string>? InvalidKeywords = null
 );
 
 public sealed record RenderMaterialSlotInventory(

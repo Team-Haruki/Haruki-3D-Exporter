@@ -3,13 +3,19 @@ using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using PjskBundle2Parts.Models;
 
 namespace PjskBundle2Parts.Services;
 
 public sealed class CompiledPartCache
 {
-    private const string Schema = "0415-compiled-part-5";
+    private const string Schema = "0415-compiled-part-6";
+    private static readonly JsonSerializerOptions RuntimeJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
     private readonly string cacheRoot;
     private readonly string sharedContentRoot;
     private readonly string assetRoot;
@@ -98,20 +104,20 @@ public sealed class CompiledPartCache
         }
 
         var delta = RuntimeJsonWriter.ReadJsonObject(deltaObject);
-        delta["version"] = "0415-part-delta-1";
+        delta["version"] = "0415-part-delta-2";
         delta["corePath"] = coreRelativePath;
-        delta["part"] = JsonSerializer.SerializeToNode(BuildIdentity(entry));
+        delta["part"] = JsonSerializer.SerializeToNode(BuildIdentity(entry), RuntimeJsonOptions);
         delta["source"] = JsonSerializer.SerializeToNode(new PartRuntimeSource(
             BundlePath: input.ResolvedBundlePath,
             ColorVariationBundlePath: entry.ColorVariationBundlePath,
             AssetRootRelativeBundlePath: TryRelativePath(assetRoot, input.ResolvedBundlePath)
-        ));
+        ), RuntimeJsonOptions);
         PatchMount(delta, entry);
         PatchManifest(delta, entry, input, characterHeightMetersById);
         RuntimeJsonWriter.Write(
             runtimePath,
             delta,
-            new JsonSerializerOptions(),
+            RuntimeJsonOptions,
             binaryArraySchema: RuntimeBinaryArraySchema.PartRuntime
         );
         var warnings = delta["warnings"] is JsonArray warningArray
