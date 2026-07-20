@@ -692,11 +692,12 @@ if (!OperatingSystem.IsWindows())
         "cat \"$(eval echo \\${$(($# - 1))})\" >> \"$output\"\n");
     File.SetUnixFileMode(fakeKtx, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
     var previousKtxTool = Environment.GetEnvironmentVariable("HARUKI_KTX_TOOL");
+    var ktxSharedCache = Path.Combine(tempDir, "ktx2-shared-cache");
     Environment.SetEnvironmentVariable("HARUKI_KTX_TOOL", fakeKtx);
     Ktx2TranscodeReport ktxReport;
     try
     {
-        ktxReport = new TextureCompactor().TranscodeStoreToKtx2(ktxRoot, 2);
+        ktxReport = new TextureCompactor().TranscodeStoreToKtx2(ktxRoot, 2, ktxSharedCache);
     }
     finally
     {
@@ -717,6 +718,41 @@ if (!OperatingSystem.IsWindows())
     Expect(File.Exists(Path.Combine(ktxRoot, ktxValue.TrimStart('/').Replace('/', Path.DirectorySeparatorChar))),
         "linear KTX2 object exists");
     Expect(!File.Exists(ktxSourcePath), "source PNG is removed only after successful KTX2 rewrites");
+
+    File.WriteAllBytes(ktxSourcePath, new byte[] { 137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4 });
+    RuntimeJsonWriter.Write(
+        Path.Combine(ktxPackage, "part-runtime.json"),
+        new
+        {
+            characterTextures = new Dictionary<string, string> { ["shared"] = sourceUri },
+            materialSlots = new[]
+            {
+                new
+                {
+                    mainTex = sourceUri,
+                    shadowTex = (string?)null,
+                    valueTex = sourceUri,
+                    faceShadowTex = (string?)null
+                }
+            },
+            textureRoles = new[]
+            {
+                new { role = "main", uri = sourceUri },
+                new { role = "value", uri = sourceUri }
+            }
+        },
+        new JsonSerializerOptions()
+    );
+    Environment.SetEnvironmentVariable("HARUKI_KTX_TOOL", "/bin/false");
+    try
+    {
+        _ = new TextureCompactor().TranscodeStoreToKtx2(ktxRoot, 2, ktxSharedCache);
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("HARUKI_KTX_TOOL", previousKtxTool);
+    }
+    Expect(!File.Exists(ktxSourcePath), "shared KTX2 cache resumes without invoking the encoder");
 
     var failedKtxRoot = Path.Combine(tempDir, "ktx2-failure");
     var failedKtxPackage = Path.Combine(failedKtxRoot, "parts", "_sources", "body", "a");

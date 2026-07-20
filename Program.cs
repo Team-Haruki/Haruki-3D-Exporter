@@ -442,7 +442,8 @@ static void RunKtx2TranscodeIfEnabled(ConversionOptions options)
     }
     var report = new TextureCompactor().TranscodeStoreToKtx2(
         options.OutputDirectory,
-        options.TextureCompactWorkers
+        options.TextureCompactWorkers,
+        options.SharedContentStore
     );
     Console.WriteLine(
         $"Transcoded KTX2 textures: sources={report.SourceTextureCount}, " +

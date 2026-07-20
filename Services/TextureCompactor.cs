@@ -9,6 +9,8 @@ namespace PjskBundle2Parts.Services;
 
 public sealed class TextureCompactor
 {
+    private const string Ktx2EncoderVersion = "uastc-q2-zstd5-mip-v1";
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false
@@ -124,9 +126,16 @@ public sealed class TextureCompactor
         long After
     );
 
-    public Ktx2TranscodeReport TranscodeStoreToKtx2(string outputDirectory, int workers)
+    public Ktx2TranscodeReport TranscodeStoreToKtx2(
+        string outputDirectory,
+        int workers,
+        string? sharedCacheDirectory = null
+    )
     {
         outputDirectory = Path.GetFullPath(outputDirectory);
+        sharedCacheDirectory = string.IsNullOrWhiteSpace(sharedCacheDirectory)
+            ? null
+            : Path.GetFullPath(sharedCacheDirectory);
         var runtimeFiles = EnumerateRuntimeJsonFiles(outputDirectory).ToList();
         var variants = CollectKtx2Variants(runtimeFiles, outputDirectory);
         var workerCount = ResolveWorkerCount(workers);
@@ -139,7 +148,11 @@ public sealed class TextureCompactor
             {
                 try
                 {
-                    converted[variant] = EncodeKtx2Variant(outputDirectory, variant);
+                    converted[variant] = EncodeKtx2Variant(
+                        outputDirectory,
+                        variant,
+                        sharedCacheDirectory
+                    );
                 }
                 catch (Exception ex)
                 {
@@ -306,7 +319,8 @@ public sealed class TextureCompactor
 
     private static Ktx2VariantResult EncodeKtx2Variant(
         string outputDirectory,
-        Ktx2VariantKey variant
+        Ktx2VariantKey variant,
+        string? sharedCacheDirectory
     )
     {
         var temporaryDirectory = Path.Combine(outputDirectory, ".ktx2-work");
@@ -314,8 +328,36 @@ public sealed class TextureCompactor
         var temporaryPath = Path.Combine(temporaryDirectory, $"{Guid.NewGuid():N}.ktx2");
         try
         {
-            RunKtxCreate(variant.SourcePath, temporaryPath, variant.Transfer);
-            var hash = ComputeSha256Hex(temporaryPath);
+            string encodedPath;
+            if (sharedCacheDirectory is null)
+            {
+                RunKtxCreate(variant.SourcePath, temporaryPath, variant.Transfer);
+                encodedPath = temporaryPath;
+            }
+            else
+            {
+                var sourceHash = ComputeSha256Hex(variant.SourcePath);
+                var transfer = variant.Transfer.ToString().ToLowerInvariant();
+                var cachePath = Path.Combine(
+                    sharedCacheDirectory,
+                    "ktx2",
+                    Ktx2EncoderVersion,
+                    transfer,
+                    sourceHash[..2],
+                    sourceHash + ".ktx2"
+                );
+                if (!File.Exists(cachePath) || new FileInfo(cachePath).Length == 0)
+                {
+                    RunKtxCreate(variant.SourcePath, temporaryPath, variant.Transfer);
+                    ContentAddressedFile.Replace(
+                        cachePath,
+                        publishPath => File.Copy(temporaryPath, publishPath)
+                    );
+                }
+                encodedPath = cachePath;
+            }
+
+            var hash = ComputeSha256Hex(encodedPath);
             var storePath = Path.Combine(
                 outputDirectory,
                 "_texture_store",
@@ -326,7 +368,7 @@ public sealed class TextureCompactor
             ContentAddressedFile.Ensure(
                 storePath,
                 hash,
-                publishPath => File.Copy(temporaryPath, publishPath)
+                publishPath => File.Copy(encodedPath, publishPath)
             );
             return new Ktx2VariantResult(
                 storePath,
@@ -358,10 +400,8 @@ public sealed class TextureCompactor
             "--assign-tf", transfer == Ktx2Transfer.Srgb ? "srgb" : "linear",
             "--encode", "uastc",
             "--uastc-quality", "2",
-            "--uastc-rdo",
-            "--uastc-rdo-l", "0.75",
             "--threads", "1",
-            "--zstd", "18",
+            "--zstd", "5",
             "--generate-mipmap",
             "--assign-texcoord-origin", "top-left",
             sourcePath,
