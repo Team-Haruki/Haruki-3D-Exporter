@@ -131,12 +131,28 @@ public sealed class RoleRuntimeExporter
         string? motionPath = null
     )
     {
+        var character3d = LoadAllCharacter3ds(masterDirectory)
+            .SingleOrDefault(entry => entry.Id == character3dId)
+            ?? throw new InvalidOperationException($"character3dId {character3dId} was not found.");
+        var roleDirectory = BuildRoleRuntimeDirectory(outputDirectory, character3d.CharacterId, character3d.Unit);
+        var runtimePath = Path.Combine(roleDirectory, "role-runtime.json");
+        var primaryRuntimePath = RuntimeJsonWriter.PrimaryPath(runtimePath);
+        if (File.Exists(Path.Combine(assetRoot, ".haruki-sparse-input")) && File.Exists(primaryRuntimePath))
+        {
+            return new RoleRuntimeExportResult(
+                Character3dId: character3d.Id,
+                CharacterId: character3d.CharacterId,
+                Unit: character3d.Unit,
+                RuntimePath: primaryRuntimePath,
+                Warnings: []
+            );
+        }
+
         var resolvedCostume = character3dCostumeResolver.Resolve(
             character3dId,
             masterDirectory,
             assetRoot
         );
-        var roleDirectory = BuildRoleRuntimeDirectory(outputDirectory, resolvedCostume.CharacterId, resolvedCostume.Unit);
         var motionDirectory = Path.Combine(roleDirectory, "motion");
         Directory.CreateDirectory(roleDirectory);
 
@@ -201,7 +217,6 @@ public sealed class RoleRuntimeExporter
             ),
             Warnings: warnings.Distinct().ToList()
         );
-        var runtimePath = Path.Combine(roleDirectory, "role-runtime.json");
         RuntimeJsonWriter.Write(runtimePath, runtime, WriteJsonOptions);
         return new RoleRuntimeExportResult(
             Character3dId: resolvedCostume.Character3dId,

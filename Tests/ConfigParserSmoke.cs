@@ -1630,6 +1630,8 @@ Expect(roleRuntimeExporterSource.Contains("ResolveDefaultCostumeSettingMotionPat
 Expect(roleRuntimeExporterSource.Contains("LoadRepresentativeRoleCharacter3dIds"), "role runtime exporter exports one representative row per character+unit by default");
 Expect(roleRuntimeExporterSource.Contains("LoadCanonicalRoleKeys"), "role runtime exporter filters role output to canonical character+unit roles");
 Expect(roleRuntimeExporterSource.Contains("MikuUnitRoles"), "role runtime exporter keeps Miku unit variants");
+Expect(roleRuntimeExporterSource.Contains(".haruki-sparse-input"), "sparse incremental input reuses existing role runtime packages");
+Expect(roleRuntimeExporterSource.Contains("File.Exists(primaryRuntimePath)"), "sparse role reuse requires a completed runtime package");
 Expect(roleRuntimeExporterSource.Contains("entry.Id >= 22 && entry.Id <= 26"), "role runtime exporter keeps non-Miku virtual singers on piapro only");
 Expect(programSource.Contains("RunRoleRuntimeWorkers"), "program can export representative roles through worker processes");
 Expect(programSource.Contains("Started role runtime worker"), "role runtime worker mode reports process shards");
