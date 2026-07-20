@@ -28,6 +28,7 @@ public static class ConversionOptionsParser
         "  --shared-content-store hard-links exact texture and part-runtime bytes into a shared cross-region CAS\n" +
         "  --bundle-hash-index reuses updater-provided SHA-256 values when fingerprinting source bundles\n" +
         "  --png-optimize controls lossless PNG optimization during compaction: oxipng or off\n" +
+        "  --texture-format selects final runtime textures: png (default) or ktx2\n" +
         "  --texture-compact-workers limits concurrent PNG optimizers; 0 = min(4, CPU count)\n" +
         "  --export-face-motion writes face_motion.json from a costume_setting bundle or decoded AnimationClip JSON without Python helpers\n" +
         "  --motion accepts a costume_setting bundle or a folder containing unity-motion.json/face_motion.json/light_motion.json\n" +
@@ -60,6 +61,7 @@ public static class ConversionOptionsParser
         string? sharedContentStore = null;
         string? compiledContentStore = null;
         var pngOptimize = "oxipng";
+        var textureFormat = "png";
         var textureCompactWorkers = 0;
         var convertModelTextures = false;
         string? partPackageWorkList = null;
@@ -115,6 +117,9 @@ public static class ConversionOptionsParser
                 pngOptimize = string.IsNullOrWhiteSpace(config.PngOptimize)
                     ? "oxipng"
                     : config.PngOptimize!;
+                textureFormat = string.IsNullOrWhiteSpace(config.TextureFormat)
+                    ? "png"
+                    : config.TextureFormat!;
                 textureCompactWorkers = config.TextureCompactWorkers ?? 0;
                 convertModelTextures = config.ConvertModelTextures ?? false;
                 partPackageWorkList = config.PartPackageWorkList;
@@ -276,6 +281,12 @@ public static class ConversionOptionsParser
                 continue;
             }
 
+            if (arg is "--texture-format")
+            {
+                textureFormat = ReadValue(args, ref i, arg);
+                continue;
+            }
+
             if (arg is "--texture-compact-workers")
             {
                 textureCompactWorkers = ReadIntValue(args, ref i, arg);
@@ -389,6 +400,11 @@ public static class ConversionOptionsParser
             return new ParseResult(false, null, "--png-optimize must be oxipng or off.");
         }
 
+        if (!IsValidTextureFormat(textureFormat))
+        {
+            return new ParseResult(false, null, "--texture-format must be png or ktx2.");
+        }
+
         if (textureCompactWorkers < 0)
         {
             return new ParseResult(false, null, "--texture-compact-workers must be 0 or greater.");
@@ -432,6 +448,7 @@ public static class ConversionOptionsParser
                 string.IsNullOrWhiteSpace(sharedContentStore) ? null : sharedContentStore,
                 string.IsNullOrWhiteSpace(compiledContentStore) ? null : compiledContentStore,
                 NormalizePngOptimizeMode(pngOptimize),
+                NormalizeTextureFormat(textureFormat),
                 textureCompactWorkers,
                 convertModelTextures,
                 string.IsNullOrWhiteSpace(partPackageWorkList) ? null : partPackageWorkList,
@@ -478,6 +495,16 @@ public static class ConversionOptionsParser
     }
 
     private static string NormalizePngOptimizeMode(string value)
+    {
+        return value.Trim().ToLowerInvariant();
+    }
+
+    private static bool IsValidTextureFormat(string value)
+    {
+        return value.Trim().ToLowerInvariant() is "png" or "ktx2";
+    }
+
+    private static string NormalizeTextureFormat(string value)
     {
         return value.Trim().ToLowerInvariant();
     }

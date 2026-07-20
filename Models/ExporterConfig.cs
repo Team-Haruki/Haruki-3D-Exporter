@@ -27,6 +27,7 @@ public sealed record ExporterConfig(
     string? SharedContentStore,
     string? CompiledContentStore,
     string? PngOptimize,
+    string? TextureFormat,
     int? TextureCompactWorkers,
     string? AssetStudioRoot,
     bool? ConvertModelTextures,

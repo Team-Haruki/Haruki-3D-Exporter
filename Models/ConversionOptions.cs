@@ -25,6 +25,7 @@ public sealed record ConversionOptions(
     string? SharedContentStore,
     string? CompiledContentStore,
     string PngOptimizeMode,
+    string TextureFormat,
     int TextureCompactWorkers,
     bool ConvertModelTextures,
     string? PartPackageWorkList,

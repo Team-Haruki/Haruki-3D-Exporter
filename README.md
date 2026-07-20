@@ -199,6 +199,17 @@ smaller. It stores the optimized bytes under their new exact hash, rewrites
 part-runtime references, and only then removes the old object, so exports do not
 wait for oxipng and CAS paths remain truthful.
 
+Set `--texture-format ktx2` (or `"textureFormat": "ktx2"`) to finalize runtime
+textures as UASTC KTX2 with offline mipmaps and Zstandard compression. PNG stays
+the default. Color textures (`main` and `shadow`) are encoded as sRGB, while
+data textures (`value` and `faceShadow`) are encoded as linear UNORM. When one
+PNG is used by both classes, the finalizer emits two content-addressed variants.
+With `--shared-content-store`, finalization first preserves the source PNG in
+the cross-region CAS for compiled-package restoration, then publishes KTX2 and
+adds those exact bytes to the same CAS. Runtime references are validated before
+the region-local PNG is removed. UASTC prioritizes render fidelity and GPU-ready
+upload; with a full mip chain it is not guaranteed to be smaller than PNG on disk.
+
 Runtime metadata uses direct object-to-MessagePack serialization and Brotli quality
 6. It avoids the former JSON UTF-8 and DOM intermediate while retaining a good
 size/speed balance.

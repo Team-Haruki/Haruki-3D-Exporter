@@ -8,6 +8,7 @@
   "sharedContentStore": null,
   "compiledContentStore": null,
   "optimizeTextureStore": false,
+  "textureFormat": "png",
   "emitCostumeRegistries": false,
   "emitPartPackages": false,
   "exportFaceMotion": false,

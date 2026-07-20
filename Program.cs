@@ -32,7 +32,7 @@ if (options.OptimizeTextureStore)
             $"Optimized texture store: {report.OptimizedFileCount}/{report.TextureFileCount} file(s), " +
             $"saved {report.SavedBytes} byte(s)."
         );
-        RunContentAddressedStoreIfEnabled(options);
+        RunOutputFinalization(options);
         return 0;
     }
     catch (Exception ex)
@@ -143,8 +143,7 @@ if (options.EmitPartPackages)
             {
                 Console.WriteLine($"Warnings: {result.Warnings.Count}");
             }
-            RunTextureCompactionIfEnabled(options);
-            RunContentAddressedStoreIfEnabled(options);
+            RunOutputFinalization(options);
         }
         else
         {
@@ -187,8 +186,7 @@ if (options.EmitPartPackages)
                 Console.Error.WriteLine($"Skipped {failed} part runtime package(s); see part-export-error.json files in the output tree.");
                 return 2;
             }
-            RunTextureCompactionIfEnabled(options);
-            RunContentAddressedStoreIfEnabled(options);
+            RunOutputFinalization(options);
         }
         return 0;
     }
@@ -321,8 +319,7 @@ static int RunPartPackageWorkers(
             $"bundleHashIndexHits={workerSummaries.Sum(summary => summary.BundleHashIndexHits)}, " +
             $"fileHashComputations={workerSummaries.Sum(summary => summary.FileHashComputations)}."
         );
-        RunTextureCompactionIfEnabled(options);
-        RunContentAddressedStoreIfEnabled(options);
+        RunOutputFinalization(options);
         return 0;
     }
     finally
@@ -421,6 +418,36 @@ static void RunTextureCompactionIfEnabled(ConversionOptions options)
         "Compacted textures: " +
         $"{report.TextureFileCount} file(s), {report.UniqueHashCount} unique hash(es), " +
         $"saved {report.SavedBytes} byte(s), rewrote {report.RewrittenReferenceCount} reference(s)."
+    );
+}
+
+static void RunOutputFinalization(ConversionOptions options)
+{
+    RunTextureCompactionIfEnabled(options);
+    RunContentAddressedStoreIfEnabled(options);
+    RunKtx2TranscodeIfEnabled(options);
+    if (options.TextureFormat == "ktx2")
+    {
+        RunContentAddressedStoreIfEnabled(options);
+    }
+}
+
+static void RunKtx2TranscodeIfEnabled(ConversionOptions options)
+{
+    if (options.TextureFormat != "ktx2" ||
+        !options.OwnsOutputFinalization ||
+        options.PartPackageShardCount > 1)
+    {
+        return;
+    }
+    var report = new TextureCompactor().TranscodeStoreToKtx2(
+        options.OutputDirectory,
+        options.TextureCompactWorkers
+    );
+    Console.WriteLine(
+        $"Transcoded KTX2 textures: sources={report.SourceTextureCount}, " +
+        $"variants={report.ConvertedVariantCount}, rewrites={report.RewrittenReferenceCount}, " +
+        $"bytes={report.OriginalBytes}->{report.StoredBytes}."
     );
 }
 

@@ -39,10 +39,20 @@ RUN cargo install oxipng --version 9.1.5 --locked
 
 FROM mcr.microsoft.com/dotnet/runtime-deps:8.0-bookworm-slim
 
+ARG KTX_VERSION=4.4.2
+ARG KTX_DEB_SHA256=ca635ed489d8bf54fac8d7687056c651193de0740830a7738cc034adc63e3027
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=true
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
     libxml2 && \
+    curl -fsSL \
+      "https://github.com/KhronosGroup/KTX-Software/releases/download/v${KTX_VERSION}/KTX-Software-${KTX_VERSION}-Linux-x86_64.deb" \
+      -o /tmp/ktx.deb && \
+    echo "${KTX_DEB_SHA256}  /tmp/ktx.deb" | sha256sum -c - && \
+    apt-get install -y --no-install-recommends /tmp/ktx.deb && \
+    rm -f /tmp/ktx.deb && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/exporter /app/exporter
 COPY --from=oxipng /usr/local/cargo/bin/oxipng /usr/local/bin/oxipng

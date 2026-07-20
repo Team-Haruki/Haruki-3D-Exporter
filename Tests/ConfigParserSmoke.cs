@@ -50,6 +50,7 @@ File.WriteAllText(configPath, JsonSerializer.Serialize(new
     sharedContentStore = "/data/shared-cas-from-config",
     compiledContentStore = "/data/compiled-cas-from-config",
     pngOptimize = "off",
+    textureFormat = "ktx2",
     textureCompactWorkers = 2,
     convertModelTextures = true
 }));
@@ -93,6 +94,7 @@ Expect(!options.OptimizeTextureStore, "standalone texture optimization comes fro
 Expect(options.SharedContentStore == "/data/shared-cas-from-cli", "CLI shared content store overrides config");
 Expect(options.CompiledContentStore == "/data/compiled-cas-from-cli", "CLI compiled content store parses");
 Expect(options.PngOptimizeMode == "off", "PNG optimization mode comes from config");
+Expect(options.TextureFormat == "ktx2", "texture format comes from config");
 Expect(options.TextureCompactWorkers == 2, "texture compaction worker count comes from config");
 Expect(options.ConvertModelTextures, "model texture conversion comes from config");
 Expect(options.PartPackageWorkList == "/data/work-list.json", "part package work list parses");
@@ -235,9 +237,27 @@ var optimizeStoreParsed = ConversionOptionsParser.Parse(new[]
     "--optimize-texture-store",
     "--out", "/data/out",
     "--png-optimize", "off",
+    "--texture-format", "ktx2",
     "--texture-compact-workers", "2",
 });
 Expect(optimizeStoreParsed.IsSuccess && optimizeStoreParsed.Options!.OptimizeTextureStore, "standalone texture store optimization parses without asset inputs");
+Expect(optimizeStoreParsed.Options!.TextureFormat == "ktx2", "standalone texture format parses");
+
+var defaultTextureFormatParsed = ConversionOptionsParser.Parse(new[]
+{
+    "--optimize-texture-store",
+    "--out", "/data/out",
+});
+Expect(defaultTextureFormatParsed.IsSuccess && defaultTextureFormatParsed.Options!.TextureFormat == "png",
+    "PNG remains the default texture format");
+
+var invalidTextureFormatParsed = ConversionOptionsParser.Parse(new[]
+{
+    "--optimize-texture-store",
+    "--out", "/data/out",
+    "--texture-format", "webp",
+});
+Expect(!invalidTextureFormatParsed.IsSuccess, "invalid texture format is rejected");
 
 var invalidPngOptimizeParsed = ConversionOptionsParser.Parse(new[]
 {
@@ -630,6 +650,108 @@ Expect(
     File.Exists(Path.Combine(compactMessagePackDir, messagePackTexture.TrimStart('/').Replace('/', Path.DirectorySeparatorChar))),
     "MessagePack compacted texture exists"
 );
+
+if (!OperatingSystem.IsWindows())
+{
+    var ktxRoot = Path.Combine(tempDir, "ktx2-store");
+    var ktxPackage = Path.Combine(ktxRoot, "parts", "_sources", "body", "a");
+    var sourceUri = "/_texture_store/sha256/aa/source.png";
+    var ktxSourcePath = Path.Combine(ktxRoot, sourceUri.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+    Directory.CreateDirectory(Path.GetDirectoryName(ktxSourcePath)!);
+    File.WriteAllBytes(ktxSourcePath, new byte[] { 137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4 });
+    RuntimeJsonWriter.Write(
+        Path.Combine(ktxPackage, "part-runtime.json"),
+        new
+        {
+            characterTextures = new Dictionary<string, string> { ["shared"] = sourceUri },
+            materialSlots = new[]
+            {
+                new
+                {
+                    mainTex = sourceUri,
+                    shadowTex = (string?)null,
+                    valueTex = sourceUri,
+                    faceShadowTex = (string?)null
+                }
+            },
+            textureRoles = new[]
+            {
+                new { role = "main", uri = sourceUri },
+                new { role = "value", uri = sourceUri }
+            }
+        },
+        new JsonSerializerOptions()
+    );
+    var fakeKtx = Path.Combine(tempDir, "fake-ktx");
+    File.WriteAllText(fakeKtx,
+        "#!/bin/sh\n" +
+        "kind=linear\n" +
+        "case \" $* \" in *R8G8B8A8_SRGB*) kind=srgb ;; esac\n" +
+        "eval output=\\${$#}\n" +
+        "printf '%s:' \"$kind\" > \"$output\"\n" +
+        "cat \"$(eval echo \\${$(($# - 1))})\" >> \"$output\"\n");
+    File.SetUnixFileMode(fakeKtx, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    var previousKtxTool = Environment.GetEnvironmentVariable("HARUKI_KTX_TOOL");
+    Environment.SetEnvironmentVariable("HARUKI_KTX_TOOL", fakeKtx);
+    Ktx2TranscodeReport ktxReport;
+    try
+    {
+        ktxReport = new TextureCompactor().TranscodeStoreToKtx2(ktxRoot, 2);
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("HARUKI_KTX_TOOL", previousKtxTool);
+    }
+    Expect(ktxReport.SourceTextureCount == 1, "KTX2 finalizer counts unique source PNGs");
+    Expect(ktxReport.ConvertedVariantCount == 2, "a texture used in color and data slots gets separate KTX2 variants");
+    var ktxRuntime = ReadRuntimePackage(Path.Combine(ktxPackage, "part-runtime.json"));
+    var ktxMain = ktxRuntime["materialSlots"]![0]!["mainTex"]!.GetValue<string>();
+    var ktxValue = ktxRuntime["materialSlots"]![0]!["valueTex"]!.GetValue<string>();
+    Expect(ktxMain.EndsWith(".ktx2", StringComparison.Ordinal) && ktxValue.EndsWith(".ktx2", StringComparison.Ordinal),
+        "KTX2 finalizer rewrites runtime texture extensions");
+    Expect(ktxMain != ktxValue, "sRGB and linear KTX2 variants have distinct content paths");
+    Expect(ktxRuntime["characterTextures"]!["shared"]!.GetValue<string>() == ktxMain,
+        "ambiguous character texture aliases prefer the color variant");
+    Expect(File.Exists(Path.Combine(ktxRoot, ktxMain.TrimStart('/').Replace('/', Path.DirectorySeparatorChar))),
+        "sRGB KTX2 object exists");
+    Expect(File.Exists(Path.Combine(ktxRoot, ktxValue.TrimStart('/').Replace('/', Path.DirectorySeparatorChar))),
+        "linear KTX2 object exists");
+    Expect(!File.Exists(ktxSourcePath), "source PNG is removed only after successful KTX2 rewrites");
+
+    var failedKtxRoot = Path.Combine(tempDir, "ktx2-failure");
+    var failedKtxPackage = Path.Combine(failedKtxRoot, "parts", "_sources", "body", "a");
+    var failedSourceUri = "/_texture_store/sha256/bb/source.png";
+    var failedSourcePath = Path.Combine(failedKtxRoot, failedSourceUri.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+    Directory.CreateDirectory(Path.GetDirectoryName(failedSourcePath)!);
+    File.WriteAllBytes(failedSourcePath, new byte[] { 137, 80, 78, 71, 5, 6, 7, 8 });
+    RuntimeJsonWriter.Write(
+        Path.Combine(failedKtxPackage, "part-runtime.json"),
+        new
+        {
+            characterTextures = new Dictionary<string, string> { ["main"] = failedSourceUri },
+            materialSlots = new[] { new { mainTex = failedSourceUri, shadowTex = (string?)null, valueTex = (string?)null, faceShadowTex = (string?)null } },
+            textureRoles = new[] { new { role = "main", uri = failedSourceUri } }
+        },
+        new JsonSerializerOptions()
+    );
+    Environment.SetEnvironmentVariable("HARUKI_KTX_TOOL", "/bin/false");
+    try
+    {
+        _ = new TextureCompactor().TranscodeStoreToKtx2(failedKtxRoot, 1);
+        throw new Exception("failed KTX2 encoder should abort finalization");
+    }
+    catch (InvalidOperationException)
+    {
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("HARUKI_KTX_TOOL", previousKtxTool);
+    }
+    Expect(File.Exists(failedSourcePath), "failed KTX2 conversion preserves the source PNG");
+    var failedKtxRuntime = ReadRuntimePackage(Path.Combine(failedKtxPackage, "part-runtime.json"));
+    Expect(failedKtxRuntime["materialSlots"]![0]!["mainTex"]!.GetValue<string>() == failedSourceUri,
+        "failed KTX2 conversion preserves runtime PNG references");
+}
 
 var sharedCas = Path.Combine(tempDir, "shared-cas");
 var casRegionA = Path.Combine(tempDir, "cas-region-a");
