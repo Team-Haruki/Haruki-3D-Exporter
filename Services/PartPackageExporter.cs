@@ -47,7 +47,8 @@ public sealed class PartPackageExporter
         string? compiledContentStore = null,
         string? sharedContentStore = null,
         string? workListPath = null,
-        string? bundleHashIndex = null
+        string? bundleHashIndex = null,
+        bool restoreKtx2 = false
     )
     {
         var stopwatch = Stopwatch.StartNew();
@@ -63,7 +64,13 @@ public sealed class PartPackageExporter
         var compiledCache = string.IsNullOrWhiteSpace(compiledContentStore) ||
             string.IsNullOrWhiteSpace(sharedContentStore)
                 ? null
-                : new CompiledPartCache(compiledContentStore, sharedContentStore, assetRoot, bundleHashIndex);
+                : new CompiledPartCache(
+                    compiledContentStore,
+                    sharedContentStore,
+                    assetRoot,
+                    bundleHashIndex,
+                    restoreKtx2
+                );
         var built = 0;
         var restored = 0;
         var manifestSkipped = 0;

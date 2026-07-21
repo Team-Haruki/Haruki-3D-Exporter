@@ -9,7 +9,9 @@ namespace PjskBundle2Parts.Services;
 
 public sealed class TextureCompactor
 {
-    private const string Ktx2EncoderVersion = "uastc-q2-zstd5-mip-v1";
+    public const string Ktx2EncoderVersion = "uastc-q2-zstd5-mip-v1";
+
+    private readonly ConcurrentDictionary<string, string> ktx2ContentHashes = new(StringComparer.Ordinal);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -211,6 +213,78 @@ public sealed class TextureCompactor
         return report;
     }
 
+    public bool TryRestoreCachedKtx2(
+        JsonObject runtime,
+        string packageDirectory,
+        string outputDirectory,
+        string sharedCacheDirectory
+    )
+    {
+        packageDirectory = Path.GetFullPath(packageDirectory);
+        outputDirectory = Path.GetFullPath(outputDirectory);
+        sharedCacheDirectory = Path.GetFullPath(sharedCacheDirectory);
+        var variants = CollectKtx2Variants(runtime, packageDirectory, outputDirectory, requireSource: false);
+        if (variants.Count == 0)
+        {
+            return false;
+        }
+
+        var cached = new List<(Ktx2VariantKey Variant, string Path)>();
+        foreach (var variant in variants)
+        {
+            var sourceHash = Path.GetFileNameWithoutExtension(variant.SourcePath);
+            if (sourceHash.Length != 64 || sourceHash.Any(character => !Uri.IsHexDigit(character)))
+            {
+                return false;
+            }
+            var transfer = variant.Transfer.ToString().ToLowerInvariant();
+            var cachePath = Path.Combine(
+                sharedCacheDirectory,
+                "ktx2",
+                Ktx2EncoderVersion,
+                transfer,
+                sourceHash[..2],
+                sourceHash + ".ktx2"
+            );
+            if (!File.Exists(cachePath) || new FileInfo(cachePath).Length == 0)
+            {
+                return false;
+            }
+            cached.Add((variant, cachePath));
+        }
+
+        var restored = new Dictionary<Ktx2VariantKey, Ktx2VariantResult>();
+        foreach (var item in cached)
+        {
+            var contentHash = ktx2ContentHashes.GetOrAdd(item.Path, ComputeSha256Hex);
+            var storePath = Path.Combine(
+                outputDirectory,
+                "_texture_store",
+                "sha256",
+                contentHash[..2],
+                contentHash + ".ktx2"
+            );
+            ContentAddressedFile.Ensure(
+                storePath,
+                contentHash,
+                temporaryPath => File.Copy(item.Path, temporaryPath)
+            );
+            restored[item.Variant] = new Ktx2VariantResult(
+                storePath,
+                $"/_texture_store/sha256/{contentHash[..2]}/{contentHash}.ktx2"
+            );
+        }
+
+        var rewritten = RewriteRuntimeNodeToKtx2(
+            runtime,
+            packageDirectory,
+            outputDirectory,
+            restored
+        );
+        return rewritten > 0 &&
+            CollectKtx2Variants(runtime, packageDirectory, outputDirectory, requireSource: false).Count == 0;
+    }
+
     private static IReadOnlyList<Ktx2VariantKey> CollectKtx2Variants(
         IReadOnlyList<string> runtimeFiles,
         string outputDirectory
@@ -222,43 +296,14 @@ public sealed class TextureCompactor
         {
             var packageDirectory = Path.GetDirectoryName(runtimePath)!;
             var node = ReadRuntimeJson(runtimePath);
-            if (node["characterTextures"] is JsonObject characterTextures)
-            {
-                foreach (var value in characterTextures.Select(pair => pair.Value).OfType<JsonValue>())
-                {
-                    if (value.TryGetValue<string>(out var text) &&
-                        ResolvePngTexturePath(packageDirectory, outputDirectory, text) is { } path)
-                    {
-                        aliases.Add(path);
-                    }
-                }
-            }
-            if (node["materialSlots"] is JsonArray materialSlots)
-            {
-                foreach (var slot in materialSlots.OfType<JsonObject>())
-                {
-                    AddKtx2Variant(slot, "mainTex", Ktx2Transfer.Srgb, packageDirectory, outputDirectory, transfers);
-                    AddKtx2Variant(slot, "shadowTex", Ktx2Transfer.Srgb, packageDirectory, outputDirectory, transfers);
-                    AddKtx2Variant(slot, "valueTex", Ktx2Transfer.Linear, packageDirectory, outputDirectory, transfers);
-                    AddKtx2Variant(slot, "faceShadowTex", Ktx2Transfer.Linear, packageDirectory, outputDirectory, transfers);
-                }
-            }
-            if (node["textureRoles"] is JsonArray textureRoles)
-            {
-                foreach (var role in textureRoles.OfType<JsonObject>())
-                {
-                    if (role["uri"] is not JsonValue valueNode ||
-                        !valueNode.TryGetValue<string>(out var value) ||
-                        ResolvePngTexturePath(packageDirectory, outputDirectory, value) is not { } path)
-                    {
-                        continue;
-                    }
-                    var transfer = role["role"]?.GetValue<string>() is "value" or "faceShadow"
-                        ? Ktx2Transfer.Linear
-                        : Ktx2Transfer.Srgb;
-                    GetTransfers(transfers, path).Add(transfer);
-                }
-            }
+            CollectKtx2Variants(
+                node,
+                packageDirectory,
+                outputDirectory,
+                requireSource: true,
+                transfers,
+                aliases
+            );
         }
         foreach (var alias in aliases)
         {
@@ -273,18 +318,98 @@ public sealed class TextureCompactor
             .ToList();
     }
 
+    private static IReadOnlyList<Ktx2VariantKey> CollectKtx2Variants(
+        JsonObject runtime,
+        string packageDirectory,
+        string outputDirectory,
+        bool requireSource
+    )
+    {
+        var transfers = new Dictionary<string, HashSet<Ktx2Transfer>>(StringComparer.Ordinal);
+        var aliases = new HashSet<string>(StringComparer.Ordinal);
+        CollectKtx2Variants(
+            runtime,
+            packageDirectory,
+            outputDirectory,
+            requireSource,
+            transfers,
+            aliases
+        );
+        foreach (var alias in aliases)
+        {
+            if (!transfers.ContainsKey(alias))
+            {
+                GetTransfers(transfers, alias).Add(Ktx2Transfer.Srgb);
+            }
+        }
+        return transfers
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .SelectMany(pair => pair.Value.OrderBy(value => value).Select(value => new Ktx2VariantKey(pair.Key, value)))
+            .ToList();
+    }
+
+    private static void CollectKtx2Variants(
+        JsonObject runtime,
+        string packageDirectory,
+        string outputDirectory,
+        bool requireSource,
+        Dictionary<string, HashSet<Ktx2Transfer>> transfers,
+        HashSet<string> aliases
+    )
+    {
+        if (runtime["characterTextures"] is JsonObject characterTextures)
+        {
+            foreach (var value in characterTextures.Select(pair => pair.Value).OfType<JsonValue>())
+            {
+                if (value.TryGetValue<string>(out var text) &&
+                    ResolvePngTexturePath(packageDirectory, outputDirectory, text, requireSource) is { } path)
+                {
+                    aliases.Add(path);
+                }
+            }
+        }
+        if (runtime["materialSlots"] is JsonArray materialSlots)
+        {
+            foreach (var slot in materialSlots.OfType<JsonObject>())
+            {
+                AddKtx2Variant(slot, "mainTex", Ktx2Transfer.Srgb, packageDirectory, outputDirectory, requireSource, transfers);
+                AddKtx2Variant(slot, "shadowTex", Ktx2Transfer.Srgb, packageDirectory, outputDirectory, requireSource, transfers);
+                AddKtx2Variant(slot, "valueTex", Ktx2Transfer.Linear, packageDirectory, outputDirectory, requireSource, transfers);
+                AddKtx2Variant(slot, "faceShadowTex", Ktx2Transfer.Linear, packageDirectory, outputDirectory, requireSource, transfers);
+            }
+        }
+        if (runtime["textureRoles"] is not JsonArray textureRoles)
+        {
+            return;
+        }
+        foreach (var role in textureRoles.OfType<JsonObject>())
+        {
+            if (role["uri"] is not JsonValue valueNode ||
+                !valueNode.TryGetValue<string>(out var value) ||
+                ResolvePngTexturePath(packageDirectory, outputDirectory, value, requireSource) is not { } path)
+            {
+                continue;
+            }
+            var transfer = role["role"]?.GetValue<string>() is "value" or "faceShadow"
+                ? Ktx2Transfer.Linear
+                : Ktx2Transfer.Srgb;
+            GetTransfers(transfers, path).Add(transfer);
+        }
+    }
+
     private static void AddKtx2Variant(
         JsonObject node,
         string propertyName,
         Ktx2Transfer transfer,
         string packageDirectory,
         string outputDirectory,
+        bool requireSource,
         Dictionary<string, HashSet<Ktx2Transfer>> transfers
     )
     {
         if (node[propertyName] is JsonValue valueNode &&
             valueNode.TryGetValue<string>(out var value) &&
-            ResolvePngTexturePath(packageDirectory, outputDirectory, value) is { } path)
+            ResolvePngTexturePath(packageDirectory, outputDirectory, value, requireSource) is { } path)
         {
             GetTransfers(transfers, path).Add(transfer);
         }
@@ -306,13 +431,14 @@ public sealed class TextureCompactor
     private static string? ResolvePngTexturePath(
         string packageDirectory,
         string outputDirectory,
-        string value
+        string value,
+        bool requireSource = true
     )
     {
         var path = ResolveTexturePath(packageDirectory, outputDirectory, value);
         return path is not null &&
             Path.GetExtension(path).Equals(".png", StringComparison.OrdinalIgnoreCase) &&
-            File.Exists(path)
+            (!requireSource || File.Exists(path))
                 ? path
                 : null;
     }
@@ -436,6 +562,31 @@ public sealed class TextureCompactor
     {
         var packageDirectory = Path.GetDirectoryName(runtimeJsonPath)!;
         var node = ReadRuntimeJson(runtimeJsonPath);
+        var rewritten = RewriteRuntimeNodeToKtx2(
+            node,
+            packageDirectory,
+            outputDirectory,
+            variants
+        );
+        if (rewritten > 0)
+        {
+            RuntimeJsonWriter.Write(
+                runtimeJsonPath,
+                node,
+                JsonOptions,
+                binaryArraySchema: RuntimeBinaryArraySchema.PartRuntime
+            );
+        }
+        return rewritten;
+    }
+
+    private static int RewriteRuntimeNodeToKtx2(
+        JsonObject node,
+        string packageDirectory,
+        string outputDirectory,
+        IReadOnlyDictionary<Ktx2VariantKey, Ktx2VariantResult> variants
+    )
+    {
         var rewritten = 0;
         if (node["characterTextures"] is JsonObject characterTextures)
         {
@@ -468,15 +619,6 @@ public sealed class TextureCompactor
                     : Ktx2Transfer.Srgb;
                 rewritten += RewriteKtx2Property(role, "uri", transfer, packageDirectory, outputDirectory, variants);
             }
-        }
-        if (rewritten > 0)
-        {
-            RuntimeJsonWriter.Write(
-                runtimeJsonPath,
-                node,
-                JsonOptions,
-                binaryArraySchema: RuntimeBinaryArraySchema.PartRuntime
-            );
         }
         return rewritten;
     }

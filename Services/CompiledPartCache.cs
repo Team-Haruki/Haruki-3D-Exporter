@@ -20,16 +20,25 @@ public sealed class CompiledPartCache
     private readonly string sharedContentRoot;
     private readonly string assetRoot;
     private readonly BundleHashIndex bundleHashes;
+    private readonly bool restoreKtx2;
+    private readonly TextureCompactor textureCompactor = new();
     private readonly ConcurrentDictionary<string, CachedFileHash> fileHashes = new(StringComparer.Ordinal);
 
     public int BundleHashIndexHits { get; private set; }
     public int FileHashComputations { get; private set; }
 
-    public CompiledPartCache(string cacheRoot, string sharedContentRoot, string assetRoot, string? bundleHashIndex)
+    public CompiledPartCache(
+        string cacheRoot,
+        string sharedContentRoot,
+        string assetRoot,
+        string? bundleHashIndex,
+        bool restoreKtx2 = false
+    )
     {
         this.cacheRoot = Path.GetFullPath(cacheRoot);
         this.sharedContentRoot = Path.GetFullPath(sharedContentRoot);
         this.assetRoot = Path.GetFullPath(assetRoot);
+        this.restoreKtx2 = restoreKtx2;
         bundleHashes = new BundleHashIndex(bundleHashIndex);
     }
 
@@ -63,8 +72,7 @@ public sealed class CompiledPartCache
         }
         var coreObject = ObjectPath(cached.CoreHash);
         var deltaObject = ObjectPath(cached.DeltaHash);
-        if (!File.Exists(coreObject) || !File.Exists(deltaObject) ||
-            cached.TextureHashes.Any(hash => !File.Exists(SharedTexturePath(hash))))
+        if (!File.Exists(coreObject) || !File.Exists(deltaObject))
         {
             return false;
         }
@@ -73,6 +81,17 @@ public sealed class CompiledPartCache
             outputDirectory,
             entry.PackagePath.Replace('/', Path.DirectorySeparatorChar)
         );
+        var delta = RuntimeJsonWriter.ReadJsonObject(deltaObject);
+        var restoredKtx2 = restoreKtx2 && textureCompactor.TryRestoreCachedKtx2(
+            delta,
+            packageDirectory,
+            outputDirectory,
+            sharedContentRoot
+        );
+        if (!restoredKtx2 && cached.TextureHashes.Any(hash => !File.Exists(SharedTexturePath(hash))))
+        {
+            return false;
+        }
         var runtimePath = Path.Combine(packageDirectory, "part-runtime.json");
         var coreRelativePath = CoreRelativePath(entry);
         var corePath = Path.Combine(
@@ -84,7 +103,7 @@ public sealed class CompiledPartCache
             RuntimeJsonWriter.MessagePackBrotliPath(corePath),
             temporaryPath => File.Copy(coreObject, temporaryPath)
         );
-        foreach (var hash in cached.TextureHashes)
+        foreach (var hash in restoredKtx2 ? Array.Empty<string>() : cached.TextureHashes)
         {
             var target = Path.Combine(
                 outputDirectory,
@@ -103,7 +122,6 @@ public sealed class CompiledPartCache
             }
         }
 
-        var delta = RuntimeJsonWriter.ReadJsonObject(deltaObject);
         delta["version"] = "0415-part-delta-2";
         delta["corePath"] = coreRelativePath;
         delta["part"] = JsonSerializer.SerializeToNode(BuildIdentity(entry), RuntimeJsonOptions);

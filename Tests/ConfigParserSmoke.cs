@@ -787,6 +787,55 @@ if (!OperatingSystem.IsWindows())
     var failedKtxRuntime = ReadRuntimePackage(Path.Combine(failedKtxPackage, "part-runtime.json"));
     Expect(failedKtxRuntime["materialSlots"]![0]!["mainTex"]!.GetValue<string>() == failedSourceUri,
         "failed KTX2 conversion preserves runtime PNG references");
+
+    var compiledKtxRoot = Path.Combine(tempDir, "compiled-ktx-restore");
+    var compiledKtxShared = Path.Combine(compiledKtxRoot, "shared");
+    var compiledKtxOutput = Path.Combine(compiledKtxRoot, "output");
+    var compiledKtxPackage = Path.Combine(compiledKtxOutput, "parts", "_sources", "body", "source");
+    var compiledKtxPng = new byte[] { 137, 80, 78, 71, 13, 10, 26, 10, 9, 8, 7, 6 };
+    var compiledKtxSourceHash = Convert.ToHexString(
+        System.Security.Cryptography.SHA256.HashData(compiledKtxPng)
+    ).ToLowerInvariant();
+    var compiledKtxSourceUri = $"/_texture_store/sha256/{compiledKtxSourceHash[..2]}/{compiledKtxSourceHash}.png";
+    var compiledKtxRuntime = new JsonObject
+    {
+        ["characterTextures"] = new JsonObject { ["main"] = compiledKtxSourceUri },
+        ["materialSlots"] = new JsonArray(new JsonObject
+        {
+            ["mainTex"] = compiledKtxSourceUri,
+            ["shadowTex"] = null,
+            ["valueTex"] = null,
+            ["faceShadowTex"] = null
+        }),
+        ["textureRoles"] = new JsonArray(new JsonObject { ["role"] = "main", ["uri"] = compiledKtxSourceUri })
+    };
+    var compiledKtxBytes = System.Text.Encoding.UTF8.GetBytes("cached-uastc-ktx2");
+    var compiledKtxCachePath = Path.Combine(
+        compiledKtxShared,
+        "ktx2",
+        TextureCompactor.Ktx2EncoderVersion,
+        "srgb",
+        compiledKtxSourceHash[..2],
+        compiledKtxSourceHash + ".ktx2"
+    );
+    Directory.CreateDirectory(Path.GetDirectoryName(compiledKtxCachePath)!);
+    File.WriteAllBytes(compiledKtxCachePath, compiledKtxBytes);
+    Expect(
+        new TextureCompactor().TryRestoreCachedKtx2(
+            compiledKtxRuntime,
+            compiledKtxPackage,
+            compiledKtxOutput,
+            compiledKtxShared
+        ),
+        "cached KTX2 restores without a source PNG"
+    );
+    var compiledKtxRestoredUri = compiledKtxRuntime["materialSlots"]![0]!["mainTex"]!.GetValue<string>();
+    Expect(compiledKtxRestoredUri.EndsWith(".ktx2", StringComparison.Ordinal),
+        "cached KTX2 restore rewrites runtime texture references directly");
+    Expect(File.Exists(Path.Combine(
+        compiledKtxOutput,
+        compiledKtxRestoredUri.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)
+    )), "cached KTX2 restore publishes the final texture");
 }
 
 var sharedCas = Path.Combine(tempDir, "shared-cas");
@@ -1510,6 +1559,8 @@ Expect(compiledPartCacheSource.Contains("PropertyNamingPolicy = JsonNamingPolicy
 Expect(compiledPartCacheSource.Contains("DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull"), "compiled part cache does not restore unknown optional shader fields");
 Expect(compiledPartCacheSource.Contains("JsonSerializer.SerializeToNode(BuildIdentity(entry), RuntimeJsonOptions)"), "compiled part cache keeps patched part identity keys camelCase");
 Expect(compiledPartCacheSource.Contains("Append(hash, Path.GetFileName(input.ResolvedBundlePath))"), "compiled part cache fingerprints the primary bundle among sibling dependencies");
+Expect(compiledPartCacheSource.Contains("textureCompactor.TryRestoreCachedKtx2"), "compiled part cache restores final KTX2 without the source PNG CAS");
+Expect(compiledPartCacheSource.Contains("restoredKtx2 ? Array.Empty<string>() : cached.TextureHashes"), "compiled KTX2 restore does not republish source PNGs");
 Expect(!partPackageExporterSource.Contains("part-runtime-core.json"), "part package exporter omits logical JSON core paths");
 Expect(!compiledPartCacheSource.Contains("part-runtime-core.json"), "compiled part cache omits logical JSON core paths");
 Expect(partPackageExporterSource.Contains("coreRelativePath.EndsWith(\".msgpack.br\""), "incremental export rejects old logical corePath manifests");

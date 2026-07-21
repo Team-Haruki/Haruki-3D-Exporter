@@ -163,7 +163,8 @@ if (options.EmitPartPackages)
                 options.CompiledContentStore,
                 options.SharedContentStore,
                 options.PartPackageWorkList,
-                options.BundleHashIndex
+                options.BundleHashIndex,
+                options.TextureFormat == "ktx2"
             );
             var results = batch.Results;
             var succeeded = results.Count(result => result.Succeeded);
@@ -257,6 +258,7 @@ static int RunPartPackageWorkers(
                 "--part-package-work-list", workListPaths[index],
                 "--assetstudio-log-level", options.AssetStudioLogLevel,
                 "--convert-model-textures", options.ConvertModelTextures.ToString(),
+                "--texture-format", options.TextureFormat,
             });
             if (!string.IsNullOrWhiteSpace(options.CompiledContentStore))
             {
