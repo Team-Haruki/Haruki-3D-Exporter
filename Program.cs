@@ -19,6 +19,23 @@ if (!parseResult.IsSuccess || parseResult.Options is null)
 
 var options = parseResult.Options;
 Logger.Default = new AssetStudioConsoleLogger(options.AssetStudioLogLevel);
+if (options.EmitRuntimeRoleCatalog)
+{
+    try
+    {
+        var catalog = RuntimeRoleCatalogExporter.WriteFromMaster(
+            options.MasterDirectory!,
+            options.OutputDirectory
+        );
+        Console.WriteLine($"Runtime role catalog is current with {catalog.Roles.Count} role(s).");
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Runtime role catalog export failed: {ex.Message}");
+        return 2;
+    }
+}
 if (options.OptimizeTextureStore)
 {
     try
@@ -198,7 +215,7 @@ if (options.EmitPartPackages)
     }
 }
 
-Console.Error.WriteLine("Choose one final pipeline operation: --emit-costume-registries, --emit-part-packages, --emit-role-runtimes, --export-face-motion, or --optimize-texture-store.");
+Console.Error.WriteLine("Choose one final pipeline operation: --emit-costume-registries, --emit-runtime-role-catalog, --emit-part-packages, --emit-role-runtimes, --export-face-motion, or --optimize-texture-store.");
 return 1;
 
 static IReadOnlyDictionary<string, float> LoadCharacterHeightMetersById(string masterDirectory)

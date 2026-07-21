@@ -97,8 +97,8 @@ tags. Pull requests only build the image.
 
 ## Masterdata Audit
 
-The costume masterdata audit checks the relationships needed by preset/custom
-viewer modes without opening Unity bundles:
+The costume masterdata audit checks the relationships needed by role defaults
+and custom component assembly without opening Unity bundles:
 
 ```bash
 node --test scripts/test-costume-masterdata-audit.mjs
@@ -111,7 +111,10 @@ The audit treats broken hard references as errors and known masterdata quirks as
 warnings. Pattern rows that point to missing costume ids are kept for diagnostics,
 but those ids should not be exposed as selectable viewer parts.
 
-If textures look wrong after converter changes, regenerate the output folder and re-import the whole folder in the viewer. Browser blob URLs can otherwise keep stale files alive.
+The output path is a stable incremental store. Registry generation is rerun for
+each region whenever that region's masterdata updates; it does not create a
+release directory or release identifier. The runtime role Catalog records the
+masterdata `dataVersion` as `masterVersion` and skips unchanged refreshes.
 
 ## License
 
@@ -132,7 +135,6 @@ mirror:
 
 This writes:
 
-- `character3d-index.msgpack.br` for official preset packages keyed by `character3ds.id`
 - `parts/part-registry.msgpack.br` for body, hair, and head/head_optional rows
 - `parts/part-registry-compact.msgpack.br` as the field-name-free global
   registry consumed by Cloud
@@ -143,14 +145,30 @@ This writes:
   per-unit deny list; the full registry above remains available for audits
 - `parts/card-costume-unlocks.msgpack.br` for card unlock/source metadata
 
+When only masterdata changed and the transient raw 3D bundles have already been
+removed, refresh the stable role Catalog without touching part packages:
+
+```bash
+./scripts/dotnet.sh run -- \
+  --emit-runtime-role-catalog \
+  --master <master-data-dir> \
+  --out <output-dir>
+```
+
+This writes `runtime-role-catalog.msgpack.br` for the 31 public roles plus
+`parts/by-role/<characterId>/<unit>/runtime-role-catalog.msgpack.br`. Publish
+the Catalog after any changed part and role runtime packages, so clients never
+observe defaults that point at an unfinished incremental export.
+
 Registry generation does not scan the bundle mirror for every row. Part entries
 therefore use `status: "planned"` when masterdata can produce a deterministic
 bundle path, and `status: "missing"` only when required masterdata is absent.
-Single preset/part export remains responsible for validating that the planned
+Single part export remains responsible for validating that the planned
 bundle exists and can be opened.
 
-Official presets are not rejected by custom head/hair pattern tables. For custom
-mode, `costume3dModelNotAvailablePatterns.json` wins over available patterns,
+There is no runtime preset mode. Default role components and explicitly selected
+components use the same assembly and compatibility rules.
+`costume3dModelNotAvailablePatterns.json` wins over available patterns,
 and default hairs are emitted as hints when they are not explicit allow/block
 rules.
 
@@ -219,6 +237,6 @@ schemas use runtime extension type `42`: float data is little-endian float32 and
 mesh indexes are little-endian uint16/uint32. Unrelated arrays with the same
 property names remain ordinary MessagePack arrays.
 
-Viewer custom mode must merge the active part SpringBone records, rebind current
+The viewer must merge the active part SpringBone records, rebind current
 body colliders, and reset simulation whenever body/head/hair/accessory selection
-changes. Preset mode should continue to load full `character3ds.id` packages.
+changes.

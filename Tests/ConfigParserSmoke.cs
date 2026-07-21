@@ -101,6 +101,15 @@ Expect(options.PartPackageWorkList == "/data/work-list.json", "part package work
 Expect(!options.OwnsOutputFinalization, "part package work-list workers do not own output finalization");
 Expect(options.BundleHashIndex == "/data/bundle-hashes.json", "bundle hash index parses");
 
+var catalogOnly = ConversionOptionsParser.Parse(new[]
+{
+    "--emit-runtime-role-catalog",
+    "--master", "/data/master",
+    "--out", "/data/runtime",
+});
+Expect(catalogOnly.IsSuccess && catalogOnly.Options?.EmitRuntimeRoleCatalog == true,
+    "runtime role catalog refresh requires masterdata but no AssetBundles root");
+
 var hashAssetRoot = Path.Combine(tempDir, "hash-assets");
 var indexedBundle = Path.Combine(hashAssetRoot, "live_pv", "model", "body.bundle");
 Directory.CreateDirectory(Path.GetDirectoryName(indexedBundle)!);
@@ -1444,15 +1453,84 @@ using (var compactCompatibility = RuntimeJsonWriter.ReadJsonDocument(
     var firstRow = rootItems[1].EnumerateArray().First();
     Expect(firstRow.ValueKind == JsonValueKind.Array && firstRow.GetArrayLength() == 5, "compact compatibility rows omit unused metadata and repeated field names");
 }
-Expect(
-    registryExport.Character3dIndex.Entries.All(entry => entry.RoleRuntimePath.EndsWith(".msgpack.br", StringComparison.Ordinal)),
-    "default character registry points at MessagePack Brotli role runtimes"
+var publicRoleEntries = Enumerable.Range(1, 31)
+    .Select(roleId =>
+    {
+        var characterId = roleId <= 20 ? roleId : roleId <= 26 ? 21 : roleId - 5;
+        var unit = roleId switch
+        {
+            <= 4 => "light_sound",
+            <= 8 => "idol",
+            <= 12 => "street",
+            <= 16 => "theme_park",
+            <= 20 => "school_refusal",
+            21 => "piapro",
+            22 => "idol",
+            23 => "light_sound",
+            24 => "street",
+            25 => "theme_park",
+            26 => "school_refusal",
+            _ => "piapro",
+        };
+        return new Character3dMaster(
+            Id: roleId,
+            CharacterId: characterId,
+            Unit: unit,
+            Name: $"role-{roleId}",
+            HeadCostume3dId: 2000 + roleId,
+            HairCostume3dId: 3000 + roleId,
+            BodyCostume3dId: 1000 + roleId
+        );
+    })
+    .ToList();
+var publicMasterRoot = Path.Combine(tempDir, "public-master");
+var publicMasterDirectory = Path.Combine(publicMasterRoot, "master");
+Directory.CreateDirectory(publicMasterDirectory);
+Directory.CreateDirectory(Path.Combine(publicMasterRoot, "versions"));
+File.WriteAllText(
+    Path.Combine(publicMasterDirectory, "character3ds.json"),
+    JsonSerializer.Serialize(publicRoleEntries)
 );
+File.WriteAllText(
+    Path.Combine(publicMasterRoot, "versions", "current_version.json"),
+    """{"dataVersion":"test-master"}"""
+);
+var publicRoleCatalogOutput = Path.Combine(tempDir, "runtime-role-catalog-output");
+var publicRoleCatalog = RuntimeRoleCatalogExporter.WriteFromMaster(
+    publicMasterDirectory,
+    publicRoleCatalogOutput
+);
+Expect(publicRoleCatalog?.Roles.Count == 31, "runtime role catalog contains exactly the 31 public roles");
+Expect(publicRoleCatalog?.Roles.Single(role => role.RoleId == 23).CharacterId == 21, "runtime role 23 maps to Miku");
+Expect(publicRoleCatalog?.Roles.Single(role => role.RoleId == 23).Unit == "light_sound", "runtime role 23 keeps the SEKAI unit");
+Expect(publicRoleCatalog?.Roles.Single(role => role.RoleId == 31).CharacterId == 26, "runtime role 31 maps to KAITO");
+Expect(publicRoleCatalog?.Roles.All(role => !string.IsNullOrWhiteSpace(role.RoleRuntimePath)) == true, "runtime role catalog exposes role runtime packages");
+Expect(
+    RuntimeJsonWriter.OutputsExist(Path.Combine(publicRoleCatalogOutput, "runtime-role-catalog.json")),
+    "runtime role catalog uses a stable region-root path"
+);
+Expect(
+    RuntimeJsonWriter.OutputsExist(Path.Combine(publicRoleCatalogOutput, "parts", "by-role", "21", "light_sound", "runtime-role-catalog.json")),
+    "runtime role catalog writes a scoped browser index"
+);
+using (var writtenRoleCatalog = RuntimeJsonWriter.ReadJsonDocument(Path.Combine(publicRoleCatalogOutput, "runtime-role-catalog.json")))
+{
+    Expect(!writtenRoleCatalog.RootElement.TryGetProperty("releaseId", out _), "runtime role catalog has no release id");
+    Expect(writtenRoleCatalog.RootElement.GetProperty("version").GetInt32() == 2, "runtime role catalog uses the master-version schema");
+    Expect(!string.IsNullOrWhiteSpace(writtenRoleCatalog.RootElement.GetProperty("masterVersion").GetString()), "runtime role catalog records its master version");
+    Expect(writtenRoleCatalog.RootElement.GetProperty("roles").GetArrayLength() == 31, "written runtime role catalog keeps all public roles");
+}
+var missingMasterVersionRejected = false;
+try
+{
+    RuntimeRoleCatalogExporter.ResolveMasterVersion(Path.Combine(tempDir, "master-without-version"));
+}
+catch (FileNotFoundException)
+{
+    missingMasterVersionRejected = true;
+}
+Expect(missingMasterVersionRejected, "runtime role catalog refuses to invent a master version");
 Expect(registryExport.PartRegistry.Version == 2, "part registry marks source-based accessory identity schema");
-var presetEntry = registryExport.Character3dIndex.Entries.Single(entry => entry.Character3dId == 9001);
-Expect(presetEntry.AssetBundleNames.Contains("02/0000_special"), "preset index records existing faceModelType face variant");
-Expect(presetEntry.AssetBundlePaths.Contains("live_pv/model/characterv2/face/02/0000_special.bundle"), "preset index records actual faceModelType bundle path");
-Expect(presetEntry.AssetBundlePaths.Contains("live_pv/model/characterv2/body/99/0081/mens.bundle"), "preset index records actual body bundle path");
 var outfitBodyEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 13000 && entry.CharacterId == 21);
 Expect(outfitBodyEntry.OutfitId == 13, "body registry derives stable outfit id from costume group family");
 var legacyAccessoryEntry = registryExport.PartRegistry.Entries.Single(entry => entry.Costume3dId == 11001 && entry.CharacterId == 21 && entry.Unit == "light_sound");

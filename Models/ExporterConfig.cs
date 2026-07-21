@@ -6,6 +6,7 @@ public sealed record ExporterConfig(
     string? Master,
     string? AssetRoot,
     bool? EmitCostumeRegistries,
+    bool? EmitRuntimeRoleCatalog,
     bool? EmitPartPackages,
     bool? EmitRoleRuntimes,
     bool? ExportFaceMotion,

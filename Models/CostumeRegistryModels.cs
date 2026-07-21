@@ -3,33 +3,26 @@ using System.Text.Json.Serialization;
 namespace PjskBundle2Parts.Models;
 
 public sealed record CostumeRegistryExport(
-    Character3dIndex Character3dIndex,
     PartRegistry PartRegistry,
     HeadHairCompatibilityRegistry HeadHairCompatibility,
     CardCostumeUnlockRegistry CardCostumeUnlocks,
     PartSourceMap PartSourceMap
 );
 
-public sealed record Character3dIndex(
+public sealed record RuntimeRoleCatalog(
     [property: JsonPropertyName("version")] int Version,
-    [property: JsonPropertyName("source")] IReadOnlyDictionary<string, string> Source,
-    [property: JsonPropertyName("entries")] IReadOnlyList<Character3dIndexEntry> Entries
+    [property: JsonPropertyName("masterVersion")] string MasterVersion,
+    [property: JsonPropertyName("roles")] IReadOnlyList<RuntimeRoleCatalogEntry> Roles
 );
 
-public sealed record Character3dIndexEntry(
-    [property: JsonPropertyName("character3dId")] int Character3dId,
+public sealed record RuntimeRoleCatalogEntry(
+    [property: JsonPropertyName("roleId")] int RoleId,
     [property: JsonPropertyName("characterId")] int CharacterId,
     [property: JsonPropertyName("unit")] string? Unit,
-    [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("bodyCostume3dId")] int BodyCostume3dId,
     [property: JsonPropertyName("headCostume3dId")] int HeadCostume3dId,
     [property: JsonPropertyName("hairCostume3dId")] int HairCostume3dId,
-    [property: JsonPropertyName("assetBundleNames")] IReadOnlyList<string> AssetBundleNames,
-    [property: JsonPropertyName("assetBundlePaths")] IReadOnlyList<string> AssetBundlePaths,
-    [property: JsonPropertyName("outputPath")] string OutputPath,
-    [property: JsonPropertyName("roleRuntimePath")] string RoleRuntimePath,
-    [property: JsonPropertyName("status")] string Status,
-    [property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings
+    [property: JsonPropertyName("roleRuntimePath")] string RoleRuntimePath
 );
 
 public sealed record PartRegistry(

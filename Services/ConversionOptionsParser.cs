@@ -8,6 +8,7 @@ public static class ConversionOptionsParser
     public static string Usage =>
         "Usage:\n" +
         "  Haruki-3D-Exporter --emit-costume-registries --master <master-directory> --asset-root <AssetBundles-root> --out <directory>\n" +
+        "  Haruki-3D-Exporter --emit-runtime-role-catalog --master <master-directory> --out <directory>\n" +
         "  Haruki-3D-Exporter --emit-part-packages --part-costume3d-id <id> --part-type <body|head|hair|head_optional> --master <master-directory> --asset-root <AssetBundles-root> --out <directory> [--part-unit <unit>]\n\n" +
         "  Haruki-3D-Exporter --emit-role-runtimes [--role-character3d-id <id>] --master <master-directory> --asset-root <AssetBundles-root> --out <directory> [--motion <bundle-or-export-folder>]\n" +
         "  Haruki-3D-Exporter --export-face-motion --motion <bundle-or-decoded-folder-or-json> --out <face_motion.json-or-directory> [--source-path <bundle-path>]\n\n" +
@@ -41,6 +42,7 @@ public static class ConversionOptionsParser
         string? masterDirectory = null;
         string? assetRoot = null;
         var emitCostumeRegistries = false;
+        var emitRuntimeRoleCatalog = false;
         var emitPartPackages = false;
         var emitRoleRuntimes = false;
         var exportFaceMotion = false;
@@ -90,6 +92,7 @@ public static class ConversionOptionsParser
                 masterDirectory = config.Master;
                 assetRoot = config.AssetRoot;
                 emitCostumeRegistries = config.EmitCostumeRegistries ?? false;
+                emitRuntimeRoleCatalog = config.EmitRuntimeRoleCatalog ?? false;
                 emitPartPackages = config.EmitPartPackages ?? false;
                 emitRoleRuntimes = config.EmitRoleRuntimes ?? false;
                 exportFaceMotion = config.ExportFaceMotion ?? false;
@@ -239,6 +242,12 @@ public static class ConversionOptionsParser
                 continue;
             }
 
+            if (arg is "--emit-runtime-role-catalog")
+            {
+                emitRuntimeRoleCatalog = true;
+                continue;
+            }
+
             if (arg is "--part-package-process-concurrency" or "--part-package-workers" or "--part-package-core-count")
             {
                 partPackageProcessConcurrency = ReadIntValue(args, ref i, arg);
@@ -347,6 +356,13 @@ public static class ConversionOptionsParser
         else if (optimizeTextureStore)
         {
         }
+        else if (emitRuntimeRoleCatalog)
+        {
+            if (string.IsNullOrWhiteSpace(masterDirectory))
+            {
+                return new ParseResult(false, null, "Missing --master for --emit-runtime-role-catalog.");
+            }
+        }
         else if (emitCostumeRegistries || emitPartPackages || emitRoleRuntimes)
         {
             if (string.IsNullOrWhiteSpace(masterDirectory))
@@ -429,6 +445,7 @@ public static class ConversionOptionsParser
                 masterDirectory,
                 assetRoot,
                 emitCostumeRegistries,
+                emitRuntimeRoleCatalog,
                 emitPartPackages,
                 emitRoleRuntimes,
                 exportFaceMotion,

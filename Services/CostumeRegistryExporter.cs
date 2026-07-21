@@ -32,7 +32,6 @@ public sealed class CostumeRegistryExporter
 
         Directory.CreateDirectory(normalizedOutputDirectory);
         Directory.CreateDirectory(Path.Combine(normalizedOutputDirectory, "parts"));
-        WriteJson(Path.Combine(normalizedOutputDirectory, "character3d-index.json"), export.Character3dIndex);
         WriteJson(Path.Combine(normalizedOutputDirectory, "parts", "part-registry.json"), export.PartRegistry);
         WriteCompactPartRegistry(normalizedOutputDirectory, export.PartRegistry);
         WriteJson(Path.Combine(normalizedOutputDirectory, "parts", "part-source-map.json"), export.PartSourceMap);
@@ -107,13 +106,7 @@ public sealed class CostumeRegistryExporter
         var partEntriesByRole = export.PartRegistry.Entries
             .GroupBy(entry => (entry.CharacterId, UnitKey(entry.Unit)))
             .ToDictionary(group => group.Key, group => group.ToList());
-        var characterEntriesByRole = export.Character3dIndex.Entries
-            .GroupBy(entry => (entry.CharacterId, UnitKey(entry.Unit)))
-            .ToDictionary(group => group.Key, group => group.ToList());
-
         var roles = partEntriesByRole.Keys
-            .Concat(characterEntriesByRole.Keys)
-            .Distinct()
             .OrderBy(entry => entry.CharacterId)
             .ThenBy(entry => entry.Item2, StringComparer.Ordinal)
             .ToList();
@@ -128,20 +121,12 @@ public sealed class CostumeRegistryExporter
                 RuntimePathUnitSegment(role.Item2)
             );
             partEntriesByRole.TryGetValue(role, out var partEntries);
-            characterEntriesByRole.TryGetValue(role, out var characterEntries);
             var partRegistry = new PartRegistry(
                 Version: export.PartRegistry.Version,
                 Source: export.PartRegistry.Source,
                 Entries: partEntries ?? new List<PartRegistryEntry>()
             );
-            var characterIndex = new Character3dIndex(
-                Version: export.Character3dIndex.Version,
-                Source: export.Character3dIndex.Source,
-                Entries: characterEntries ?? new List<Character3dIndexEntry>()
-            );
-
             WriteJson(Path.Combine(roleDirectory, "part-registry.json"), partRegistry);
-            WriteJson(Path.Combine(roleDirectory, "character3d-index.json"), characterIndex);
         });
     }
 
@@ -233,14 +218,6 @@ public sealed class CostumeRegistryExporter
         );
 
         return new CostumeRegistryExport(
-            Character3dIndex: BuildCharacter3dIndex(
-                character3ds,
-                costumeById,
-                modelsByCostumeId,
-                characterById,
-                normalizedAssetRoot,
-                source
-            ),
             PartRegistry: partRegistry,
             HeadHairCompatibility: BuildHeadHairCompatibility(
                 availablePatterns,
@@ -258,46 +235,6 @@ public sealed class CostumeRegistryExporter
             ),
             PartSourceMap: BuildPartSourceMap(partRegistry, normalizedAssetRoot, source)
         );
-    }
-
-    private static Character3dIndex BuildCharacter3dIndex(
-        IReadOnlyList<Character3dMaster> character3ds,
-        IReadOnlyDictionary<int, Costume3dMaster> costumeById,
-        IReadOnlyDictionary<int, IReadOnlyList<Costume3dModelMaster>> modelsByCostumeId,
-        IReadOnlyDictionary<int, GameCharacterMaster> characterById,
-        string assetRoot,
-        IReadOnlyDictionary<string, string> source
-    )
-    {
-        var entries = character3ds
-            .OrderBy(entry => entry.Id)
-            .Select(entry =>
-            {
-                var warnings = new List<string>();
-                AddPresetWarnings(warnings, "body", entry.BodyCostume3dId, "body", costumeById, modelsByCostumeId);
-                AddPresetWarnings(warnings, "head", entry.HeadCostume3dId, "head", costumeById, modelsByCostumeId);
-                AddPresetWarnings(warnings, "hair", entry.HairCostume3dId, "hair", costumeById, modelsByCostumeId);
-                var assetBundles = ResolvePresetAssetBundleGroup(entry, modelsByCostumeId, characterById, assetRoot, warnings);
-
-                return new Character3dIndexEntry(
-                    Character3dId: entry.Id,
-                    CharacterId: entry.CharacterId,
-                    Unit: entry.Unit,
-                    Name: entry.Name,
-                    BodyCostume3dId: entry.BodyCostume3dId,
-                    HeadCostume3dId: entry.HeadCostume3dId,
-                    HairCostume3dId: entry.HairCostume3dId,
-                    AssetBundleNames: assetBundles.Names,
-                    AssetBundlePaths: assetBundles.Paths,
-                    OutputPath: $"presets/{entry.Id}/",
-                    RoleRuntimePath: BuildRoleRuntimePath(entry.CharacterId, entry.Unit),
-                    Status: warnings.Count == 0 ? "available" : "partial",
-                    Warnings: warnings
-                );
-            })
-            .ToList();
-
-        return new Character3dIndex(Version: 1, Source: source, Entries: entries);
     }
 
     private static PartRegistry BuildPartRegistry(
@@ -439,92 +376,6 @@ public sealed class CostumeRegistryExporter
             }
             entries[index] = entry with { AccessoryId = accessoryId };
         }
-    }
-
-    private static PresetAssetBundleGroup ResolvePresetAssetBundleGroup(
-        Character3dMaster preset,
-        IReadOnlyDictionary<int, IReadOnlyList<Costume3dModelMaster>> modelsByCostumeId,
-        IReadOnlyDictionary<int, GameCharacterMaster> characterById,
-        string assetRoot,
-        List<string> warnings
-    )
-    {
-        var names = new List<string>();
-        var paths = new List<string>();
-        if (!characterById.TryGetValue(preset.CharacterId, out var character))
-        {
-            warnings.Add($"missing gameCharacters row for characterId {preset.CharacterId}");
-            return new PresetAssetBundleGroup(names, paths);
-        }
-
-        var body = ResolvePatternModel(modelsByCostumeId, preset.BodyCostume3dId, preset.Unit);
-        var head = ResolvePatternModel(modelsByCostumeId, preset.HeadCostume3dId, preset.Unit);
-        var hair = ResolvePatternModel(modelsByCostumeId, preset.HairCostume3dId, preset.Unit);
-        var faceSource = head is not null && IsCompleteHeadCostume(head.HeadCostume3dAssetbundleType)
-            ? head
-            : hair;
-
-        if (faceSource?.AssetbundleName is { Length: > 0 } faceAssetbundleName)
-        {
-            var faceBundle = ResolveFaceBundle(faceAssetbundleName, assetRoot, character, warnings);
-            if (faceBundle is not null)
-            {
-                names.Add(faceBundle.AssetbundleName);
-                paths.Add(ToAssetRootRelativePath(assetRoot, faceBundle.Path)!);
-            }
-        }
-
-        if (head is not null &&
-            IsAccessoryHeadCostume(head.HeadCostume3dAssetbundleType) &&
-            ResolveHeadOptionalDescriptor(null, head) is { IsEmptySlot: false } descriptor)
-        {
-            var accessoryPath = ResolveHeadOptionalBundlePath(descriptor, assetRoot, warnings);
-            if (!string.IsNullOrWhiteSpace(accessoryPath))
-            {
-                names.Add($"{descriptor.AccessoryId}/{descriptor.AttachNode}");
-                paths.Add(ToAssetRootRelativePath(assetRoot, accessoryPath)!);
-            }
-
-            if (!string.IsNullOrWhiteSpace(head.ColorAssetbundleName))
-            {
-                var accessoryColorPath = ResolveHeadOptionalColorVariationPath(
-                    descriptor,
-                    head.ColorAssetbundleName,
-                    assetRoot,
-                    warnings
-                );
-                if (!string.IsNullOrWhiteSpace(accessoryColorPath))
-                {
-                    names.Add($"{descriptor.AccessoryId}/{descriptor.AttachNode}/{head.ColorAssetbundleName}");
-                    paths.Add(ToAssetRootRelativePath(assetRoot, accessoryColorPath)!);
-                }
-            }
-        }
-
-        if (body?.AssetbundleName is { Length: > 0 } bodyAssetbundleName)
-        {
-            var bodyPath = ResolveBodyBundlePath(bodyAssetbundleName, preset.CharacterId, characterById, assetRoot, warnings);
-            if (!string.IsNullOrWhiteSpace(bodyPath))
-            {
-                names.Add(bodyAssetbundleName.Replace('\\', '/').Trim('/'));
-                paths.Add(ToAssetRootRelativePath(assetRoot, bodyPath)!);
-            }
-
-            if (!string.IsNullOrWhiteSpace(body.ColorAssetbundleName))
-            {
-                var bodyColorPath = ResolveBodyColorVariationPath(body, preset.CharacterId, characterById, assetRoot);
-                if (!string.IsNullOrWhiteSpace(bodyColorPath))
-                {
-                    names.Add($"{bodyAssetbundleName.Replace('\\', '/').Trim('/')}/{body.ColorAssetbundleName}");
-                    paths.Add(ToAssetRootRelativePath(assetRoot, bodyColorPath)!);
-                }
-            }
-        }
-
-        return new PresetAssetBundleGroup(
-            names.Distinct(StringComparer.Ordinal).ToList(),
-            paths.Distinct(StringComparer.Ordinal).ToList()
-        );
     }
 
     private static void AddOfficialPresetRoleAliases(
@@ -1044,13 +895,6 @@ public sealed class CostumeRegistryExporter
         return $"parts/{NormalizePackagePartType(partType)}/{costume3dId}/{unit ?? "default"}/";
     }
 
-    private static string BuildRoleRuntimePath(int characterId, string? unit)
-    {
-        return RuntimeJsonWriter.PrimaryPath(
-            $"roles/{characterId}/{RuntimePathUnitSegment(unit)}/role-runtime.json"
-        );
-    }
-
     private static string RuntimePathUnitSegment(string? unit)
     {
         return unit ?? "default";
@@ -1378,30 +1222,6 @@ public sealed class CostumeRegistryExporter
         return result;
     }
 
-    private static void AddPresetWarnings(
-        List<string> warnings,
-        string label,
-        int costume3dId,
-        string expectedPartType,
-        IReadOnlyDictionary<int, Costume3dMaster> costumeById,
-        IReadOnlyDictionary<int, IReadOnlyList<Costume3dModelMaster>> modelsByCostumeId
-    )
-    {
-        if (!costumeById.TryGetValue(costume3dId, out var costume))
-        {
-            warnings.Add($"missing {label} costume3ds row {costume3dId}");
-            return;
-        }
-        if (!string.Equals(costume.PartType, expectedPartType, StringComparison.OrdinalIgnoreCase))
-        {
-            warnings.Add($"{label} costume3dId {costume3dId} has partType {costume.PartType}");
-        }
-        if (!modelsByCostumeId.ContainsKey(costume3dId))
-        {
-            warnings.Add($"missing {label} costume3dModels row {costume3dId}");
-        }
-    }
-
     private static void AddPatternReferenceWarnings(
         List<string> warnings,
         string label,
@@ -1568,11 +1388,6 @@ public sealed class CostumeRegistryExporter
         return assetbundleName.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
     }
 
-    private sealed record PresetAssetBundleGroup(
-        IReadOnlyList<string> Names,
-        IReadOnlyList<string> Paths
-    );
-
     private sealed record ResolvedFaceBundle(string AssetbundleName, string Path);
 
     private static T ReadMaster<T>(string masterDirectory, string fileName)
@@ -1599,7 +1414,6 @@ public sealed class CostumeRegistryExporter
         var emptyParts = export.PartRegistry.Entries.Count(entry => entry.Status == "empty");
         var patternWarnings = export.HeadHairCompatibility.Rules.Count(entry => entry.Warnings.Count > 0);
         Console.WriteLine($"Wrote costume registries to {outputDirectory}");
-        Console.WriteLine($"  character3d presets: {export.Character3dIndex.Entries.Count}");
         Console.WriteLine($"  part entries: {export.PartRegistry.Entries.Count} ({missingParts} missing metadata, {emptyParts} empty slots)");
         Console.WriteLine($"  part source packages: {export.PartSourceMap.Entries.Count}");
         Console.WriteLine($"  head/hair rules: {export.HeadHairCompatibility.Rules.Count} ({patternWarnings} with warnings)");

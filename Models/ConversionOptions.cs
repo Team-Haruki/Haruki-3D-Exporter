@@ -6,6 +6,7 @@ public sealed record ConversionOptions(
     string? MasterDirectory,
     string? AssetRoot,
     bool EmitCostumeRegistries,
+    bool EmitRuntimeRoleCatalog,
     bool EmitPartPackages,
     bool EmitRoleRuntimes,
     bool ExportFaceMotion,
