@@ -10,7 +10,7 @@ namespace PjskBundle2Parts.Services;
 
 public sealed class CompiledPartCache
 {
-    private const string Schema = "0415-compiled-part-6";
+    private const string Schema = "0415-compiled-part-7";
     private static readonly JsonSerializerOptions RuntimeJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

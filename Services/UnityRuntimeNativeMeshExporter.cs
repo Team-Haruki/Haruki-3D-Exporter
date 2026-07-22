@@ -713,18 +713,33 @@ public sealed class UnityRuntimeNativeMeshExporter
     {
         var positions = new List<float>(mesh.VertexList.Count * 3);
         var normals = new List<float>(mesh.VertexList.Count * 3);
+        var tangents = new List<float>(mesh.VertexList.Count * 4);
         var uv0 = new List<float>(mesh.VertexList.Count * 2);
         var uv1 = new List<float>(mesh.VertexList.Count * 2);
+        var uv2 = new List<float>(mesh.VertexList.Count * 2);
         var colors = new List<float>(mesh.VertexList.Count * 4);
         var skinIndices = new List<ushort>(mesh.VertexList.Count * 4);
         var skinWeights = new List<float>(mesh.VertexList.Count * 4);
+        var hasUv1 = mesh.VertexList.Count > 0 && mesh.VertexList.All(vertex => HasUv(vertex, 1));
+        var hasUv2 = mesh.VertexList.Count > 0 && mesh.VertexList.All(vertex => HasUv(vertex, 2));
 
         foreach (var vertex in mesh.VertexList)
         {
             AddVector3(positions, vertex.Vertex);
             AddVector3(normals, mesh.hasNormal ? vertex.Normal : new Vector3(0, 1, 0));
+            if (mesh.hasTangent)
+            {
+                AddTangent(tangents, vertex.Tangent);
+            }
             AddUv(uv0, vertex, 0);
-            AddUv(uv1, vertex, 1);
+            if (hasUv1)
+            {
+                AddUv(uv1, vertex, 1);
+            }
+            if (hasUv2)
+            {
+                AddUv(uv2, vertex, 2);
+            }
             if (mesh.hasColor)
             {
                 colors.Add(vertex.Color.R);
@@ -795,8 +810,10 @@ public sealed class UnityRuntimeNativeMeshExporter
             Submeshes: submeshes,
             Positions: positions,
             Normals: normals,
+            Tangents: tangents,
             Uv0: uv0,
             Uv1: uv1,
+            Uv2: uv2,
             Colors: colors,
             SkinIndices: skinIndices,
             SkinWeights: skinWeights,
@@ -943,6 +960,14 @@ public sealed class UnityRuntimeNativeMeshExporter
         values.Add(vector.Z);
     }
 
+    private static void AddTangent(List<float> values, Vector4 tangent)
+    {
+        values.Add(tangent.X);
+        values.Add(tangent.Y);
+        values.Add(tangent.Z);
+        values.Add(-tangent.W);
+    }
+
     private static void AddUv(List<float> values, ImportedVertex vertex, int channel)
     {
         if (vertex.UV is { Length: > 0 } &&
@@ -956,6 +981,13 @@ public sealed class UnityRuntimeNativeMeshExporter
 
         values.Add(0);
         values.Add(0);
+    }
+
+    private static bool HasUv(ImportedVertex vertex, int channel)
+    {
+        return vertex.UV is { Length: > 0 } &&
+            channel < vertex.UV.Length &&
+            vertex.UV[channel] is { Length: >= 2 };
     }
 
     private static void AddSkin(

@@ -145,9 +145,11 @@ public static class RuntimeJsonWriter
     {
         "nativeMeshes.meshes.positions",
         "nativeMeshes.meshes.normals",
+        "nativeMeshes.meshes.tangents",
         "nativeMeshes.meshes.colors",
         "nativeMeshes.meshes.uv0",
         "nativeMeshes.meshes.uv1",
+        "nativeMeshes.meshes.uv2",
         "nativeMeshes.meshes.skinWeights",
         "nativeMeshes.meshes.boneInverseBindMatrices",
         "nativeMeshes.meshes.morphTargets.positionDeltas",
