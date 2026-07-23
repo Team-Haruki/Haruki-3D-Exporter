@@ -159,7 +159,8 @@ public sealed class ConversionPlanner
                     MainTex: FindTextureSlot(material, "_MainTex"),
                     ShadowTex: FindTextureSlot(material, "_ShadowTex"),
                     ValueTex: FindTextureSlot(material, "_ValueTex"),
-                    Lighting: SekaiMaterialMetadata.BuildLightingSettings(material)
+                    Lighting: SekaiMaterialMetadata.BuildLightingSettings(material),
+                    RawMaterial: SekaiMaterialMetadata.BuildRawMaterialProperties(material)
                 );
             }))
             .DistinctBy(
@@ -380,7 +381,8 @@ public sealed class ConversionPlanner
                     ValueTex: FindTextureSlot(material, "_ValueTex"),
                     FaceShadowTex: FindTextureSlot(material, "_FaceShadowTex"),
                     Mode: hasFaceShadowTex ? "sdf" : "clean",
-                    Lighting: SekaiMaterialMetadata.BuildLightingSettings(material)
+                    Lighting: SekaiMaterialMetadata.BuildLightingSettings(material),
+                    RawMaterial: SekaiMaterialMetadata.BuildRawMaterialProperties(material)
                 );
             }))
             .DistinctBy(

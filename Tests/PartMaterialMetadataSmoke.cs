@@ -80,6 +80,34 @@ public static class PartMaterialMetadataSmoke
 
         var unknownFeatureLighting = SekaiMaterialMetadata.BuildLightingSettings(SkinMaterial("legacy"));
         Expect(unknownFeatureLighting.HairShadow is null, "lighting does not invent feature state when keyword metadata is unavailable");
+
+        var raw = SekaiMaterialMetadata.BuildRawMaterialProperties(RawMaterial("future_shader"));
+        Expect(raw.ShaderName == "Sekai/FutureCharacter", "raw material preserves the shader identity");
+        Expect(raw.ShaderKey == "ref:1:99", "raw material preserves the shader object reference");
+        Expect(raw.TextureProperties.Single().Name == "_FutureTex", "raw material preserves unknown texture properties");
+        Expect(Math.Abs(raw.TextureProperties.Single().ScaleX - 2f) < 0.0001f, "raw material preserves texture scale");
+        Expect(Math.Abs(raw.TextureProperties.Single().OffsetY - 0.25f) < 0.0001f, "raw material preserves texture offset");
+        Expect(raw.TextureProperties.Single().ColorSpace == 1, "raw material preserves the source texture color space");
+        Expect(raw.TextureProperties.Single().SourceWidth == 512, "raw material preserves the source texture width");
+        Expect(raw.TextureProperties.Single().SourceHeight == 256, "raw material preserves the source texture height");
+        Expect(raw.TextureProperties.Single().SourceMipCount == 7, "raw material preserves the source mip count");
+        Expect(raw.TextureProperties.Single().SourceFormat == 48, "raw material preserves the Unity texture format");
+        Expect(raw.TextureProperties.Single().FilterMode == 1, "raw material preserves the texture filter mode");
+        Expect(raw.TextureProperties.Single().AnisoLevel == 4, "raw material preserves texture anisotropy");
+        Expect(Math.Abs(raw.TextureProperties.Single().MipBias - 0.25f) < 0.0001f, "raw material preserves texture mip bias");
+        Expect(raw.TextureProperties.Single().WrapU == 0, "raw material preserves texture U wrapping");
+        Expect(raw.TextureProperties.Single().WrapV == 1, "raw material preserves texture V wrapping");
+        Expect(raw.TextureProperties.Single().WrapW == 2, "raw material preserves texture W wrapping");
+        Expect(raw.ColorProperties.Single().Name == "_FutureColor", "raw material preserves unknown color properties");
+        Expect(raw.FloatProperties.Single().Name == "_FutureFloat", "raw material preserves unknown float properties");
+        Expect(raw.IntProperties.Single().Name == "_FutureInt", "raw material preserves unknown integer properties");
+        Expect(raw.ValidKeywords.SequenceEqual(new[] { "_FUTURE_ON" }), "raw material preserves valid shader keywords");
+        Expect(raw.InvalidKeywords.SequenceEqual(new[] { "_FUTURE_OFF" }), "raw material preserves invalid shader keywords");
+        Expect(raw.CustomRenderQueue == 2450, "raw material preserves the custom render queue");
+        Expect(raw.StringTags["RenderType"] == "TransparentCutout", "raw material preserves string tags");
+        Expect(raw.DisabledShaderPasses.SequenceEqual(new[] { "ShadowCaster" }), "raw material preserves disabled passes");
+        var rawJson = JsonSerializer.Serialize(raw);
+        Expect(!rawJson.Contains("TextureData", StringComparison.Ordinal), "raw material never duplicates texture payload bytes");
     }
 
     private static MaterialInventory SkinMaterial(string name)
@@ -140,6 +168,69 @@ public static class PartMaterialMetadataSmoke
             FloatProperties: Array.Empty<FloatPropertyInventory>(),
             ValidKeywords: new[] { "_HAIR_SHADOW", "_LAMBERT" },
             InvalidKeywords: Array.Empty<string>()
+        );
+    }
+
+    private static MaterialInventory RawMaterial(string name)
+    {
+        return new MaterialInventory(
+            MaterialFileId: 1,
+            MaterialPathId: 3,
+            MaterialKey: MaterialIdentityLookup.BuildMaterialKey(1, 3),
+            Name: name,
+            ShaderName: "Sekai/FutureCharacter",
+            TextureSlots: new[]
+            {
+                new TextureSlotInventory(
+                    "_FutureTex",
+                    "future_texture",
+                    TextureFileId: 1,
+                    TexturePathId: 4,
+                    TextureKey: "ref:1:4",
+                    TextureData: new byte[] { 1, 2, 3 },
+                    ScaleX: 2f,
+                    ScaleY: 3f,
+                    OffsetX: 0.5f,
+                    OffsetY: 0.25f,
+                    ColorSpace: 1,
+                    SourceWidth: 512,
+                    SourceHeight: 256,
+                    SourceMipCount: 7,
+                    SourceFormat: 48,
+                    FilterMode: 1,
+                    AnisoLevel: 4,
+                    MipBias: 0.25f,
+                    WrapU: 0,
+                    WrapV: 1,
+                    WrapW: 2
+                ),
+            },
+            ColorProperties: new[]
+            {
+                new ColorPropertyInventory("_FutureColor", 0.1f, 0.2f, 0.3f, 0.4f),
+            },
+            FloatProperties: new[]
+            {
+                new FloatPropertyInventory("_FutureFloat", 12.5f),
+            },
+            ValidKeywords: new[] { "_FUTURE_ON" },
+            InvalidKeywords: new[] { "_FUTURE_OFF" },
+            IntProperties: new[]
+            {
+                new IntPropertyInventory("_FutureInt", 7),
+            },
+            LightmapFlags: 5,
+            EnableInstancingVariants: true,
+            DoubleSidedGi: true,
+            CustomRenderQueue: 2450,
+            StringTags: new Dictionary<string, string>
+            {
+                ["RenderType"] = "TransparentCutout",
+            },
+            DisabledShaderPasses: new[] { "ShadowCaster" },
+            ShaderFileId: 1,
+            ShaderPathId: 99,
+            ShaderKey: "ref:1:99"
         );
     }
 

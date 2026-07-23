@@ -131,7 +131,22 @@ public sealed class AssetStudioBundleParser
                     TextureFileId: textureFileId,
                     TexturePathId: texturePathId,
                     TextureKey: texturePathId == 0 ? null : BuildTextureKey(textureFileId, texturePathId),
-                    TextureData: texture is Texture2D texture2D ? ConvertTextureToPng(texture2D) : null
+                    TextureData: texture is Texture2D texture2D ? ConvertTextureToPng(texture2D) : null,
+                    ScaleX: entry.Value.m_Scale.X,
+                    ScaleY: entry.Value.m_Scale.Y,
+                    OffsetX: entry.Value.m_Offset.X,
+                    OffsetY: entry.Value.m_Offset.Y,
+                    ColorSpace: texture is Texture2D sourceTexture ? sourceTexture.m_ColorSpace : 0,
+                    SourceWidth: texture is Texture2D sourceWidth ? sourceWidth.m_Width : 0,
+                    SourceHeight: texture is Texture2D sourceHeight ? sourceHeight.m_Height : 0,
+                    SourceMipCount: texture is Texture2D sourceMipCount ? sourceMipCount.m_MipCount : 0,
+                    SourceFormat: texture is Texture2D sourceFormat ? (int)sourceFormat.m_TextureFormat : 0,
+                    FilterMode: texture is Texture2D sourceFilter ? sourceFilter.m_TextureSettings?.m_FilterMode ?? 0 : 0,
+                    AnisoLevel: texture is Texture2D sourceAniso ? sourceAniso.m_TextureSettings?.m_Aniso ?? 0 : 0,
+                    MipBias: texture is Texture2D sourceMipBias ? sourceMipBias.m_TextureSettings?.m_MipBias ?? 0f : 0f,
+                    WrapU: texture is Texture2D sourceWrapU ? sourceWrapU.m_TextureSettings?.m_WrapU ?? 0 : 0,
+                    WrapV: texture is Texture2D sourceWrapV ? sourceWrapV.m_TextureSettings?.m_WrapV ?? 0 : 0,
+                    WrapW: texture is Texture2D sourceWrapW ? sourceWrapW.m_TextureSettings?.m_WrapW ?? 0 : 0
                 );
             })
             .OrderBy(slot => slot.SlotName, StringComparer.OrdinalIgnoreCase)
@@ -153,6 +168,11 @@ public sealed class AssetStudioBundleParser
             .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
             .ToList()
             ?? new List<FloatPropertyInventory>();
+        var intProperties = material.m_SavedProperties?.m_Ints?
+            .Select(entry => new IntPropertyInventory(entry.Key, entry.Value))
+            .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList()
+            ?? new List<IntPropertyInventory>();
 
         return new MaterialInventory(
             MaterialFileId: materialFileId,
@@ -164,7 +184,19 @@ public sealed class AssetStudioBundleParser
             ColorProperties: colorProperties,
             FloatProperties: floatProperties,
             ValidKeywords: material.m_ValidKeywords,
-            InvalidKeywords: material.m_InvalidKeywords
+            InvalidKeywords: material.m_InvalidKeywords,
+            IntProperties: intProperties,
+            LightmapFlags: material.m_LightmapFlags,
+            EnableInstancingVariants: material.m_EnableInstancingVariants,
+            DoubleSidedGi: material.m_DoubleSidedGI,
+            CustomRenderQueue: material.m_CustomRenderQueue,
+            StringTags: material.m_StringTagMap,
+            DisabledShaderPasses: material.m_DisabledShaderPasses,
+            ShaderFileId: material.m_Shader.m_FileID,
+            ShaderPathId: material.m_Shader.m_PathID,
+            ShaderKey: material.m_Shader.m_PathID == 0
+                ? null
+                : $"ref:{material.m_Shader.m_FileID}:{material.m_Shader.m_PathID}"
         );
     }
 

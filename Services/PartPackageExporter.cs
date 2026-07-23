@@ -464,7 +464,7 @@ public sealed class PartPackageExporter
             );
         }
         var package = new PartRuntimeDeltaPackage(
-            Version: "0415-part-delta-2",
+            Version: "0415-part-delta-3",
             CorePath: coreRuntimeRelativePath,
             Part: new PartRuntimeIdentity(
                 Costume3dId: entry.Costume3dId,
@@ -920,7 +920,8 @@ public sealed class PartPackageExporter
                     RenderOrder: ResolveRenderOrder(materialKind),
                     ShaderPipeline: partType == "body" ? "sekai_csh_toon" : "character_tint_with_weak_sdf",
                     IsAccessory: partType == "head_optional",
-                    Lighting: SekaiMaterialMetadata.BuildLightingSettings(material)
+                    Lighting: SekaiMaterialMetadata.BuildLightingSettings(material),
+                    RawMaterial: SekaiMaterialMetadata.BuildRawMaterialProperties(material, textures)
                 ));
             }
         }
@@ -1115,9 +1116,48 @@ public sealed class PartPackageExporter
                     ShadowTex = overrideShadow ?? slot.ShadowTex,
                     ValueTex = overrideValue ?? slot.ValueTex,
                     FaceShadowTex = overrideFaceShadow ?? slot.FaceShadowTex,
+                    RawMaterial = ApplyRawTextureOverrides(
+                        slot.RawMaterial,
+                        overrideMain,
+                        overrideShadow,
+                        overrideValue,
+                        overrideFaceShadow
+                    ),
                 }
                 : slot)
             .ToList();
+    }
+
+    private static RawMaterialProperties? ApplyRawTextureOverrides(
+        RawMaterialProperties? rawMaterial,
+        string? main,
+        string? shadow,
+        string? value,
+        string? faceShadow
+    )
+    {
+        if (rawMaterial is null)
+        {
+            return null;
+        }
+        var overrides = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["_MainTex"] = main,
+            ["_ShadowTex"] = shadow,
+            ["_ValueTex"] = value,
+            ["_FaceShadowTex"] = faceShadow,
+        };
+        return rawMaterial with
+        {
+            TextureProperties = rawMaterial.TextureProperties
+                .Select(texture =>
+                    overrides.TryGetValue(texture.Name, out var uri) &&
+                    !string.IsNullOrWhiteSpace(uri)
+                        ? texture with { Uri = uri }
+                        : texture
+                )
+                .ToList(),
+        };
     }
 
     private static bool ShouldApplyColorVariationOverride(string partType, PjskSekaiRuntimeMaterialSlot slot)
@@ -1200,7 +1240,7 @@ public sealed class PartPackageExporter
         {
             using var document = RuntimeJsonWriter.ReadJsonDocument(runtimePath);
             if (!document.RootElement.TryGetProperty("version", out var version) ||
-                version.GetString() != "0415-part-delta-2" ||
+                version.GetString() != "0415-part-delta-3" ||
                 !document.RootElement.TryGetProperty("corePath", out var corePathNode) ||
                 string.IsNullOrWhiteSpace(corePathNode.GetString()))
             {

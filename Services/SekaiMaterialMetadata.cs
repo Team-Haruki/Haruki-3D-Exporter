@@ -4,6 +4,81 @@ namespace PjskBundle2Parts.Services;
 
 public static class SekaiMaterialMetadata
 {
+    public static RawMaterialProperties BuildRawMaterialProperties(
+        MaterialInventory? material,
+        IReadOnlyDictionary<string, string>? texturePaths = null
+    )
+    {
+        return new RawMaterialProperties(
+            ShaderName: material?.ShaderName,
+            ShaderFileId: material?.ShaderFileId ?? 0,
+            ShaderPathId: material?.ShaderPathId ?? 0,
+            ShaderKey: material?.ShaderKey,
+            TextureProperties: material?.TextureSlots
+                .Select(slot => new RawMaterialTextureProperty(
+                    Name: slot.SlotName,
+                    TextureName: slot.TextureName,
+                    TextureFileId: slot.TextureFileId,
+                    TexturePathId: slot.TexturePathId,
+                    TextureKey: slot.TextureKey,
+                    ScaleX: slot.ScaleX,
+                    ScaleY: slot.ScaleY,
+                    OffsetX: slot.OffsetX,
+                    OffsetY: slot.OffsetY,
+                    ColorSpace: slot.ColorSpace,
+                    Uri: ResolveTexturePath(slot, texturePaths),
+                    SourceWidth: slot.SourceWidth,
+                    SourceHeight: slot.SourceHeight,
+                    SourceMipCount: slot.SourceMipCount,
+                    SourceFormat: slot.SourceFormat,
+                    FilterMode: slot.FilterMode,
+                    AnisoLevel: slot.AnisoLevel,
+                    MipBias: slot.MipBias,
+                    WrapU: slot.WrapU,
+                    WrapV: slot.WrapV,
+                    WrapW: slot.WrapW
+                ))
+                .ToList() ?? new List<RawMaterialTextureProperty>(),
+            ColorProperties: material?.ColorProperties ?? Array.Empty<ColorPropertyInventory>(),
+            FloatProperties: material?.FloatProperties ?? Array.Empty<FloatPropertyInventory>(),
+            IntProperties: material?.IntProperties ?? Array.Empty<IntPropertyInventory>(),
+            ValidKeywords: material?.ValidKeywords ?? Array.Empty<string>(),
+            InvalidKeywords: material?.InvalidKeywords ?? Array.Empty<string>(),
+            LightmapFlags: material?.LightmapFlags ?? 0,
+            EnableInstancingVariants: material?.EnableInstancingVariants ?? false,
+            DoubleSidedGi: material?.DoubleSidedGi ?? false,
+            CustomRenderQueue: material?.CustomRenderQueue ?? -1,
+            StringTags: material?.StringTags ?? new Dictionary<string, string>(),
+            DisabledShaderPasses: material?.DisabledShaderPasses ?? Array.Empty<string>()
+        );
+    }
+
+    private static string? ResolveTexturePath(
+        TextureSlotInventory slot,
+        IReadOnlyDictionary<string, string>? texturePaths
+    )
+    {
+        if (texturePaths is null)
+        {
+            return null;
+        }
+        if (!string.IsNullOrWhiteSpace(slot.TextureKey) &&
+            texturePaths.TryGetValue(slot.TextureKey, out var referencedPath))
+        {
+            return referencedPath;
+        }
+        if (string.IsNullOrWhiteSpace(slot.TextureName))
+        {
+            return null;
+        }
+        return texturePaths.TryGetValue(slot.TextureName, out var namedPath)
+            ? namedPath
+            : texturePaths.TryGetValue(
+                Path.GetFileNameWithoutExtension(slot.TextureName),
+                out var stemPath
+            ) ? stemPath : null;
+    }
+
     public static BodyProxySettings BuildBodyProxy(IEnumerable<MaterialInventory> materials)
     {
         var tintSource = materials.FirstOrDefault(HasSkinColorProperty);

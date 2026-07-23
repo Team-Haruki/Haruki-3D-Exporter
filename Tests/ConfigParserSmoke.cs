@@ -633,6 +633,8 @@ Expect(textureA.StartsWith("/_texture_store/sha256/"), "texture compactor rewrit
 Expect(textureA == textureB, "texture compactor points same-hash textures at same store path");
 Expect(textureA != textureC, "texture compactor keeps different hashes separate");
 Expect(rewrittenA["materialSlots"]![0]!["mainTex"]!.GetValue<string>() == textureA, "texture compactor rewrites material slot texture");
+Expect(rewrittenA["materialSlots"]![0]!["rawMaterial"]!["textureProperties"]![0]!["uri"]!.GetValue<string>() == textureA,
+    "texture compactor rewrites raw material texture URI");
 Expect(rewrittenA["textureRoles"]![0]!["uri"]!.GetValue<string>() == textureA, "texture compactor rewrites texture role URI");
 Expect(File.Exists(Path.Combine(compactDir, textureA.TrimStart('/').Replace('/', Path.DirectorySeparatorChar))), "texture compactor writes store texture");
 
@@ -648,7 +650,7 @@ var compactMessagePackReport = new TextureCompactor().Compact(
     "off",
     1
 );
-Expect(compactMessagePackReport.RewrittenReferenceCount == 3, "texture compactor rewrites MessagePack runtime references");
+Expect(compactMessagePackReport.RewrittenReferenceCount == 4, "texture compactor rewrites MessagePack runtime and raw material references");
 Expect(!File.Exists(Path.Combine(messagePackPackage, "textures", "body", "a.png")), "MessagePack compaction removes replaced source texture");
 var rewrittenMessagePack = ReadRuntimePackage(
     Path.Combine(messagePackPackage, "part-runtime.json")
@@ -680,7 +682,14 @@ if (!OperatingSystem.IsWindows())
                     mainTex = sourceUri,
                     shadowTex = (string?)null,
                     valueTex = sourceUri,
-                    faceShadowTex = (string?)null
+                    faceShadowTex = (string?)null,
+                    rawMaterial = new
+                    {
+                        textureProperties = new[]
+                        {
+                            new { name = "_ValueTex", colorSpace = 1, uri = sourceUri }
+                        }
+                    }
                 }
             },
             textureRoles = new[]
@@ -717,9 +726,11 @@ if (!OperatingSystem.IsWindows())
     var ktxRuntime = ReadRuntimePackage(Path.Combine(ktxPackage, "part-runtime.json"));
     var ktxMain = ktxRuntime["materialSlots"]![0]!["mainTex"]!.GetValue<string>();
     var ktxValue = ktxRuntime["materialSlots"]![0]!["valueTex"]!.GetValue<string>();
+    var ktxRawValue = ktxRuntime["materialSlots"]![0]!["rawMaterial"]!["textureProperties"]![0]!["uri"]!.GetValue<string>();
     Expect(ktxMain.EndsWith(".ktx2", StringComparison.Ordinal) && ktxValue.EndsWith(".ktx2", StringComparison.Ordinal),
         "KTX2 finalizer rewrites runtime texture extensions");
     Expect(ktxMain != ktxValue, "sRGB and linear KTX2 variants have distinct content paths");
+    Expect(ktxRawValue == ktxValue, "raw material color space selects the matching linear KTX2 variant");
     Expect(ktxRuntime["characterTextures"]!["shared"]!.GetValue<string>() == ktxMain,
         "ambiguous character texture aliases prefer the color variant");
     Expect(File.Exists(Path.Combine(ktxRoot, ktxMain.TrimStart('/').Replace('/', Path.DirectorySeparatorChar))),
@@ -741,7 +752,14 @@ if (!OperatingSystem.IsWindows())
                     mainTex = sourceUri,
                     shadowTex = (string?)null,
                     valueTex = sourceUri,
-                    faceShadowTex = (string?)null
+                    faceShadowTex = (string?)null,
+                    rawMaterial = new
+                    {
+                        textureProperties = new[]
+                        {
+                            new { name = "_ValueTex", colorSpace = 1, uri = sourceUri }
+                        }
+                    }
                 }
             },
             textureRoles = new[]
@@ -814,7 +832,16 @@ if (!OperatingSystem.IsWindows())
             ["mainTex"] = compiledKtxSourceUri,
             ["shadowTex"] = null,
             ["valueTex"] = null,
-            ["faceShadowTex"] = null
+            ["faceShadowTex"] = null,
+            ["rawMaterial"] = new JsonObject
+            {
+                ["textureProperties"] = new JsonArray(new JsonObject
+                {
+                    ["name"] = "_MainTex",
+                    ["colorSpace"] = 0,
+                    ["uri"] = compiledKtxSourceUri
+                })
+            }
         }),
         ["textureRoles"] = new JsonArray(new JsonObject { ["role"] = "main", ["uri"] = compiledKtxSourceUri })
     };
@@ -841,6 +868,11 @@ if (!OperatingSystem.IsWindows())
     var compiledKtxRestoredUri = compiledKtxRuntime["materialSlots"]![0]!["mainTex"]!.GetValue<string>();
     Expect(compiledKtxRestoredUri.EndsWith(".ktx2", StringComparison.Ordinal),
         "cached KTX2 restore rewrites runtime texture references directly");
+    Expect(
+        compiledKtxRuntime["materialSlots"]![0]!["rawMaterial"]!["textureProperties"]![0]!["uri"]!.GetValue<string>() ==
+            compiledKtxRestoredUri,
+        "cached KTX2 restore rewrites raw material texture references"
+    );
     Expect(File.Exists(Path.Combine(
         compiledKtxOutput,
         compiledKtxRestoredUri.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)
@@ -1632,9 +1664,9 @@ Expect(
 );
 Expect(partPackageExporterSource.Contains("partType is not (\"head\" or \"hair\")"), "incremental export invalidates only head and hair packages for controller metadata");
 Expect(partPackageExporterSource.Contains("coreVersion.GetString() == \"0415-part-core-3\""), "incremental export requires the camelCase material metadata core schema");
-Expect(partPackageExporterSource.Contains("version.GetString() != \"0415-part-delta-2\""), "incremental export rejects old PascalCase material metadata deltas");
+Expect(partPackageExporterSource.Contains("version.GetString() != \"0415-part-delta-3\""), "incremental export rejects runtimes without complete raw material properties");
 Expect(compiledPartCacheSource.Contains("part-runtime-core.msgpack.br"), "compiled part cache restores the final MessagePack Brotli corePath");
-Expect(compiledPartCacheSource.Contains("0415-compiled-part-7"), "compiled part cache invalidates native meshes without the packed second-normal Z channel");
+Expect(compiledPartCacheSource.Contains("0415-compiled-part-8"), "compiled part cache invalidates entries without complete raw material properties");
 Expect(nativeMeshExporterSource.Contains("AddTangent(tangents") && nativeMeshExporterSource.Contains("vertex.Tangent"), "native mesh export preserves the tangent basis for second normals");
 Expect(nativeMeshExporterSource.Contains("values.Add(-tangent.W)"), "native mesh export flips tangent handedness with AssetStudio's mirrored X axis");
 Expect(nativeMeshExporterSource.Contains("AddUv(uv2, vertex, 2)"), "native mesh export preserves packed second-normal UV2 data");
@@ -1644,7 +1676,7 @@ Expect(runtimeModelsSource.Contains("JsonPropertyName(\"tangents\")"), "runtime 
 Expect(runtimeModelsSource.Contains("JsonPropertyName(\"uv2\")"), "runtime native mesh schema publishes UV2");
 Expect(runtimeWriterSource.Contains("\"nativeMeshes.meshes.tangents\""), "runtime binary codec stores tangents as float32");
 Expect(runtimeWriterSource.Contains("\"nativeMeshes.meshes.uv2\""), "runtime binary codec stores UV2 as float32");
-Expect(compiledPartCacheSource.Contains("delta[\"version\"] = \"0415-part-delta-2\""), "compiled part cache restores the camelCase delta schema version");
+Expect(compiledPartCacheSource.Contains("delta[\"version\"] = \"0415-part-delta-3\""), "compiled part cache restores the complete raw material delta schema version");
 Expect(compiledPartCacheSource.Contains("PropertyNamingPolicy = JsonNamingPolicy.CamelCase"), "compiled part cache patches runtime metadata with camelCase keys");
 Expect(compiledPartCacheSource.Contains("DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull"), "compiled part cache does not restore unknown optional shader fields");
 Expect(compiledPartCacheSource.Contains("JsonSerializer.SerializeToNode(BuildIdentity(entry), RuntimeJsonOptions)"), "compiled part cache keeps patched part identity keys camelCase");
@@ -1898,7 +1930,14 @@ static void WriteRuntimePackage(
                     mainTex = texturePath,
                     shadowTex = (string?)null,
                     valueTex = (string?)null,
-                    faceShadowTex = (string?)null
+                    faceShadowTex = (string?)null,
+                    rawMaterial = new
+                    {
+                        textureProperties = new[]
+                        {
+                            new { name = "_MainTex", colorSpace = 0, uri = texturePath }
+                        }
+                    }
                 }
             },
             textureRoles = new[]

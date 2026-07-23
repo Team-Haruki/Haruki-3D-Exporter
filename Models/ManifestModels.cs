@@ -63,6 +63,49 @@ public sealed record MaterialLightingSettings(
     bool? HairShadow = null
 );
 
+public sealed record RawMaterialTextureProperty(
+    string Name,
+    string? TextureName,
+    long TextureFileId,
+    long TexturePathId,
+    string? TextureKey,
+    float ScaleX,
+    float ScaleY,
+    float OffsetX,
+    float OffsetY,
+    int ColorSpace,
+    string? Uri = null,
+    int SourceWidth = 0,
+    int SourceHeight = 0,
+    int SourceMipCount = 0,
+    int SourceFormat = 0,
+    int FilterMode = 0,
+    int AnisoLevel = 0,
+    float MipBias = 0f,
+    int WrapU = 0,
+    int WrapV = 0,
+    int WrapW = 0
+);
+
+public sealed record RawMaterialProperties(
+    string? ShaderName,
+    long ShaderFileId,
+    long ShaderPathId,
+    string? ShaderKey,
+    IReadOnlyList<RawMaterialTextureProperty> TextureProperties,
+    IReadOnlyList<ColorPropertyInventory> ColorProperties,
+    IReadOnlyList<FloatPropertyInventory> FloatProperties,
+    IReadOnlyList<IntPropertyInventory> IntProperties,
+    IReadOnlyList<string> ValidKeywords,
+    IReadOnlyList<string> InvalidKeywords,
+    uint LightmapFlags,
+    bool EnableInstancingVariants,
+    bool DoubleSidedGi,
+    int CustomRenderQueue,
+    IReadOnlyDictionary<string, string> StringTags,
+    IReadOnlyList<string> DisabledShaderPasses
+);
+
 public sealed record BodyMaterialSlot(
     string MeshName,
     int SlotIndex,
@@ -74,7 +117,8 @@ public sealed record BodyMaterialSlot(
     string? MainTex,
     string? ShadowTex,
     string? ValueTex,
-    MaterialLightingSettings Lighting
+    MaterialLightingSettings Lighting,
+    RawMaterialProperties? RawMaterial = null
 );
 
 public sealed record FaceMaterialSlot(
@@ -90,7 +134,8 @@ public sealed record FaceMaterialSlot(
     string? ValueTex,
     string? FaceShadowTex,
     string Mode,
-    MaterialLightingSettings Lighting
+    MaterialLightingSettings Lighting,
+    RawMaterialProperties? RawMaterial = null
 );
 
 public sealed record BodySkeletonMetadata(

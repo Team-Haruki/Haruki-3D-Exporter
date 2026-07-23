@@ -376,6 +376,18 @@ public sealed class TextureCompactor
                 AddKtx2Variant(slot, "shadowTex", Ktx2Transfer.Srgb, packageDirectory, outputDirectory, requireSource, transfers);
                 AddKtx2Variant(slot, "valueTex", Ktx2Transfer.Linear, packageDirectory, outputDirectory, requireSource, transfers);
                 AddKtx2Variant(slot, "faceShadowTex", Ktx2Transfer.Linear, packageDirectory, outputDirectory, requireSource, transfers);
+                foreach (var texture in EnumerateRawMaterialTextures(slot))
+                {
+                    AddKtx2Variant(
+                        texture,
+                        "uri",
+                        RawTextureTransfer(texture),
+                        packageDirectory,
+                        outputDirectory,
+                        requireSource,
+                        transfers
+                    );
+                }
             }
         }
         if (runtime["textureRoles"] is not JsonArray textureRoles)
@@ -608,6 +620,17 @@ public sealed class TextureCompactor
                 rewritten += RewriteKtx2Property(slot, "shadowTex", Ktx2Transfer.Srgb, packageDirectory, outputDirectory, variants);
                 rewritten += RewriteKtx2Property(slot, "valueTex", Ktx2Transfer.Linear, packageDirectory, outputDirectory, variants);
                 rewritten += RewriteKtx2Property(slot, "faceShadowTex", Ktx2Transfer.Linear, packageDirectory, outputDirectory, variants);
+                foreach (var texture in EnumerateRawMaterialTextures(slot))
+                {
+                    rewritten += RewriteKtx2Property(
+                        texture,
+                        "uri",
+                        RawTextureTransfer(texture),
+                        packageDirectory,
+                        outputDirectory,
+                        variants
+                    );
+                }
             }
         }
         if (node["textureRoles"] is JsonArray textureRoles)
@@ -914,6 +937,22 @@ public sealed class TextureCompactor
                         rewritten += 1;
                     }
                 }
+                foreach (var texture in EnumerateRawMaterialTextures(materialSlot))
+                {
+                    if (texture["uri"] is JsonValue rawValueNode &&
+                        rawValueNode.TryGetValue<string>(out var rawValue) &&
+                        TryRewriteTexturePath(
+                            packageDirectory,
+                            outputDirectory,
+                            rawValue,
+                            pathMap,
+                            out var rewrittenRawPath
+                        ))
+                    {
+                        texture["uri"] = rewrittenRawPath;
+                        rewritten += 1;
+                    }
+                }
             }
         }
         if (node["textureRoles"] is JsonArray textureRoles)
@@ -1134,6 +1173,14 @@ public sealed class TextureCompactor
                         yield return text;
                     }
                 }
+                foreach (var texture in EnumerateRawMaterialTextures(materialSlot))
+                {
+                    if (texture["uri"] is JsonValue rawValue &&
+                        rawValue.TryGetValue<string>(out var rawText))
+                    {
+                        yield return rawText;
+                    }
+                }
             }
         }
         if (node["textureRoles"] is JsonArray textureRoles)
@@ -1147,6 +1194,29 @@ public sealed class TextureCompactor
                 }
             }
         }
+    }
+
+    private static IEnumerable<JsonObject> EnumerateRawMaterialTextures(
+        JsonObject materialSlot
+    )
+    {
+        if (materialSlot["rawMaterial"]?["textureProperties"] is not JsonArray textures)
+        {
+            yield break;
+        }
+        foreach (var texture in textures.OfType<JsonObject>())
+        {
+            yield return texture;
+        }
+    }
+
+    private static Ktx2Transfer RawTextureTransfer(JsonObject texture)
+    {
+        return texture["colorSpace"] is JsonValue colorSpaceNode &&
+            colorSpaceNode.TryGetValue<int>(out var colorSpace) &&
+            colorSpace == 1
+                ? Ktx2Transfer.Linear
+                : Ktx2Transfer.Srgb;
     }
 
     private static void RunOxipng(string pngPath)

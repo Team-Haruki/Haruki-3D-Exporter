@@ -258,7 +258,9 @@ public sealed record PjskSekaiRuntimeMaterialSlot(
     [property: JsonPropertyName("shaderPipeline")] string ShaderPipeline,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     [property: JsonPropertyName("isAccessory")] bool IsAccessory,
-    [property: JsonPropertyName("lighting")] MaterialLightingSettings Lighting
+    [property: JsonPropertyName("lighting")] MaterialLightingSettings Lighting,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [property: JsonPropertyName("rawMaterial")] RawMaterialProperties? RawMaterial = null
 );
 
 public sealed record PjskSekaiRuntimeTextureRole(

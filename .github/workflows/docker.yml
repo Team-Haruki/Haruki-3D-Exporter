@@ -76,6 +76,6 @@ jobs:
           build-args: |
             ASSETSTUDIO_REPOSITORY=https://github.com/Team-Haruki/AssetStudio.git
             ASSETSTUDIO_BRANCH=sekai-modified
-            ASSETSTUDIO_REVISION=ae75b2e548137598505afcba1340707c4a794add
+            ASSETSTUDIO_REVISION=70e6ec3e00665ff3c36a8af08f8e2824c2eba873
           cache-from: type=gha
           cache-to: type=gha,mode=max

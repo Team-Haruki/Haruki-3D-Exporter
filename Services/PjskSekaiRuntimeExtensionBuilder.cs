@@ -32,7 +32,12 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
                 RenderOrder: 0,
                 ShaderPipeline: plan.SekaiVrmProfile.SekaiRuntimeMaterialProfile.BodyPipeline,
                 IsAccessory: false,
-                Lighting: slot.Lighting
+                Lighting: slot.Lighting,
+                RawMaterial: RewriteRawMaterialTexturePaths(
+                    "body",
+                    slot.RawMaterial,
+                    characterTexturePathByName
+                )
             ))
             .ToList();
         var headSlots = plan.HeadManifestTemplate.FaceMaterials
@@ -52,7 +57,12 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
                 RenderOrder: GetHeadRenderOrder(slot.MaterialKind),
                 ShaderPipeline: ResolveHeadShaderPipeline(plan, slot.MaterialKind),
                 IsAccessory: false,
-                Lighting: slot.Lighting
+                Lighting: slot.Lighting,
+                RawMaterial: RewriteRawMaterialTexturePaths(
+                    "head",
+                    slot.RawMaterial,
+                    characterTexturePathByName
+                )
             ))
             .ToList();
         var accessorySlots = BuildAccessoryMaterialSlots(
@@ -1345,7 +1355,12 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
                     RenderOrder: GetHeadRenderOrder("accessory"),
                     ShaderPipeline: plan.SekaiVrmProfile.SekaiRuntimeMaterialProfile.BodyPipeline,
                     IsAccessory: true,
-                    Lighting: SekaiMaterialMetadata.BuildLightingSettings(material)
+                    Lighting: SekaiMaterialMetadata.BuildLightingSettings(material),
+                    RawMaterial: RewriteRawMaterialTexturePaths(
+                        "accessory",
+                        SekaiMaterialMetadata.BuildRawMaterialProperties(material),
+                        characterTexturePathByName
+                    )
                 );
             }))
             .DistinctBy(
@@ -1435,6 +1450,29 @@ public sealed class PjskSekaiRuntimeExtensionBuilder
         }
 
         return manifestPath;
+    }
+
+    private static RawMaterialProperties? RewriteRawMaterialTexturePaths(
+        string part,
+        RawMaterialProperties? rawMaterial,
+        IReadOnlyDictionary<string, string> characterTexturePathByName
+    )
+    {
+        return rawMaterial is null
+            ? null
+            : rawMaterial with
+            {
+                TextureProperties = rawMaterial.TextureProperties
+                    .Select(texture => texture with
+                    {
+                        Uri = RewriteCharacterTexturePath(
+                            part,
+                            texture.TextureName,
+                            characterTexturePathByName
+                        ),
+                    })
+                    .ToList(),
+            };
     }
 
     private static string ToOutputRootTexturePath(string characterRelativePath)
