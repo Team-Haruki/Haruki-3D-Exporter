@@ -1524,6 +1524,35 @@ File.WriteAllText(
     JsonSerializer.Serialize(publicRoleEntries)
 );
 File.WriteAllText(
+    Path.Combine(publicMasterDirectory, "gameCharacterUnits.json"),
+    JsonSerializer.Serialize(publicRoleEntries.Select((entry, index) => new GameCharacterUnitMaster(
+        Id: index + 1,
+        GameCharacterId: entry.CharacterId,
+        Unit: entry.Unit,
+        SkinColorCode: "#feefe0",
+        SkinShadowColorCode1: "#efafbb",
+        SkinShadowColorCode2: "#e07889"
+    )))
+);
+File.WriteAllText(
+    Path.Combine(publicMasterDirectory, "gameCharacters.json"),
+    JsonSerializer.Serialize(Enumerable.Range(1, 26).Select(characterId => new
+    {
+        id = characterId,
+        resourceId = characterId,
+        gender = "female",
+        height = characterId == 8 ? 1.68f : 1.60f,
+        figure = "ladies",
+        breastSize = "m",
+        modelName = $"character-{characterId}",
+        unit = (string?)null,
+        supportUnitType = (string?)null,
+        faceModelType = "Default",
+        prefabType = "Default",
+        isHeelOffset = false,
+    }))
+);
+File.WriteAllText(
     Path.Combine(publicMasterRoot, "versions", "current_version.json"),
     """{"dataVersion":"test-master"}"""
 );
@@ -1536,6 +1565,8 @@ Expect(publicRoleCatalog?.Roles.Count == 31, "runtime role catalog contains exac
 Expect(publicRoleCatalog?.Roles.Single(role => role.RoleId == 23).CharacterId == 21, "runtime role 23 maps to Miku");
 Expect(publicRoleCatalog?.Roles.Single(role => role.RoleId == 23).Unit == "light_sound", "runtime role 23 keeps the SEKAI unit");
 Expect(publicRoleCatalog?.Roles.Single(role => role.RoleId == 31).CharacterId == 26, "runtime role 31 maps to KAITO");
+Expect(publicRoleCatalog?.Roles.Single(role => role.RoleId == 5).SkinColors.Default == "#feefe0", "runtime role catalog carries master skin colors");
+Expect(Math.Abs((publicRoleCatalog?.Roles.Single(role => role.RoleId == 8).CharacterHeightMeters ?? 0f) - 1.68f) < 0.0001f, "runtime role catalog carries master character height");
 Expect(publicRoleCatalog?.Roles.All(role => !string.IsNullOrWhiteSpace(role.RoleRuntimePath)) == true, "runtime role catalog exposes role runtime packages");
 Expect(
     RuntimeJsonWriter.OutputsExist(Path.Combine(publicRoleCatalogOutput, "runtime-role-catalog.json")),
@@ -1548,7 +1579,7 @@ Expect(
 using (var writtenRoleCatalog = RuntimeJsonWriter.ReadJsonDocument(Path.Combine(publicRoleCatalogOutput, "runtime-role-catalog.json")))
 {
     Expect(!writtenRoleCatalog.RootElement.TryGetProperty("releaseId", out _), "runtime role catalog has no release id");
-    Expect(writtenRoleCatalog.RootElement.GetProperty("version").GetInt32() == 2, "runtime role catalog uses the master-version schema");
+    Expect(writtenRoleCatalog.RootElement.GetProperty("version").GetInt32() == 4, "runtime role catalog uses the skin-and-height-aware master-version schema");
     Expect(!string.IsNullOrWhiteSpace(writtenRoleCatalog.RootElement.GetProperty("masterVersion").GetString()), "runtime role catalog records its master version");
     Expect(writtenRoleCatalog.RootElement.GetProperty("roles").GetArrayLength() == 31, "written runtime role catalog keeps all public roles");
 }

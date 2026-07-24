@@ -40,6 +40,21 @@ public static class CharacterHeightResolver
             : fallbackMeters;
     }
 
+    public static float ResolveRequiredMeters(
+        IReadOnlyDictionary<string, float> characterHeightMetersById,
+        int characterId
+    )
+    {
+        var key = characterId.ToString("00");
+        if (!characterHeightMetersById.TryGetValue(key, out var height) || height <= 0)
+        {
+            throw new InvalidDataException(
+                $"gameCharacters.json is missing a valid height for character {characterId}."
+            );
+        }
+        return height;
+    }
+
     private static float ToMeters(float height)
     {
         return height > 10f ? height / 100f : height;

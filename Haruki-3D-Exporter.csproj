@@ -41,6 +41,7 @@
     <Compile Include="Models/ResolvedBundleInput.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/CostumeRegistryExporter.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Services/RuntimeRoleCatalogExporter.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
+    <Compile Include="Services/CharacterHeightResolver.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Tests/ConfigParserSmoke.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
     <Compile Include="Tests/PartMaterialMetadataSmoke.cs" Condition="'$(HARUKI_EXPORTER_CONFIG_TEST)' == 'true'" />
   </ItemGroup>

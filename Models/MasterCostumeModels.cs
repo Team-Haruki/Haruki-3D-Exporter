@@ -28,6 +28,15 @@ public sealed record Character3dMaster(
     [property: JsonPropertyName("bodyCostume3dId")] int BodyCostume3dId
 );
 
+public sealed record GameCharacterUnitMaster(
+    [property: JsonPropertyName("id")] int Id,
+    [property: JsonPropertyName("gameCharacterId")] int GameCharacterId,
+    [property: JsonPropertyName("unit")] string? Unit,
+    [property: JsonPropertyName("skinColorCode")] string SkinColorCode,
+    [property: JsonPropertyName("skinShadowColorCode1")] string SkinShadowColorCode1,
+    [property: JsonPropertyName("skinShadowColorCode2")] string SkinShadowColorCode2
+);
+
 public sealed record Costume3dModelMaster(
     [property: JsonPropertyName("costume3dId")] int Costume3dId,
     [property: JsonPropertyName("unit")] string? Unit,

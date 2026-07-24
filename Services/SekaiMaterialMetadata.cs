@@ -125,10 +125,7 @@ public static class SekaiMaterialMetadata
     {
         return new MaterialLightingSettings(
             SpecularPower: FindFloatProperty(material, "_SpecularPower") ?? 0f,
-            RimThreshold:
-                FindFloatProperty(material, "_SpecularStrength") ??
-                FindFloatProperty(material, "_RimThreshold") ??
-                0.2f,
+            RimThreshold: FindFloatProperty(material, "_RimThreshold") ?? 0.2f,
             ShadowTexWeight: FindFloatProperty(material, "_ShadowTexWeight") ?? 1f,
             FadeMode: (int)(FindFloatProperty(material, "_FadeMode") ?? 0f),
             HueSinAngle: FindFloatProperty(material, "_HueSinAngle") ?? 0f,
@@ -142,7 +139,9 @@ public static class SekaiMaterialMetadata
             OutlineOffset: FindFloatProperty(material, "_OutlineOffset") ?? 0f,
             OutlineLightness: FindFloatProperty(material, "_OutlineL") ?? 0.5f,
             ShadowWidth: FindFloatProperty(material, "_ShadowWidth") ?? 0f,
-            UseOutlineSecondNormal: FindFloatProperty(material, "_UseOutlineSecondNormal") ?? 0f,
+            UseOutlineSecondNormal:
+                FindFloatProperty(material, "_UseOutlineSecondNormal") ??
+                (FindKeywordFeature(material, "_OUTLINE_SECOND_NORMAL") is true ? 1f : 0f),
             DistortionFps: FindFloatProperty(material, "_DistortionFPS") ?? 12f,
             DistortionIntensity: FindFloatProperty(material, "_DistortionIntensity") ?? 0f,
             DistortionIntensityX: FindFloatProperty(material, "_DistortionIntensityX") ?? 0f,
@@ -160,18 +159,15 @@ public static class SekaiMaterialMetadata
             SekaiShadowThreshold: FindFloatProperty(material, "_SekaiShadowThreshold"),
             UseLambert: FindFeature(material, "_UseLambert", "_LAMBERT"),
             UseValueTex: FindBoolProperty(material, "_UseValueTex"),
-            UseFaceSdf: FindBoolProperty(material, "_UseFaceSDF"),
-            UseSkinColor: FindBoolProperty(material, "_UseSkinColor"),
-            SkinMaskMode: (int?)FindFloatProperty(material, "_SkinMaskMode"),
-            FaceSdfMirror: FindFloatProperty(material, "_FaceSdfMirror"),
-            FaceSdfBias: FindFloatProperty(material, "_FaceSdfBias"),
-            UseFaceShadowLimiter: FindBoolProperty(material, "_UseFaceShadowLimiter"),
+            UseFaceSdf: FindFeature(material, "_UseFaceSDF", "_USE_FACE_SDF"),
+            UseFaceShadowLimiter: FindFeature(
+                material,
+                "_UseFaceShadowLimiter",
+                "_FACE_SHADOW_RANGE_LIMIT"
+            ),
             RangeLimit: FindFloatProperty(material, "_RangeLimit"),
-            FaceSkinShadowStrength: FindFloatProperty(material, "_FaceSkinShadowStrength"),
-            FaceSphereShadowEdge: FindFloatProperty(material, "_FaceSphereShadowEdge"),
-            FaceSphereShadowSmoothness: FindFloatProperty(material, "_FaceSphereShadowSmoothness"),
-            FaceSphereShadowWeight: FindFloatProperty(material, "_FaceSphereShadowWeight"),
-            HairShadow: FindKeywordFeature(material, "_HAIR_SHADOW")
+            HairShadow: FindKeywordFeature(material, "_HAIR_SHADOW"),
+            HeadNormalBlend: FindFloatProperty(material, "_HeadNormalBlend")
         );
     }
 
@@ -192,7 +188,8 @@ public static class SekaiMaterialMetadata
         {
             return null;
         }
-        return material.ValidKeywords.Contains(keyword, StringComparer.OrdinalIgnoreCase);
+        return material.ValidKeywords.Contains(keyword, StringComparer.OrdinalIgnoreCase) ||
+            material.InvalidKeywords?.Contains(keyword, StringComparer.OrdinalIgnoreCase) == true;
     }
 
     public static string? FindTextureSlot(MaterialInventory? material, string slotName)

@@ -5,7 +5,7 @@ namespace PjskBundle2Parts.Services;
 
 public static class RuntimeRoleCatalogExporter
 {
-    private const int CatalogVersion = 2;
+    private const int CatalogVersion = 4;
 
     private static readonly string[] MikuUnits =
     [
@@ -32,7 +32,17 @@ public static class RuntimeRoleCatalogExporter
         var normalizedMasterDirectory = Path.GetFullPath(masterDirectory);
         var path = Path.Combine(normalizedMasterDirectory, "character3ds.json");
         var entries = ReadCharacter3ds(path);
-        var catalog = Build(entries, ResolveMasterVersion(normalizedMasterDirectory));
+        var characterUnits = ReadCharacterUnits(
+            Path.Combine(normalizedMasterDirectory, "gameCharacterUnits.json")
+        );
+        var characterHeightMetersById =
+            CharacterHeightResolver.LoadMetersByCharacterId(normalizedMasterDirectory);
+        var catalog = Build(
+            entries,
+            characterUnits,
+            characterHeightMetersById,
+            ResolveMasterVersion(normalizedMasterDirectory)
+        );
         Write(outputDirectory, catalog);
         return catalog;
     }
@@ -41,6 +51,13 @@ public static class RuntimeRoleCatalogExporter
     {
         using var stream = File.OpenRead(path);
         return JsonSerializer.Deserialize<IReadOnlyList<Character3dMaster>>(stream, ReadJsonOptions)
+            ?? throw new InvalidDataException($"Failed to parse master file: {path}");
+    }
+
+    private static IReadOnlyList<GameCharacterUnitMaster> ReadCharacterUnits(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return JsonSerializer.Deserialize<IReadOnlyList<GameCharacterUnitMaster>>(stream, ReadJsonOptions)
             ?? throw new InvalidDataException($"Failed to parse master file: {path}");
     }
 
@@ -132,20 +149,43 @@ public static class RuntimeRoleCatalogExporter
         }
     }
 
-    private static RuntimeRoleCatalog Build(IReadOnlyList<Character3dMaster> entries, string masterVersion)
+    private static RuntimeRoleCatalog Build(
+        IReadOnlyList<Character3dMaster> entries,
+        IReadOnlyList<GameCharacterUnitMaster> characterUnits,
+        IReadOnlyDictionary<string, float> characterHeightMetersById,
+        string masterVersion
+    )
     {
         var roles = entries
             .Where(entry => entry.Id is >= 1 and <= 31)
             .OrderBy(entry => entry.Id)
-            .Select(entry => new RuntimeRoleCatalogEntry(
-                RoleId: entry.Id,
-                CharacterId: entry.CharacterId,
-                Unit: entry.Unit,
-                BodyCostume3dId: entry.BodyCostume3dId,
-                HeadCostume3dId: entry.HeadCostume3dId,
-                HairCostume3dId: entry.HairCostume3dId,
-                RoleRuntimePath: $"roles/{entry.CharacterId}/{entry.Unit ?? "default"}/role-runtime.msgpack.br"
-            ))
+            .Select(entry =>
+            {
+                var characterUnit = characterUnits.SingleOrDefault(candidate =>
+                    candidate.GameCharacterId == entry.CharacterId &&
+                    string.Equals(candidate.Unit, entry.Unit, StringComparison.Ordinal)
+                ) ?? throw new InvalidDataException(
+                    $"gameCharacterUnits is missing role {entry.CharacterId}/{entry.Unit ?? "default"}."
+                );
+                return new RuntimeRoleCatalogEntry(
+                    RoleId: entry.Id,
+                    CharacterId: entry.CharacterId,
+                    CharacterHeightMeters: CharacterHeightResolver.ResolveRequiredMeters(
+                        characterHeightMetersById,
+                        entry.CharacterId
+                    ),
+                    Unit: entry.Unit,
+                    BodyCostume3dId: entry.BodyCostume3dId,
+                    HeadCostume3dId: entry.HeadCostume3dId,
+                    HairCostume3dId: entry.HairCostume3dId,
+                    SkinColors: new RuntimeSkinColors(
+                        Default: characterUnit.SkinColorCode,
+                        Shadow1: characterUnit.SkinShadowColorCode1,
+                        Shadow2: characterUnit.SkinShadowColorCode2
+                    ),
+                    RoleRuntimePath: $"roles/{entry.CharacterId}/{entry.Unit ?? "default"}/role-runtime.msgpack.br"
+                );
+            })
             .ToList();
         return Build(roles, masterVersion);
     }
@@ -172,7 +212,11 @@ public static class RuntimeRoleCatalogExporter
                 );
             }
             if (entry.BodyCostume3dId <= 0 || entry.HeadCostume3dId <= 0 ||
-                entry.HairCostume3dId <= 0 || string.IsNullOrWhiteSpace(entry.RoleRuntimePath))
+                entry.HairCostume3dId <= 0 || string.IsNullOrWhiteSpace(entry.RoleRuntimePath) ||
+                entry.CharacterHeightMeters <= 0 ||
+                !IsColor(entry.SkinColors.Default) ||
+                !IsColor(entry.SkinColors.Shadow1) ||
+                !IsColor(entry.SkinColors.Shadow2))
             {
                 throw new InvalidDataException($"Runtime role {entry.RoleId} has incomplete defaults.");
             }
@@ -180,6 +224,11 @@ public static class RuntimeRoleCatalogExporter
 
         return new RuntimeRoleCatalog(CatalogVersion, masterVersion, roles);
     }
+
+    private static bool IsColor(string value) =>
+        value.Length == 7 &&
+        value[0] == '#' &&
+        value.Skip(1).All(Uri.IsHexDigit);
 
     public static string ResolveMasterVersion(string masterDirectory)
     {

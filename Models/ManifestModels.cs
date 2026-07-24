@@ -50,17 +50,10 @@ public sealed record MaterialLightingSettings(
     bool? UseLambert = null,
     bool? UseValueTex = null,
     bool? UseFaceSdf = null,
-    bool? UseSkinColor = null,
-    int? SkinMaskMode = null,
-    float? FaceSdfMirror = null,
-    float? FaceSdfBias = null,
     bool? UseFaceShadowLimiter = null,
     float? RangeLimit = null,
-    float? FaceSkinShadowStrength = null,
-    float? FaceSphereShadowEdge = null,
-    float? FaceSphereShadowSmoothness = null,
-    float? FaceSphereShadowWeight = null,
-    bool? HairShadow = null
+    bool? HairShadow = null,
+    float? HeadNormalBlend = null
 );
 
 public sealed record RawMaterialTextureProperty(

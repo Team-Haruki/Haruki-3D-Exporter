@@ -63,20 +63,26 @@ public static class PartMaterialMetadataSmoke
         Expect(lighting.UseLambert == true, "lighting preserves the official Lambert feature state");
         Expect(lighting.UseValueTex == true, "lighting preserves the official value texture feature state");
         Expect(lighting.UseFaceSdf == true, "lighting preserves the official face SDF feature state");
-        Expect(lighting.UseSkinColor == true, "lighting preserves the official skin color feature state");
-        Expect(lighting.SkinMaskMode == 1, "lighting reads the official skin mask mode");
-        Expect(Math.Abs(lighting.FaceSdfMirror!.Value - 1f) < 0.0001f, "lighting reads face SDF mirror");
-        Expect(Math.Abs(lighting.FaceSdfBias!.Value - 0.125f) < 0.0001f, "lighting reads face SDF bias");
         Expect(lighting.UseFaceShadowLimiter == true, "lighting reads face shadow limiter state");
         Expect(Math.Abs(lighting.RangeLimit!.Value - 0.25f) < 0.0001f, "lighting reads face shadow range limit");
-        Expect(Math.Abs(lighting.FaceSkinShadowStrength!.Value - 0.1f) < 0.0001f, "lighting reads face skin shadow strength");
-        Expect(Math.Abs(lighting.FaceSphereShadowEdge!.Value - 0.2f) < 0.0001f, "lighting reads face sphere shadow edge");
-        Expect(Math.Abs(lighting.FaceSphereShadowSmoothness!.Value - 0.3f) < 0.0001f, "lighting reads face sphere shadow smoothness");
-        Expect(Math.Abs(lighting.FaceSphereShadowWeight!.Value - 0.4f) < 0.0001f, "lighting reads face sphere shadow weight");
+        Expect(Math.Abs(lighting.HeadNormalBlend!.Value - 0.7f) < 0.0001f, "lighting reads the official hair head-normal blend");
 
         var keywordLighting = SekaiMaterialMetadata.BuildLightingSettings(KeywordMaterial("hair"));
         Expect(keywordLighting.UseLambert == true, "lighting reads Lambert from the serialized shader keyword");
         Expect(keywordLighting.HairShadow == true, "lighting reads hair shadow from the serialized shader keyword");
+        Expect(keywordLighting.UseFaceSdf == true, "lighting reads FaceSDF from the serialized shader keyword");
+        Expect(keywordLighting.UseFaceShadowLimiter == true, "lighting reads the face range limiter from the serialized shader keyword");
+        Expect(Math.Abs(keywordLighting.UseOutlineSecondNormal - 1f) < 0.0001f, "lighting reads the second-normal outline variant from the serialized shader keyword");
+
+        var unresolvedKeywordLighting = SekaiMaterialMetadata.BuildLightingSettings(
+            KeywordMaterial("body") with
+            {
+                ValidKeywords = Array.Empty<string>(),
+                InvalidKeywords = new[] { "_LAMBERT" },
+            });
+        Expect(
+            unresolvedKeywordLighting.UseLambert == true,
+            "lighting preserves enabled keywords whose external shader space was unresolved");
 
         var unknownFeatureLighting = SekaiMaterialMetadata.BuildLightingSettings(SkinMaterial("legacy"));
         Expect(unknownFeatureLighting.HairShadow is null, "lighting does not invent feature state when keyword metadata is unavailable");
@@ -141,16 +147,9 @@ public static class PartMaterialMetadataSmoke
                 new FloatPropertyInventory("_UseLambert", 1f),
                 new FloatPropertyInventory("_UseValueTex", 1f),
                 new FloatPropertyInventory("_UseFaceSDF", 1f),
-                new FloatPropertyInventory("_UseSkinColor", 1f),
-                new FloatPropertyInventory("_SkinMaskMode", 1f),
-                new FloatPropertyInventory("_FaceSdfMirror", 1f),
-                new FloatPropertyInventory("_FaceSdfBias", 0.125f),
                 new FloatPropertyInventory("_UseFaceShadowLimiter", 1f),
                 new FloatPropertyInventory("_RangeLimit", 0.25f),
-                new FloatPropertyInventory("_FaceSkinShadowStrength", 0.1f),
-                new FloatPropertyInventory("_FaceSphereShadowEdge", 0.2f),
-                new FloatPropertyInventory("_FaceSphereShadowSmoothness", 0.3f),
-                new FloatPropertyInventory("_FaceSphereShadowWeight", 0.4f),
+                new FloatPropertyInventory("_HeadNormalBlend", 0.7f),
             }
         );
     }
@@ -166,7 +165,14 @@ public static class PartMaterialMetadataSmoke
             TextureSlots: Array.Empty<TextureSlotInventory>(),
             ColorProperties: Array.Empty<ColorPropertyInventory>(),
             FloatProperties: Array.Empty<FloatPropertyInventory>(),
-            ValidKeywords: new[] { "_HAIR_SHADOW", "_LAMBERT" },
+            ValidKeywords: new[]
+            {
+                "_HAIR_SHADOW",
+                "_LAMBERT",
+                "_USE_FACE_SDF",
+                "_FACE_SHADOW_RANGE_LIMIT",
+                "_OUTLINE_SECOND_NORMAL",
+            },
             InvalidKeywords: Array.Empty<string>()
         );
     }

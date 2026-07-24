@@ -18,11 +18,19 @@ public sealed record RuntimeRoleCatalog(
 public sealed record RuntimeRoleCatalogEntry(
     [property: JsonPropertyName("roleId")] int RoleId,
     [property: JsonPropertyName("characterId")] int CharacterId,
+    [property: JsonPropertyName("characterHeightMeters")] float CharacterHeightMeters,
     [property: JsonPropertyName("unit")] string? Unit,
     [property: JsonPropertyName("bodyCostume3dId")] int BodyCostume3dId,
     [property: JsonPropertyName("headCostume3dId")] int HeadCostume3dId,
     [property: JsonPropertyName("hairCostume3dId")] int HairCostume3dId,
+    [property: JsonPropertyName("skinColors")] RuntimeSkinColors SkinColors,
     [property: JsonPropertyName("roleRuntimePath")] string RoleRuntimePath
+);
+
+public sealed record RuntimeSkinColors(
+    [property: JsonPropertyName("default")] string Default,
+    [property: JsonPropertyName("shadow1")] string Shadow1,
+    [property: JsonPropertyName("shadow2")] string Shadow2
 );
 
 public sealed record PartRegistry(
